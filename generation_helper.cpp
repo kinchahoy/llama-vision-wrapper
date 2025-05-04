@@ -34,13 +34,14 @@ GenerationResult generate_tokens_cpp(
     struct llama_batch batch = llama_batch_init(1, 0, 1);
     if (!batch.token) { // Check if init failed
          fprintf(stderr, "Error: Failed to initialize batch in generate_tokens_cpp.\n");
+         result.total_tokens_generated = -1; // Indicate error
          return result;
     }
 
-    std::string current_chunk = ""; // Accumulate text for the next callback
-    int tokens_in_current_chunk = 0;
+    // Removed callback-related variables (current_chunk, tokens_in_current_chunk)
     const int buffer_size = 256; // Max size for a single token piece string
     char piece_buffer[buffer_size];
+    const struct llama_vocab * vocab = llama_model_get_vocab(model); // Get vocab once
 
     while (result.final_n_past < n_ctx && result.total_tokens_generated < max_new_tokens) {
         // 1. Sample
