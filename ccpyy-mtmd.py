@@ -310,6 +310,7 @@ try:
 
                         # --- 7. Generation Loop ---
                         print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
+                        # Print the prompt *before* calling C++
                         print(f"{PROMPT}", end="", flush=True)
 
                         gen_start_time = time.time()
@@ -323,9 +324,8 @@ try:
                             sampler, ctx, model, initial_n_past, N_CTX,
                             MAX_NEW_TOKENS, seq_id_vec
                         )
-                        # Output is already printed by C++ side.
-                        # We add the "Generation Complete" marker after C++ returns.
-                        print("--- Generation Complete ---")
+                        # Print the generated text returned from C++
+                        print(f"{cpp_result.generated_text}") # Add newline implicitly
 
                         gen_end_time = time.time()
                         gen_duration = gen_end_time - gen_start_time

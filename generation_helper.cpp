@@ -63,11 +63,10 @@ GenerationResult generate_tokens_cpp(
              fprintf(stderr, "\nError: llama_token_to_piece returned %d\n", n_chars);
              break; // Stop generation on error
         }
-        // Print the piece directly to standard output
-        printf("%.*s", n_chars, piece_buffer);
-        fflush(stdout); // Ensure it's displayed immediately
+        // Append the piece to the result string instead of printing
+        result.generated_text.append(piece_buffer, n_chars);
 
-        result.total_tokens_generated++; // Increment token count *after* successful processing/printing
+        result.total_tokens_generated++; // Increment token count *after* successful processing/appending
 
         // 5. Prepare batch for decoding this single token
         batch.n_tokens = 1; // Explicitly set number of tokens in batch
@@ -91,8 +90,7 @@ GenerationResult generate_tokens_cpp(
 
         // 8. Callback logic removed
     }
-    printf("\n"); // Add a newline after generation finishes
-    fflush(stdout);
+    // Removed final newline print
 
     // 9. Remaining chunk callback removed
 
