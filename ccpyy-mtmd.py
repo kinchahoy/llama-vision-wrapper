@@ -274,9 +274,12 @@ finally:
         print("Freeing sampler...")
         gbl.common_sampler_free(sampler)
     # 2. Multimodal Context
+    # --- TESTING: Comment out mtmd_free ---
     if ctx_mtmd:
-        print("Freeing multimodal context...")
-        gbl.mtmd_free(ctx_mtmd)
+        print("DEBUG: Skipping mtmd_free(ctx_mtmd)...")
+        # gbl.mtmd_free(ctx_mtmd)
+    else:
+        print("DEBUG: Skipping mtmd_free (ctx_mtmd invalid or not found)")
     # 3. LLaMA Context
     if ctx:
         print("Freeing LLaMA context...")
