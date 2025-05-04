@@ -420,9 +420,11 @@ if 'sampler' in locals() and sampler:
 
 # Free bitmap if it was initialized
 # Check if 'bitmap' exists and potentially if its data is valid (optional)
-if 'bitmap' in locals() and bitmap:
-     print("Freeing bitmap...")
-     gbl.mtmd_bitmap_free(cppyy.addressof(bitmap)) # Pass by pointer
+# if 'bitmap' in locals() and bitmap:
+#      print("Freeing bitmap...")
+#      # NOTE: Commented out assuming mtmd library handles cleanup
+#      #       of bitmaps passed via the vector in mtmd_tokenize.
+#      # gbl.mtmd_bitmap_free(cppyy.addressof(bitmap)) # Pass by pointer
 
 # No need to free gen_batch anymore
 if ctx:
