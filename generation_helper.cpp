@@ -106,10 +106,10 @@ GenerationResult generate_tokens_cpp(
 
 
     // Clean up the local batch
-    fprintf(stderr, "DEBUG: Skipping free of local batch in generate_tokens_cpp\n"); // MODIFIED
-    // llama_batch_free(batch); // DEBUG: Commented out to test double-free source
-    // fprintf(stderr, "DEBUG: Local batch freed in generate_tokens_cpp\n"); // COMMENTED OUT
+    // fprintf(stderr, "DEBUG: Skipping free of local batch in generate_tokens_cpp\n"); // MODIFIED
+    llama_batch_free(batch); // Restore freeing the local batch
+    fprintf(stderr, "DEBUG: Local batch freed in generate_tokens_cpp\n");
 
-    fprintf(stderr, "DEBUG: Exiting generate_tokens_cpp (final_n_past=%d, total_tokens=%d)\n", result.final_n_past, result.total_tokens_generated); // ADDED
+    fprintf(stderr, "DEBUG: Exiting generate_tokens_cpp (final_n_past=%d, total_tokens=%d)\n", result.final_n_past, result.total_tokens_generated);
     return result;
 }
