@@ -29,10 +29,11 @@ GenerationResult generate_tokens_cpp(
     }
     // Get data pointer directly from the vector value
     const llama_seq_id * p_seq_id_const = seq_ids.data();
+    const size_t n_seq_ids = seq_ids.size(); // Get size for batch init
 
     // Use a local batch for single-token decoding within the loop
-    // Initialize batch for 1 token, 0 embedding data, 1 sequence ID list per token
-    struct llama_batch batch = llama_batch_init(1, 0, 1);
+    // Initialize batch for 1 token, 0 embedding data, n_seq_ids sequence IDs per token
+    struct llama_batch batch = llama_batch_init(1, 0, n_seq_ids);
     if (!batch.token) { // Check if init failed
          fprintf(stderr, "Error: Failed to initialize batch in generate_tokens_cpp.\n");
          result.total_tokens_generated = -1; // Indicate error
@@ -72,9 +73,11 @@ GenerationResult generate_tokens_cpp(
         batch.n_tokens = 1; // Explicitly set number of tokens in batch
         batch.token [0] = id;
         batch.pos   [0] = result.final_n_past;
-        batch.n_seq_id[0] = seq_ids.size(); // Use . for value access
-        // Use const_cast
-        batch.seq_id[0] = const_cast<llama_seq_id *>(p_seq_id_const);
+        batch.n_seq_id[0] = n_seq_ids; // Set the number of seq IDs for this token
+        // Copy the sequence IDs into the batch's managed memory
+        for (size_t i = 0; i < n_seq_ids; ++i) {
+            batch.seq_id[0][i] = p_seq_id_const[i];
+        }
         batch.logits[0] = true; // We need logits for sampling the *next* token
 
         // 6. Decode the batch
