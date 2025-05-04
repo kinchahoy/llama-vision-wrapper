@@ -196,7 +196,7 @@ try:
     # Variables are now defined outside the try block
     def generation_callback(chunk_bytes, n_tokens_in_chunk):
         """Callback function called by C++ with generated text chunks."""
-        nonlocal full_generated_text, total_generated_tokens # nonlocal is now valid
+        global full_generated_text, total_generated_tokens # Use global for module-level variables
         chunk_str = chunk_bytes # cppyy handles conversion
         print(f"{chunk_str}", end="", flush=True)
         full_generated_text += chunk_str
