@@ -19,9 +19,14 @@ HELPER_LIB_DIR = f"{BASE_DIR}/build"
 
 # Libraries to load
 LIB_NAMES = [
-    "libggml-base.dylib", "libggml-blas.dylib", "libggml-cpu.dylib", 
-    "libggml-metal.dylib", "libggml.dylib", "libllama.dylib",
-    "libllava_shared.dylib", "libmtmd_shared.dylib",
+    "libggml-base.dylib",
+    "libggml-blas.dylib",
+    "libggml-cpu.dylib",
+    "libggml-metal.dylib",
+    "libggml.dylib",
+    "libllama.dylib",
+    "libllava_shared.dylib",
+    "libmtmd_shared.dylib",
     "libgeneration_helper.dylib",
 ]
 
@@ -44,27 +49,29 @@ TOP_K = 40
 TOP_P = 0.95
 REPEAT_PENALTY = 1.1
 
+
 # Resource manager class
 class ResourceManager:
     """Combined resource manager for all llama.cpp resources"""
+
     def __init__(self, verbose=True):
         self.verbose = verbose
         self.resources = {}
-        
+
     def log(self, msg):
         if self.verbose:
             print(msg)
-            
+
     def __enter__(self):
         self.log("Initializing llama backend...")
         cppyy.gbl.llama_backend_init()
         return self
-        
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.log("Cleaning up resources...")
         cppyy.gbl.llama_backend_free()
         return False
-        
+
     def load_model(self, model_path, gpu_layers=0):
         self.log(f"Loading model from {model_path}...")
         params = cppyy.gbl.llama_model_default_params()
@@ -74,7 +81,7 @@ class ResourceManager:
             raise RuntimeError(f"Failed to load model from {model_path}")
         self.log(f"Model loaded (GPU layers: {gpu_layers})")
         return model
-        
+
     def create_context(self, model, n_ctx, n_batch, n_threads):
         self.log("Creating LLaMA context...")
         params = cppyy.gbl.llama_context_default_params()
@@ -82,26 +89,30 @@ class ResourceManager:
         params.n_batch = n_batch
         params.n_threads = params.n_threads_batch = n_threads
         params.log_level = cppyy.gbl.GGML_LOG_LEVEL_ERROR
-        
+
         ctx = cppyy.gbl.llama_new_context_with_model(model, params)
         if not ctx:
             raise RuntimeError("Failed to create LLaMA context")
         self.log(f"LLaMA context created (n_ctx: {cppyy.gbl.llama_n_ctx(ctx)})")
         return ctx
-        
+
     def load_mtmd(self, mmproj_path, model, use_gpu, n_threads):
         self.log(f"Loading multimodal context from {mmproj_path}...")
         params = cppyy.gbl.mtmd_context_params()
         params.use_gpu = use_gpu
         params.n_threads = n_threads
         params.verbosity = cppyy.gbl.GGML_LOG_LEVEL_ERROR
-        
-        ctx_mtmd = cppyy.gbl.mtmd_init_from_file(mmproj_path.encode("utf-8"), model, params)
+
+        ctx_mtmd = cppyy.gbl.mtmd_init_from_file(
+            mmproj_path.encode("utf-8"), model, params
+        )
         if not ctx_mtmd:
-            raise RuntimeError(f"Failed to load multimodal projector from {mmproj_path}")
+            raise RuntimeError(
+                f"Failed to load multimodal projector from {mmproj_path}"
+            )
         self.log(f"Multimodal context loaded (GPU: {use_gpu})")
         return ctx_mtmd
-        
+
     def create_sampler(self, model, temp, top_k, top_p, repeat_penalty, ctx_size):
         self.log("Initializing sampler...")
         params = cppyy.gbl.common_params_sampling()
@@ -111,12 +122,13 @@ class ResourceManager:
         params.penalty_repeat = repeat_penalty
         params.penalty_last_n = ctx_size
         params.grammar = ""
-        
+
         sampler = cppyy.gbl.common_sampler_init(model, params)
         if not sampler:
             raise RuntimeError("Failed to initialize common_sampler")
         self.log("Sampler initialized.")
         return sampler
+
 
 # Main execution
 try:
@@ -124,28 +136,41 @@ try:
     # Setup cppyy
     for inc_path in INCLUDE_DIRS:
         cppyy.add_include_path(inc_path)
-    
+
     print("Loading libraries...")
     for lib_name in LIB_NAMES:
-        lib_dir = HELPER_LIB_DIR if lib_name == "libgeneration_helper.dylib" else LLAMA_CPP_LIBS_DIR
+        lib_dir = (
+            HELPER_LIB_DIR
+            if lib_name == "libgeneration_helper.dylib"
+            else LLAMA_CPP_LIBS_DIR
+        )
         lib_path = os.path.join(lib_dir, lib_name)
         if not os.path.exists(lib_path):
             raise FileNotFoundError(f"Library '{lib_name}' not found at {lib_path}")
         cppyy.load_library(lib_path)
-    
+
     # Include headers
-    for header in ["vector", "llama.h", "common.h", "sampling.h", "mtmd.h", "generation_helper.h"]:
+    for header in [
+        "vector",
+        "llama.h",
+        "common.h",
+        "sampling.h",
+        "mtmd.h",
+        "generation_helper.h",
+    ]:
         cppyy.include(header)
     gbl = cppyy.gbl
-    
+
     # Initialize resources
     with ResourceManager() as rm:
         # Load model and create contexts
         model = rm.load_model(MODEL_PATH, N_GPU_LAYERS)
         ctx = rm.create_context(model, N_CTX, N_BATCH, N_THREADS)
         ctx_mtmd = rm.load_mtmd(MMPROJ_PATH, model, N_GPU_LAYERS > 0, N_THREADS)
-        sampler = rm.create_sampler(model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx))
-        
+        sampler = rm.create_sampler(
+            model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
+        )
+
         # Load image
         print("Loading image...")
         bitmap = gbl.mtmd_bitmap()
@@ -153,59 +178,64 @@ try:
         if ret != 0:
             raise RuntimeError(f"Failed to load image {IMAGE_PATH} (code: {ret})")
         print(f"Image loaded: {bitmap.nx}x{bitmap.ny}")
-        
+
         # Prepare and evaluate multimodal input
         print("Evaluating multimodal input...")
         eval_start_time = time.time()
-        
+
         # Setup input
         input_text = gbl.mtmd_input_text()
         input_text.text = PROMPT
         input_text.add_special = input_text.parse_special = True
-        
+
         bitmaps_vec = gbl.std.vector[gbl.mtmd_bitmap]()
         bitmaps_vec.push_back(bitmap)
         chunks = gbl.mtmd_input_chunks()
-        
+
         # Tokenize and evaluate
         if gbl.mtmd_tokenize(ctx_mtmd, chunks, input_text, bitmaps_vec) != 0:
             raise RuntimeError("Failed mtmd_tokenize")
-            
+
         n_past = 0
         seq_id = gbl.llama_seq_id(0)
         if gbl.mtmd_helper_eval(ctx_mtmd, ctx, chunks, n_past, seq_id, N_BATCH) != 0:
             raise RuntimeError("Failed mtmd_helper_eval")
-            
+
         # Update KV cache position
         prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
         n_past += prompt_tokens
-        
+
         # Report timing
         eval_duration = time.time() - eval_start_time
-        print(f"Input evaluated ({prompt_tokens} tokens) in {eval_duration:.2f} s " 
-              f"({prompt_tokens / eval_duration:.2f} tokens/s)")
+        print(
+            f"Input evaluated ({prompt_tokens} tokens) in {eval_duration:.2f} s "
+            f"({prompt_tokens / eval_duration:.2f} tokens/s)"
+        )
         print(f"KV cache position (n_past): {n_past}")
-        
+
         # Generate response
         print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
         print(f"{PROMPT}", end="", flush=True)
-        
+
         # Call C++ generation function
-        gen_start_time = time.time()
         seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
-        
+
+        gen_start_time = time.time()
+
         # Generate tokens using C++ helper function
         cpp_result = gbl.generate_tokens_cpp(
             sampler, ctx, model, n_past, N_CTX, MAX_NEW_TOKENS, seq_id_vec
         )
-        
+
         # Print results
         print(f"{cpp_result.generated_text}")
-        
+
         gen_duration = time.time() - gen_start_time
         tokens_gen = cpp_result.total_tokens_generated
-        print(f"Generated {tokens_gen} tokens in {gen_duration:.2f} s "
-              f"({tokens_gen / gen_duration:.2f} tokens/s)")
+        print(
+            f"Generated {tokens_gen} tokens in {gen_duration:.2f} s "
+            f"({tokens_gen / gen_duration:.2f} tokens/s)"
+        )
         print(f"Final KV cache position (n_past): {cpp_result.final_n_past}")
 
 except Exception as e:
