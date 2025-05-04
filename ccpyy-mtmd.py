@@ -336,11 +336,25 @@ from numba import (
 
 
 # --- 8. Generation Loop ---
+
+# Define the Python callback function
+# It must match the signature: void (*PythonCallbackFunc)(const char* chunk, int n_tokens_in_chunk)
+# cppyy handles the marshalling of bytes -> Python string (usually utf-8)
+# We keep track of the full text and token count outside the callback
+full_generated_text = ""
+total_generated_tokens = 0
+def generation_callback(chunk_bytes, n_tokens_in_chunk):
+    """Callback function called by C++ with generated text chunks."""
+    global full_generated_text, total_generated_tokens
+    # Decode the byte string received from C++
+    chunk_str = chunk_bytes.decode("utf-8", errors="ignore")
+    print(f"{chunk_str}", end="", flush=True) # Print intermediate results
+    full_generated_text += chunk_str
+    total_generated_tokens += n_tokens_in_chunk
+
 print("\n--- Generating Response ---")
 print(f"{PROMPT}", end="", flush=True)
 
-generated_text = ""
-generated_token_count = 0
 start_time_gen = time.time()
 
 # Define the sequence ID (usually 0 for simple generation)
@@ -351,9 +365,11 @@ seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([seq_id])
 # Store initial n_past
 initial_n_past = n_past
 
-# --- Call the C++ generation function ---
+# --- Call the C++ generation function with the callback ---
+CALLBACK_TOKEN_THRESHOLD = 50 # How often to call back (in tokens)
 try:
-    print("\nCalling C++ generation function...")
+    print(f"\nCalling C++ generation function (callback threshold: {CALLBACK_TOKEN_THRESHOLD} tokens)...")
+    # Pass the Python callback function directly to cppyy
     cpp_result = gbl.generate_tokens_cpp(
         sampler,
         ctx,
@@ -361,27 +377,26 @@ try:
         initial_n_past,
         N_CTX,
         MAX_NEW_TOKENS,
-        seq_id_vec,  # Pass the std::vector directly
+        seq_id_vec,           # Pass the std::vector directly
+        generation_callback,  # Pass the Python callback function
+        CALLBACK_TOKEN_THRESHOLD
     )
-    print("C++ function finished.")
+    # The C++ function now blocks until generation is complete,
+    # but calls the callback periodically.
+    print("\nC++ function finished.") # Newline after streaming output
 
-    # --- Process the result from C++ ---
-    print("\nProcessing C++ results...")
-    n_past = cpp_result.final_n_past  # Update n_past from the result
-    pieces_buffer = []
-    # cpp_result.tokens is a std::vector<llama_token>
-    for token_id in cpp_result.tokens:
-        piece = gbl.common_token_to_piece(ctx, token_id)
-        piece_str = piece.decode("utf-8", errors="ignore")
-        print(f"{piece_str}", end="", flush=True)
-        pieces_buffer.append(piece_str)
+    # --- Process the final result from C++ ---
+    # The text itself was handled by the callback
+    n_past = cpp_result.final_n_past # Update final n_past
+    # Verify token count if needed (should match total_generated_tokens)
+    if cpp_result.total_tokens_generated != total_generated_tokens:
+         print(f"\nWarning: C++ reported {cpp_result.total_tokens_generated} tokens, callback accumulated {total_generated_tokens}")
+    # Use the count from the callback for consistency
+    generated_token_count = total_generated_tokens
 
-    generated_token_count = len(cpp_result.tokens)
-    if pieces_buffer:
-        generated_text = "".join(pieces_buffer)
 
 except Exception as e:
-    print(f"\n--- C++ Generation Failed ---")
+    print(f"\n--- C++ Generation Failed or Callback Error ---")
     print(f"Error: {e}")
     # Add cleanup if necessary
     sys.exit(1)
@@ -389,10 +404,11 @@ except Exception as e:
 
 end_time_gen = time.time()
 print(f"\n--- Generation Complete ---")
+# Use the total count accumulated by the callback
 print(
-    f"Generated {generated_token_count} tokens in {end_time_gen - start_time_gen:.2f} s."
+    f"Generated {total_generated_tokens} tokens in {end_time_gen - start_time_gen:.2f} s."
 )
-# print(f"Full response:\n{PROMPT}{generated_text}") # Uncomment if needed
+# print(f"Full response:\n{PROMPT}{full_generated_text}") # Uncomment if needed
 
 # --- 9. Cleanup ---
 print("\n--- Cleaning up ---")

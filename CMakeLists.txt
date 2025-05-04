@@ -1,9 +1,15 @@
 cmake_minimum_required(VERSION 3.10)
 project(GenerationHelper LANGUAGES C CXX)
-                                                                                                                                                                                 
-# Set C++ standard to C++11 (required by llama.cpp headers)                                                                                                                      
-set(CMAKE_CXX_STANDARD 11)                                                                                                                                                       
-set(CMAKE_CXX_STANDARD_REQUIRED ON)                                                                                                                                              
+
+# Default to Release build type for performance unless specified otherwise
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (e.g., Debug, Release)" FORCE)
+  message(STATUS "Setting build type to 'Release' as default.")
+endif()
+
+# Set C++ standard to C++11 (required by llama.cpp headers)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
 # --- Define LlamaCpp Paths (Relative to this project) ---
