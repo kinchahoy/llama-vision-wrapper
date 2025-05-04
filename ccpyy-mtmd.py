@@ -195,18 +195,8 @@ ctx = None
 sampler = None
 bitmap = None  # Keep bitmap ref for potential cleanup if needed later
 
-# Define generation state variables
-full_generated_text = ""
-total_generated_tokens = 0
-
-# Define callback function
-def generation_callback(chunk_bytes, n_tokens_in_chunk):
-    """Callback function called by C++ with generated text chunks."""
-    global full_generated_text, total_generated_tokens
-    chunk_str = chunk_bytes
-    print(f"{chunk_str}", end="", flush=True)
-    full_generated_text += chunk_str
-    total_generated_tokens += n_tokens_in_chunk
+# Removed generation state variables (full_generated_text, total_generated_tokens)
+# Removed generation_callback function
 
 # --- Main Execution Logic ---
 try:
@@ -325,23 +315,27 @@ try:
                         gen_start_time = time.time()
                         seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
                         initial_n_past = n_past
-                        CALLBACK_TOKEN_THRESHOLD = 50
+                        # Removed CALLBACK_TOKEN_THRESHOLD
 
+                        # Call the C++ function without callback parameters
+                        # It will print directly to stdout
                         cpp_result = gbl.generate_tokens_cpp(
                             sampler, ctx, model, initial_n_past, N_CTX,
-                            MAX_NEW_TOKENS, seq_id_vec, generation_callback,
-                            CALLBACK_TOKEN_THRESHOLD
+                            MAX_NEW_TOKENS, seq_id_vec
                         )
-                        print("\n--- Generation Complete ---")
+                        # Output is already printed by C++ side.
+                        # We add the "Generation Complete" marker after C++ returns.
+                        print("--- Generation Complete ---")
 
                         gen_end_time = time.time()
                         gen_duration = gen_end_time - gen_start_time
-                        gen_speed = total_generated_tokens / gen_duration if gen_duration > 0 else float("inf")
+                        # Use token count directly from the C++ result struct
+                        actual_generated_tokens = cpp_result.total_tokens_generated
+                        gen_speed = actual_generated_tokens / gen_duration if gen_duration > 0 and actual_generated_tokens > 0 else float("inf")
                         n_past = cpp_result.final_n_past
-                        if cpp_result.total_tokens_generated != total_generated_tokens:
-                            print(f"\nWarning: C++ reported {cpp_result.total_tokens_generated} tokens, callback got {total_generated_tokens}")
+                        # Removed comparison warning as there's no separate Python count anymore
 
-                        print(f"Generated {total_generated_tokens} tokens in {gen_duration:.2f} s ({gen_speed:.2f} tokens/s)")
+                        print(f"Generated {actual_generated_tokens} tokens in {gen_duration:.2f} s ({gen_speed:.2f} tokens/s)")
                         print(f"Final KV cache position (n_past): {n_past}")
 
                     # Sampler automatically freed here by SamplerManager.__exit__

@@ -12,11 +12,10 @@ GenerationResult generate_tokens_cpp(
     int32_t n_past_start,
     int32_t n_ctx,
     int32_t max_new_tokens,
-    const std::vector<llama_seq_id> seq_ids, // Changed to pass by value
-    PythonCallbackFunc callback,
-    int callback_threshold)
+    const std::vector<llama_seq_id> seq_ids) // Changed to pass by value
+    // Removed callback parameters
 {
-    fprintf(stderr, "DEBUG: Entering generate_tokens_cpp (n_past_start=%d, max_new_tokens=%d)\n", n_past_start, max_new_tokens); // ADDED with details
+    // fprintf(stderr, "DEBUG: Entering generate_tokens_cpp (n_past_start=%d, max_new_tokens=%d)\n", n_past_start, max_new_tokens); // Optional: Keep for debugging
     GenerationResult result;
     result.final_n_past = n_past_start;
     result.total_tokens_generated = 0;
@@ -51,25 +50,22 @@ GenerationResult generate_tokens_cpp(
         common_sampler_accept(sampler, id, true);
 
         // 3. Check for End-of-Sequence
-        const struct llama_vocab * vocab = llama_model_get_vocab(model);
         if (llama_vocab_is_eog(vocab, id)) {
-            // printf("\n[EOS reached in C++]\n");
-            // printf("\n[EOS reached in C++]\n");
+            // fprintf(stderr, "\n[EOS reached in C++]\n"); // Optional debug
             break;
         }
 
-        // 4. Convert token to piece and accumulate
-        // Pass vocab, token, buffer, buffer_size, lstrip=0, special=false
+        // 4. Convert token to piece AND PRINT directly
         int n_chars = llama_token_to_piece(vocab, id, piece_buffer, buffer_size, 0, false);
         if (n_chars < 0) {
              fprintf(stderr, "\nError: llama_token_to_piece returned %d\n", n_chars);
-             // Decide how to handle: continue, break, return error? Let's break.
-             break;
+             break; // Stop generation on error
         }
-        current_chunk.append(piece_buffer, n_chars);
-        tokens_in_current_chunk++;
-        result.total_tokens_generated++;
+        // Print the piece directly to standard output
+        printf("%.*s", n_chars, piece_buffer);
+        fflush(stdout); // Ensure it's displayed immediately
 
+        result.total_tokens_generated++; // Increment token count *after* successful processing/printing
 
         // 5. Prepare batch for decoding this single token
         batch.n_tokens = 1; // Explicitly set number of tokens in batch
@@ -91,25 +87,17 @@ GenerationResult generate_tokens_cpp(
         // 7. Update KV cache position
         result.final_n_past++;
 
-        // 8. Check if callback threshold is met
-        if (callback && tokens_in_current_chunk >= callback_threshold) {
-            callback(current_chunk.c_str(), tokens_in_current_chunk);
-            current_chunk.clear(); // Reset for the next chunk
-            tokens_in_current_chunk = 0;
-        }
+        // 8. Callback logic removed
     }
+    printf("\n"); // Add a newline after generation finishes
+    fflush(stdout);
 
-    // 9. Send any remaining partial chunk via callback
-    if (callback && tokens_in_current_chunk > 0) {
-        callback(current_chunk.c_str(), tokens_in_current_chunk);
-    }
-
+    // 9. Remaining chunk callback removed
 
     // Clean up the local batch
-    // fprintf(stderr, "DEBUG: Skipping free of local batch in generate_tokens_cpp\n"); // MODIFIED
-    llama_batch_free(batch); // Restore freeing the local batch
-    fprintf(stderr, "DEBUG: Local batch freed in generate_tokens_cpp\n");
+    llama_batch_free(batch);
+    // fprintf(stderr, "DEBUG: Local batch freed in generate_tokens_cpp\n"); // Optional debug
 
-    fprintf(stderr, "DEBUG: Exiting generate_tokens_cpp (final_n_past=%d, total_tokens=%d)\n", result.final_n_past, result.total_tokens_generated);
+    // fprintf(stderr, "DEBUG: Exiting generate_tokens_cpp (final_n_past=%d, total_tokens=%d)\n", result.final_n_past, result.total_tokens_generated); // Optional debug
     return result;
 }
