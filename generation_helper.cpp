@@ -41,8 +41,8 @@ GenerationResult generate_tokens_cpp(
         // 2. Accept
         common_sampler_accept(sampler, id, true);
 
-        // 3. Check for End-of-Sequence (Use updated function)  <-- FIX APPLIED HERE
-        if (llama_vocab_is_eog(model, id)) {
+        // 3. Check for End-of-Sequence
+        if (llama_vocab_is_eog(llama_get_vocab(model), id)) {
             // printf("\n[EOS reached in C++]\n");
             break;
         }
