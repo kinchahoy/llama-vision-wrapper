@@ -416,6 +416,9 @@ if ctx_mtmd:
     print("Freeing multimodal context...")
     gbl.mtmd_free(ctx_mtmd)  # Free multimodal context
 if model:
+    print("Freeing LLaMA model...")
     gbl.llama_free_model(model)
+
+print("Freeing LLaMA backend...")
 gbl.llama_backend_free()
 print("Resources freed.")
