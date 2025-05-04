@@ -17,11 +17,12 @@ LLAMA_CPP_SOURCE_DIRS = [
     "/Users/raistlin/code/llama-mtmd-py/llama.cpp/common",  # Common headers (IMPORTANT for sampling)
     "/Users/raistlin/code/llama-mtmd-py/llama.cpp/examples/llava",  # For mtmd.h
 ]
-LLAMA_BUILD_DIR = (
-    "/Users/raistlin/code/llama-mtmd-py/build",  # Where lib*.dylib resides
-    "/Users/raistlin/code/llama-mtmd-py/llama.cpp/build/bin",  # Where lib*.dylib resides
-)
+# Define the two build directories
+LLAMA_CPP_LIBS_DIR = "/Users/raistlin/code/llama-mtmd-py/llama.cpp/build/bin" # Main llama.cpp libs
+HELPER_LIB_DIR = "/Users/raistlin/code/llama-mtmd-py/build" # Custom helper lib
+
 LIB_NAMES = [
+    # Libraries from llama.cpp build
     "libggml-base.dylib",
     "libggml-blas.dylib",
     "libggml-cpu.dylib",
@@ -34,7 +35,7 @@ LIB_NAMES = [
     "libllama.dylib",
     "libllava_shared.dylib",  # Contains clip dependencies for mtmd
     "libmtmd_shared.dylib",
-    # Our custom helper library
+    # Our custom helper library (will be loaded from HELPER_LIB_DIR)
     "libgeneration_helper.dylib",
 ]
 
@@ -80,13 +81,22 @@ try:
 
     print("\nLoading libraries:")
     for lib_name in LIB_NAMES:
-        lib_path = os.path.join(LLAMA_BUILD_DIR, lib_name)
+        # Determine the correct directory based on the library name
+        if lib_name == "libgeneration_helper.dylib":
+            lib_dir = HELPER_LIB_DIR
+        else:
+            lib_dir = LLAMA_CPP_LIBS_DIR
+
+        lib_path = os.path.join(lib_dir, lib_name)
+
         if not os.path.exists(lib_path):
-            print(f"Error: Library not found at {lib_path}")
+            print(f"Error: Library '{lib_name}' not found at expected path: {lib_path}")
             print(
-                "Please ensure LLAMA_BUILD_DIR and LIB_NAMES are correct and llama.cpp was built."
+                "Please ensure LLAMA_CPP_LIBS_DIR and HELPER_LIB_DIR are correct,"
             )
+            print("and that both llama.cpp and the helper library were built.")
             sys.exit(1)
+
         print(f"- Loading: {lib_path}")
         cppyy.load_library(lib_path)
     print("Libraries loaded successfully.")
@@ -113,10 +123,10 @@ except Exception as e:
         "- Check LLAMA_CPP_SOURCE_DIRS: Ensure they point to the correct 'include' and 'common' directories of your llama.cpp source."
     )
     print(
-        "- Check LLAMA_BUILD_DIR and LIB_NAMES: Ensure they point to the compiled shared library (e.g., libllama.dylib, libllama.so)."
+        "- Check LLAMA_CPP_LIBS_DIR and HELPER_LIB_DIR: Ensure they point to the correct build output directories."
     )
     print(
-        "- Build Configuration: Make sure llama.cpp was built as a *shared* library (e.g., cmake -DBUILD_SHARED_LIBS=ON ...)."
+        "- Build Configuration: Make sure llama.cpp was built as a *shared* library (e.g., cmake .. -DBUILD_SHARED_LIBS=ON)."
     )
     print(
         "- Header Dependencies: Ensure 'common.h' and 'sampling.h' exist and are accessible."
