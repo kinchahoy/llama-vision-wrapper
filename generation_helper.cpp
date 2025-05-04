@@ -19,6 +19,7 @@ GenerationResult generate_tokens_cpp(
     GenerationResult result;
     result.final_n_past = n_past_start;
     result.total_tokens_generated = 0;
+    result.generated_text = ""; // Initialize the string
 
     // Check if the vector is empty (no need to check for null pointer now)
     if (seq_ids.empty()) {
