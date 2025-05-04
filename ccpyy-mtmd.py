@@ -56,6 +56,9 @@ TOP_P = 0.95
 REPEAT_PENALTY = 1.1
 
 
+# Global list to collect timing statistics
+all_timings = []
+
 @dataclass
 class TimingStats:
     """Stores timing statistics for a processing step."""
@@ -75,10 +78,13 @@ class TimingStats:
 def timed_operation(name: str, tokens: Optional[int] = None):
     """Context manager to time an operation and return statistics."""
     start_time = time.time()
-    yield
-    duration = time.time() - start_time
-    stats = TimingStats(name=name, duration=duration, tokens=tokens)
-    print(f"⏱️ {stats}")
+    timing_ctx = TimingStats(name=name, duration=0, tokens=tokens)
+    try:
+        yield timing_ctx
+    finally:
+        timing_ctx.duration = time.time() - start_time
+        all_timings.append(timing_ctx)
+        print(f"⏱️ {timing_ctx}")
 
 # Resource manager class
 class ResourceManager:
@@ -283,3 +289,9 @@ except Exception as e:
 print("\n--- End of script ---")
 print("\nSummary of timing statistics:")
 print("=" * 50)
+for i, stat in enumerate(all_timings, 1):
+    print(f"{i}. {stat}")
+print("=" * 50)
+print(f"Total operations: {len(all_timings)}")
+total_time = sum(stat.duration for stat in all_timings)
+print(f"Total measured time: {total_time:.2f}s")
