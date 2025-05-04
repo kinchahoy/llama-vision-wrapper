@@ -240,10 +240,6 @@ except Exception as e:
 finally:
     # --- 8. Cleanup ---
     print("\n--- Cleaning up ---")
-    if sampler:
-        print("DEBUG: About to free sampler...") # ADDED
-        gbl.common_sampler_free(sampler)
-        print("DEBUG: Sampler freed.") # ADDED
     # Bitmap cleanup is likely handled by mtmd library when ctx_mtmd is freed,
     # or potentially when bitmaps_vec goes out of scope if it manages ownership.
     # Explicit free was removed previously to avoid double-free. Keep commented.
@@ -259,6 +255,11 @@ finally:
         print("DEBUG: About to free LLaMA context...") # ADDED
         gbl.llama_free(ctx)
         print("DEBUG: LLaMA context freed.") # ADDED
+    # Free sampler AFTER the context it depends on
+    if sampler:
+        print("DEBUG: About to free sampler...") # ADDED
+        gbl.common_sampler_free(sampler)
+        print("DEBUG: Sampler freed.") # ADDED
     if model:
         print("DEBUG: About to free LLaMA model...") # ADDED
         gbl.llama_free_model(model)
