@@ -18,8 +18,10 @@ LLAMA_CPP_SOURCE_DIRS = [
     "/Users/raistlin/code/llama-mtmd-py/llama.cpp/examples/llava",  # For mtmd.h
 ]
 # Define the two build directories
-LLAMA_CPP_LIBS_DIR = "/Users/raistlin/code/llama-mtmd-py/llama.cpp/build/bin" # Main llama.cpp libs
-HELPER_LIB_DIR = "/Users/raistlin/code/llama-mtmd-py/build" # Custom helper lib
+LLAMA_CPP_LIBS_DIR = (
+    "/Users/raistlin/code/llama-mtmd-py/llama.cpp/build/bin"  # Main llama.cpp libs
+)
+HELPER_LIB_DIR = "/Users/raistlin/code/llama-mtmd-py/build"  # Custom helper lib
 
 LIB_NAMES = [
     # Libraries from llama.cpp build
@@ -29,7 +31,7 @@ LIB_NAMES = [
     "libggml-metal.dylib",
     "libggml.dylib",
     "libllama.dylib",
-    "libcommon.dylib",
+    #   "libcommon.dylib",
     "libllava_shared.dylib",
     "libmtmd_shared.dylib",
     "libllama.dylib",
@@ -91,9 +93,7 @@ try:
 
         if not os.path.exists(lib_path):
             print(f"Error: Library '{lib_name}' not found at expected path: {lib_path}")
-            print(
-                "Please ensure LLAMA_CPP_LIBS_DIR and HELPER_LIB_DIR are correct,"
-            )
+            print("Please ensure LLAMA_CPP_LIBS_DIR and HELPER_LIB_DIR are correct,")
             print("and that both llama.cpp and the helper library were built.")
             sys.exit(1)
 
