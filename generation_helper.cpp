@@ -21,6 +21,8 @@ GenerationResult generate_tokens_cpp(
     result.total_tokens_generated = 0;
     result.generated_text = ""; // Initialize the string
     std::vector<llama_token> generated_tokens; // Vector to store generated token IDs
+    // Pre-allocate vector based on the maximum possible tokens to generate
+    generated_tokens.reserve(max_new_tokens);
 
     // Check if the vector is empty (no need to check for null pointer now)
     if (seq_ids.empty()) {
