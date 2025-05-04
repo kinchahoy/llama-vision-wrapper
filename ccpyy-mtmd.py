@@ -396,10 +396,24 @@ print(
 
 # --- 9. Cleanup ---
 print("\n--- Cleaning up ---")
+# Free sampler if it was initialized
+# Check if 'sampler' exists and is not None (or equivalent null pointer for cppyy)
+if 'sampler' in locals() and sampler:
+    print("Freeing sampler...")
+    gbl.common_sampler_free(sampler)
+
+# Free bitmap if it was initialized
+# Check if 'bitmap' exists and potentially if its data is valid (optional)
+if 'bitmap' in locals() and bitmap:
+     print("Freeing bitmap...")
+     gbl.mtmd_bitmap_free(cppyy.addressof(bitmap)) # Pass by pointer
+
 # No need to free gen_batch anymore
 if ctx:
+    print("Freeing LLaMA context...")
     gbl.llama_free(ctx)
 if ctx_mtmd:
+    print("Freeing multimodal context...")
     gbl.mtmd_free(ctx_mtmd)  # Free multimodal context
 if model:
     gbl.llama_free_model(model)
