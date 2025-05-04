@@ -4,6 +4,9 @@ import cppyy
 import os
 import time
 import sys
+from dataclasses import dataclass
+from typing import Optional
+from contextlib import contextmanager
 
 # Configuration
 BASE_DIR = "/Users/raistlin/code/llama-mtmd-py"
@@ -244,3 +247,5 @@ except Exception as e:
     sys.exit(1)
 
 print("\n--- End of script ---")
+print("Summary of timing statistics:")
+print("=" * 50)
