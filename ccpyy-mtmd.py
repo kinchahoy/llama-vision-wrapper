@@ -33,8 +33,8 @@ LIB_NAMES = [
     "libllama.dylib",
     "libllava_shared.dylib",  # Contains clip dependencies for mtmd
     "libmtmd_shared.dylib",
-    # Specially built!
-    #   "libcommon_custom.dylib",  # Load our custom common library
+    # Our custom helper library
+    "libgeneration_helper.dylib",
 ]
 
 # --- Model & Image Paths ---
@@ -101,6 +101,7 @@ try:
     cppyy.include("common.h")  # common helpers
     cppyy.include("sampling.h")  # common_sampler
     cppyy.include("mtmd.h")  # multimodal library
+    cppyy.include("generation_helper.h") # Our generation helper
     print("Headers included.")
 
 except Exception as e:
@@ -262,15 +263,6 @@ print(f"KV cache position (n_past): {n_past}")
 # We don't need the bitmap data anymore after mtmd_tokenize/eval
 # bitmap.data.clear() # Optional: free image buffer memory if large
 
-# Initialize a batch for single-token decoding during generation
-# We only need space for 1 token at a time now.
-gen_batch = gbl.llama_batch_init(1, 0, 1)
-if not gen_batch:
-    print("Error: Failed to initialize generation batch")
-    # ... (cleanup)
-    sys.exit(1)
-
-
 # --- 7. Setup Sampler ---
 print("\n--- Setting up Sampler ---")
 sampling_params = gbl.common_params_sampling()  # Instantiate the struct (Correct)
@@ -336,122 +328,64 @@ from numba import (
 print("\n--- Generating Response ---")
 print(f"{PROMPT}", end="", flush=True)
 
-result_tokens = []
 generated_text = ""
 generated_token_count = 0
 start_time_gen = time.time()
 
-
 # Define the sequence ID (usually 0 for simple generation)
 seq_id = gbl.llama_seq_id(0)
-
 # Create the C++ vector containing the sequence ID(s)
 seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([seq_id])
-
-# Now you can safely use seq_id_vec:
-seq_id_vec_ptr_data = seq_id_vec.data()  # This line should now work
-
 
 # Store initial n_past
 initial_n_past = n_past
 
-# --- Call the Numba function ---
+# --- Call the C++ generation function ---
 try:
-    print("\nAttempting to run Numba JIT-compiled loop...")
-    # NOTE: Numba compiles lazily on the first call with specific argument types.
-    # This call is where the compilation errors are most likely to occur.
-    result_tokens_numba, n_past_final, generated_token_count_numba = (
-        generate_tokens_numba(
-            sampler,
-            ctx,
-            model,
-            gen_batch,
-            seq_id_vec_ptr_data,  # Pass objects
-            initial_n_past,
-            N_CTX,
-            MAX_NEW_TOKENS,  # Pass parameters
-        )
+    print("\nCalling C++ generation function...")
+    cpp_result = gbl.generate_tokens_cpp(
+        sampler,
+        ctx,
+        model,
+        initial_n_past,
+        N_CTX,
+        MAX_NEW_TOKENS,
+        seq_id_vec # Pass the std::vector directly
     )
-    print("Numba function finished.")  # Likely won't reach here with @njit
+    print("C++ function finished.")
 
-    # --- Post-processing (if Numba somehow worked and returned tokens) ---
-    print("\nPost-processing Numba results...")
-    generated_token_count = generated_token_count_numba
-    n_past = n_past_final  # Update n_past outside
-    pieces_buffer_post = []
-    for token_id in result_tokens_numba:
-        # Need to call the C++ function *outside* Numba again
+    # --- Process the result from C++ ---
+    print("\nProcessing C++ results...")
+    n_past = cpp_result.final_n_past # Update n_past from the result
+    pieces_buffer = []
+    # cpp_result.tokens is a std::vector<llama_token>
+    for token_id in cpp_result.tokens:
         piece = gbl.common_token_to_piece(ctx, token_id)
         piece_str = piece.decode("utf-8", errors="ignore")
         print(f"{piece_str}", end="", flush=True)
-        pieces_buffer_post.append(piece_str)
+        pieces_buffer.append(piece_str)
 
-    if pieces_buffer_post:
-        # Use your existing Numba join function if desired
-        generated_text = "".join(pieces_buffer_post)
-
+    generated_token_count = len(cpp_result.tokens)
+    if pieces_buffer:
+        generated_text = "".join(pieces_buffer)
 
 except Exception as e:
-    print(f"\n--- Numba Compilation/Execution Failed ---")
-    print("As expected, Numba likely failed due to unsupported types/operations.")
+    print(f"\n--- C++ Generation Failed ---")
     print(f"Error: {e}")
-    print("Falling back to standard Python loop for generation...")
-
-    # # --- FALLBACK: Original Python Loop ---
-    # # Reset relevant variables if needed (n_past should still be initial_n_past)
-    # n_past = initial_n_past  # Ensure n_past is correct
-    # pieces_buffer = []  # Reset buffer
-    # generated_token_count = 0  # Reset count
-
-    # while n_past < N_CTX and generated_token_count < MAX_NEW_TOKENS:
-    #     # [ Your original working Python while loop code here... ]
-    #     # --- 1. Sample the next token ---
-    #     next_token_id = gbl.common_sampler_sample(sampler, ctx, -1)
-    #     # --- 2. Accept the token ---
-    #     gbl.common_sampler_accept(sampler, next_token_id, True)
-    #     vocab = gbl.llama_model_get_vocab(model)
-    #     if gbl.llama_token_is_eog(vocab, next_token_id):
-    #         print("\n[EOS reached]")
-    #         break
-    #     result_tokens.append(next_token_id)  # Add to original list if needed
-    #     generated_token_count += 1
-    #     # --- 4. Decode the *single* sampled token ---
-    #     gbl.common_batch_clear(gen_batch)
-    #     gbl.common_batch_add(gen_batch, next_token_id, n_past, seq_id_vec.data(), True)
-    #     ret = gbl.llama_decode(ctx, gen_batch)
-    #     if ret != 0:
-    #         print(
-    #             f"\nError: llama_decode returned {ret} during generation (pos {n_past})"
-    #         )
-    #         # Add cleanup
-    #         sys.exit(1)
-    #     # --- 5. Update KV cache position ---
-    #     n_past += 1
-    #     # --- 6. Convert token to text and print ---
-    #     piece = gbl.common_token_to_piece(ctx, next_token_id)
-    #     piece_str = piece.decode("utf-8", errors="ignore")
-    #     print(f"{piece_str}", end="", flush=True)
-    #     pieces_buffer.append(piece_str)
-    #     # --- [ End of original loop code ] ---
-
-    # # Use Python's join for the generated text
-    # if pieces_buffer:
-    #     generated_text = "".join(pieces_buffer)
-    # # --- [ End of Fallback ] ---
+    # Add cleanup if necessary
+    sys.exit(1)
 
 
 end_time_gen = time.time()
 print(f"\n--- Generation Complete ---")
-# Make sure generated_token_count reflects the actual count from whichever loop ran
 print(
     f"Generated {generated_token_count} tokens in {end_time_gen - start_time_gen:.2f} s."
 )
 # print(f"Full response:\n{PROMPT}{generated_text}") # Uncomment if needed
 
-# [...]# --- 9. Cleanup ---
+# --- 9. Cleanup ---
 print("\n--- Cleaning up ---")
-if gen_batch:
-    gbl.llama_batch_free(gen_batch)
+# No need to free gen_batch anymore
 if ctx:
     gbl.llama_free(ctx)
 if ctx_mtmd:
