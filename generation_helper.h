@@ -9,10 +9,11 @@
 
 // Define the callback function pointer type
 // Python side will provide a function matching this signature
-// Define a structure to hold the final results (excluding the full text)
+// Define a structure to hold the final results, including the generated text
 struct GenerationResult {
     int final_n_past;
     int total_tokens_generated;
+    std::string generated_text; // Add field for the full generated text
     // Add other potential outputs like timing, stop reason, etc. if desired
 };
 
