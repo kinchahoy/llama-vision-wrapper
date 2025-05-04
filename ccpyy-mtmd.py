@@ -194,6 +194,7 @@ try:
         gen_start_time = time.time()
         seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
         
+        # Generate tokens using C++ helper function
         cpp_result = gbl.generate_tokens_cpp(
             sampler, ctx, model, n_past, N_CTX, MAX_NEW_TOKENS, seq_id_vec
         )
