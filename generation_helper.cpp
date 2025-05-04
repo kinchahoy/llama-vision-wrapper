@@ -65,8 +65,8 @@ GenerationResult generate_tokens_cpp(
              fprintf(stderr, "\nError: llama_token_to_piece returned %d\n", n_chars);
              break; // Stop generation on error
         }
-        // Append the piece to the result string instead of printing
-        result.generated_text.append(piece_buffer, n_chars);
+        // Store the token ID instead of converting and appending immediately
+        generated_tokens.push_back(id);
 
         result.total_tokens_generated++; // Increment token count *after* successful processing/appending
 
@@ -97,6 +97,18 @@ GenerationResult generate_tokens_cpp(
     // Removed final newline print
 
     // 9. Remaining chunk callback removed
+
+    // Convert collected token IDs to string after the loop
+    result.generated_text.reserve(result.total_tokens_generated * 6); // Pre-allocate roughly (average token length guess)
+    for (llama_token token_id : generated_tokens) {
+        int n_chars = llama_token_to_piece(vocab, token_id, piece_buffer, buffer_size, 0, false);
+        if (n_chars < 0) {
+            fprintf(stderr, "\nError: llama_token_to_piece returned %d during final conversion\n", n_chars);
+            // Handle error? Maybe append an error marker? For now, just skip.
+            continue;
+        }
+        result.generated_text.append(piece_buffer, n_chars);
+    }
 
     // Clean up the local batch
     llama_batch_free(batch);
