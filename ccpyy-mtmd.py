@@ -268,39 +268,38 @@ except Exception as e:
 finally:
     # --- 8. Cleanup ---
     print("\n--- Cleaning up ---")
-    # Free resources in reverse order of dependency / creation where possible
+    # Free resources based on mtmd-cli.cpp example order:
+    # Sampler -> Multimodal Context -> LLaMA Context -> Model -> Backend
+    # Bitmap is NOT explicitly freed in the example.
+
     # 1. Sampler
     if sampler:
         print("Freeing sampler...")
         gbl.common_sampler_free(sampler)
-    # 2. Multimodal Context
-    # --- TESTING: Comment out mtmd_free ---
+    # 2. Multimodal Context (mtmd_free)
     if ctx_mtmd:
-        print("DEBUG: Skipping mtmd_free(ctx_mtmd)...")
-        # gbl.mtmd_free(ctx_mtmd)
-    else:
-        print("DEBUG: Skipping mtmd_free (ctx_mtmd invalid or not found)")
-    # 3. LLaMA Context
+        print("Freeing multimodal context...")
+        gbl.mtmd_free(ctx_mtmd) # Ensure this is called
+    # 3. LLaMA Context (llama_free)
     if ctx:
         print("Freeing LLaMA context...")
         gbl.llama_free(ctx)
-    # # 4. Bitmap (created separately, likely needs explicit free)
-    # # Check if bitmap was successfully initialized before trying to free
-    # if 'bitmap' in locals() and bitmap and bitmap.nx > 0: # Check if bitmap seems valid
-    #      print("Freeing bitmap...")
-    #      # Pass the address of the bitmap object
-    #      gbl.mtmd_bitmap_free(cppyy.addressof(bitmap))
-    # # 5. Model (after contexts)
+    # 4. Bitmap (DO NOT FREE EXPLICITLY - Managed by mtmd_context/mtmd_free)
+    # if 'bitmap' in locals() and bitmap and bitmap.nx > 0:
+    #     print("DEBUG: Explicit bitmap free is SKIPPED (following mtmd-cli example)")
+    #     # gbl.mtmd_bitmap_free(cppyy.addressof(bitmap)) # Keep commented out
+
+    # 5. Model (llama_free_model)
     if model:
         print("Freeing model...")
         gbl.llama_free_model(model)
-    # 6. Backend (last)
+    # 6. Backend (llama_backend_free)
     if gbl:  # Check if gbl was successfully assigned
         print("Freeing llama backend...")
         gbl.llama_backend_free()
     print("Cleanup complete.")
 
-    # --- DEBUG: Check object status before exit --- # Keep this for now
+    # --- DEBUG: Check object status before exit ---
     print("\n--- Checking object status before exit (after explicit free) ---")
     # Note: After freeing, accessing these pointers is undefined behavior.
     # This check is just illustrative; they *should* be invalid/None conceptually.
