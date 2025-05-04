@@ -58,7 +58,8 @@ GenerationResult generate_tokens_cpp(
         }
 
         // 4. Convert token to piece and accumulate
-        int n_chars = llama_token_to_piece(model, id, piece_buffer, buffer_size);
+        // Pass vocab, token, buffer, buffer_size, lstrip=0, special=false
+        int n_chars = llama_token_to_piece(vocab, id, piece_buffer, buffer_size, 0, false);
         if (n_chars < 0) {
              fprintf(stderr, "\nError: llama_token_to_piece returned %d\n", n_chars);
              // Decide how to handle: continue, break, return error? Let's break.
