@@ -12,13 +12,14 @@ from numba import njit  # Added for numba acceleration
 # --- 1. Configuration ---
 # TODO: Consider using environment variables or argparse for these paths
 LLAMA_CPP_SOURCE_DIRS = [
-    "/Users/raistlin/code/llama-cppyy/include",  # Core llama.h
-    "/Users/raistlin/code/llama-cppyy/ggml/include",  # Core ggml headers
-    "/Users/raistlin/code/llama-cppyy/common",  # Common headers (IMPORTANT for sampling)
-    "/Users/raistlin/code/llama-cppyy/examples/llava",  # For mtmd.h
+    "/Users/raistlin/code/llama-mtmd-py/llama.cpp/include",  # Core llama.h
+    "/Users/raistlin/code/llama-mtmd-py/llama.cpp/ggml/include",  # Core ggml headers
+    "/Users/raistlin/code/llama-mtmd-py/llama.cpp/common",  # Common headers (IMPORTANT for sampling)
+    "/Users/raistlin/code/llama-mtmd-py/llama.cpp/examples/llava",  # For mtmd.h
 ]
 LLAMA_BUILD_DIR = (
-    "/Users/raistlin/code/llama-cppyy/build/first/bin"  # Where lib*.dylib resides
+    "/Users/raistlin/code/llama-mtmd-py/build",  # Where lib*.dylib resides
+    "/Users/raistlin/code/llama-mtmd-py/llama.cpp/build/bin",  # Where lib*.dylib resides
 )
 LIB_NAMES = [
     "libggml-base.dylib",
@@ -101,7 +102,7 @@ try:
     cppyy.include("common.h")  # common helpers
     cppyy.include("sampling.h")  # common_sampler
     cppyy.include("mtmd.h")  # multimodal library
-    cppyy.include("generation_helper.h") # Our generation helper
+    cppyy.include("generation_helper.h")  # Our generation helper
     print("Headers included.")
 
 except Exception as e:
@@ -350,13 +351,13 @@ try:
         initial_n_past,
         N_CTX,
         MAX_NEW_TOKENS,
-        seq_id_vec # Pass the std::vector directly
+        seq_id_vec,  # Pass the std::vector directly
     )
     print("C++ function finished.")
 
     # --- Process the result from C++ ---
     print("\nProcessing C++ results...")
-    n_past = cpp_result.final_n_past # Update n_past from the result
+    n_past = cpp_result.final_n_past  # Update n_past from the result
     pieces_buffer = []
     # cpp_result.tokens is a std::vector<llama_token>
     for token_id in cpp_result.tokens:
