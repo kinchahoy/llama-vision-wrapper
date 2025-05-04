@@ -42,7 +42,8 @@ GenerationResult generate_tokens_cpp(
         common_sampler_accept(sampler, id, true);
 
         // 3. Check for End-of-Sequence
-        if (llama_vocab_is_eog(llama_get_vocab(model), id)) {
+        const struct llama_vocab * vocab = llama_get_vocab(model);
+        if (llama_vocab_is_eog(vocab, id)) {
             // printf("\n[EOS reached in C++]\n");
             break;
         }
