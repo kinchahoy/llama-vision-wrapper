@@ -249,12 +249,13 @@ finally:
     # if bitmap:
     #     print("Freeing bitmap...")
     #     gbl.mtmd_bitmap_free(cppyy.addressof(bitmap))
-    if ctx:
-        print("Freeing LLaMA context...")
-        gbl.llama_free(ctx)
+    # Free multimodal context BEFORE base context
     if ctx_mtmd:
         print("Freeing multimodal context...")
         gbl.mtmd_free(ctx_mtmd)
+    if ctx:
+        print("Freeing LLaMA context...")
+        gbl.llama_free(ctx)
     if model:
         print("Freeing LLaMA model...")
         gbl.llama_free_model(model)
