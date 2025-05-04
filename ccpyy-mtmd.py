@@ -346,8 +346,8 @@ total_generated_tokens = 0
 def generation_callback(chunk_bytes, n_tokens_in_chunk):
     """Callback function called by C++ with generated text chunks."""
     global full_generated_text, total_generated_tokens
-    # Decode the byte string received from C++
-    chunk_str = chunk_bytes.decode("utf-8", errors="ignore")
+    # cppyy automatically converts const char* to a Python string
+    chunk_str = chunk_bytes # It's already a string
     print(f"{chunk_str}", end="", flush=True) # Print intermediate results
     full_generated_text += chunk_str
     total_generated_tokens += n_tokens_in_chunk
