@@ -20,6 +20,7 @@ GenerationResult generate_tokens_cpp(
     result.final_n_past = n_past_start;
     result.total_tokens_generated = 0;
     result.generated_text = ""; // Initialize the string
+    std::vector<llama_token> generated_tokens; // Vector to store generated token IDs
 
     // Check if the vector is empty (no need to check for null pointer now)
     if (seq_ids.empty()) {
