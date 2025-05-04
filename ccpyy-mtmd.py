@@ -240,38 +240,43 @@ except Exception as e:
 finally:
     # --- 8. Cleanup ---
     print("\n--- Cleaning up ---")
-    # Bitmap cleanup is likely handled by mtmd library when ctx_mtmd is freed,
-    # or potentially when bitmaps_vec goes out of scope if it manages ownership.
-    # Explicit free was removed previously to avoid double-free. Keep commented.
-    # if bitmap:
-    #     print("Freeing bitmap...")
-    #     gbl.mtmd_bitmap_free(cppyy.addressof(bitmap))
-    # --- DEBUG: Explicit frees commented out ---
-    # # Free multimodal context BEFORE base context
-    # if ctx_mtmd:
-    #     print("DEBUG: Skipping mtmd_free(ctx_mtmd)")
-    #     # gbl.mtmd_free(ctx_mtmd)
-    # if ctx:
-    #     print("DEBUG: Skipping llama_free(ctx)")
-    #     # gbl.llama_free(ctx)
-    # # Free sampler AFTER the context it depends on
-    # if sampler:
-    #     print("DEBUG: Skipping common_sampler_free(sampler)")
-    #     # gbl.common_sampler_free(sampler)
-    # if model:
-    #     print("DEBUG: Skipping llama_free_model(model)")
-    #     # gbl.llama_free_model(model)
-    # if gbl: # Check if gbl was successfully assigned (headers included)
-    #     print("DEBUG: Skipping llama_backend_free()")
-    #     # gbl.llama_backend_free()
-    # print("Skipped explicit resource freeing.")
+    # Free resources in reverse order of dependency / creation where possible
+    # 1. Sampler
+    if sampler:
+        print("Freeing sampler...")
+        gbl.common_sampler_free(sampler)
+    # 2. Multimodal Context
+    if ctx_mtmd:
+        print("Freeing multimodal context...")
+        gbl.mtmd_free(ctx_mtmd)
+    # 3. LLaMA Context
+    if ctx:
+        print("Freeing LLaMA context...")
+        gbl.llama_free(ctx)
+    # 4. Bitmap (created separately, likely needs explicit free)
+    # Check if bitmap was successfully initialized before trying to free
+    if 'bitmap' in locals() and bitmap and bitmap.nx > 0: # Check if bitmap seems valid
+         print("Freeing bitmap...")
+         # Pass the address of the bitmap object
+         gbl.mtmd_bitmap_free(cppyy.addressof(bitmap))
+    # 5. Model (after contexts)
+    if model:
+        print("Freeing model...")
+        gbl.llama_free_model(model)
+    # 6. Backend (last)
+    if gbl: # Check if gbl was successfully assigned
+        print("Freeing llama backend...")
+        gbl.llama_backend_free()
+    print("Cleanup complete.")
 
-    # --- DEBUG: Check object existence at exit ---
-    print("\n--- Checking object status before exit ---")
-    print(f"DEBUG: model is {'valid' if model else 'None/invalid'}")
-    print(f"DEBUG: ctx_mtmd is {'valid' if ctx_mtmd else 'None/invalid'}")
-    print(f"DEBUG: ctx is {'valid' if ctx else 'None/invalid'}")
-    print(f"DEBUG: sampler is {'valid' if sampler else 'None/invalid'}")
-    # print(f"DEBUG: bitmap is {'valid' if bitmap else 'None/invalid'}") # Bitmap check might be less relevant now
-    print(f"DEBUG: gbl is {'valid' if gbl else 'None/invalid'}")
+    # --- DEBUG: Check object status before exit --- # Keep this for now
+    print("\n--- Checking object status before exit (after explicit free) ---")
+    # Note: After freeing, accessing these pointers is undefined behavior.
+    # This check is just illustrative; they *should* be invalid/None conceptually.
+    print(f"DEBUG: model pointer status: {'Exists' if 'model' in locals() and model else 'None/Freed'}")
+    print(f"DEBUG: ctx_mtmd pointer status: {'Exists' if 'ctx_mtmd' in locals() and ctx_mtmd else 'None/Freed'}")
+    print(f"DEBUG: ctx pointer status: {'Exists' if 'ctx' in locals() and ctx else 'None/Freed'}")
+    print(f"DEBUG: sampler pointer status: {'Exists' if 'sampler' in locals() and sampler else 'None/Freed'}")
+    print(f"DEBUG: bitmap pointer status: {'Exists' if 'bitmap' in locals() and bitmap else 'None/Freed'}")
+    print(f"DEBUG: gbl object status: {'Exists' if 'gbl' in locals() and gbl else 'None/Error'}")
     print("--- End of script ---")
