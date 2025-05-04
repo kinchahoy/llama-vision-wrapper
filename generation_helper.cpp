@@ -12,7 +12,7 @@ GenerationResult generate_tokens_cpp(
     int32_t n_past_start,
     int32_t n_ctx,
     int32_t max_new_tokens,
-    const std::vector<llama_seq_id>& seq_ids,
+    const std::vector<llama_seq_id>* seq_ids, // Changed to pointer
     PythonCallbackFunc callback,
     int callback_threshold)
 {
@@ -20,14 +20,14 @@ GenerationResult generate_tokens_cpp(
     result.final_n_past = n_past_start;
     result.total_tokens_generated = 0;
 
-    if (seq_ids.empty()) {
-        fprintf(stderr, "Error: No sequence ID provided to generate_tokens_cpp.\n");
+    // Check if the pointer is null or the vector is empty
+    if (!seq_ids || seq_ids->empty()) {
+        fprintf(stderr, "Error: Null or empty sequence ID vector provided to generate_tokens_cpp.\n");
         result.total_tokens_generated = -1; // Indicate error
         return result; // Return empty result
     }
-    // Get a potentially non-const pointer for the batch structure,
-    // but we know llama_decode won't modify the content via this.
-    const llama_seq_id * p_seq_id_const = seq_ids.data();
+    // Get data pointer from the vector via the pointer
+    const llama_seq_id * p_seq_id_const = seq_ids->data();
 
     // Use a local batch for single-token decoding within the loop
     // Initialize batch for 1 token, 0 embedding data, 1 sequence ID list per token
@@ -73,8 +73,8 @@ GenerationResult generate_tokens_cpp(
         batch.n_tokens = 1; // Explicitly set number of tokens in batch
         batch.token [0] = id;
         batch.pos   [0] = result.final_n_past;
-        batch.n_seq_id[0] = seq_ids.size();
-        // Use const_cast                            <-- FIX APPLIED HERE
+        batch.n_seq_id[0] = seq_ids->size(); // Use -> for pointer access
+        // Use const_cast
         batch.seq_id[0] = const_cast<llama_seq_id *>(p_seq_id_const);
         batch.logits[0] = true; // We need logits for sampling the *next* token
 
