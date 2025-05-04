@@ -316,7 +316,7 @@ try:
                         gen_start_time = time.time()
                         seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
                         initial_n_past = n_past
-                        # Removed CALLBACK_TOKEN_THRESHOLD
+                         gen_start_time2 = time.time()
 
                         # Call the C++ function without callback parameters
                         # It will print directly to stdout
@@ -324,11 +324,14 @@ try:
                             sampler, ctx, model, initial_n_past, N_CTX,
                             MAX_NEW_TOKENS, seq_id_vec
                         )
+
                         # Print the generated text returned from C++
                         print(f"{cpp_result.generated_text}") # Add newline implicitly
 
                         gen_end_time = time.time()
                         gen_duration = gen_end_time - gen_start_time
+                        gen_duration2 = gen_end_time - gen_start_time2
+
                         # Use token count directly from the C++ result struct
                         actual_generated_tokens = cpp_result.total_tokens_generated
                         gen_speed = actual_generated_tokens / gen_duration if gen_duration > 0 and actual_generated_tokens > 0 else float("inf")
