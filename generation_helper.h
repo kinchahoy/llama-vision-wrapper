@@ -9,9 +9,6 @@
 
 // Define the callback function pointer type
 // Python side will provide a function matching this signature
-// It receives the generated text chunk and the number of tokens in that chunk
-typedef void (*PythonCallbackFunc)(const char* chunk, int n_tokens_in_chunk);
-
 // Define a structure to hold the final results (excluding the full text)
 struct GenerationResult {
     int final_n_past;
@@ -27,9 +24,7 @@ GenerationResult generate_tokens_cpp(
     int32_t n_past_start,            // Starting position in KV cache
     int32_t n_ctx,                   // Context size
     int32_t max_new_tokens,          // Max tokens to generate
-    const std::vector<llama_seq_id> seq_ids, // Sequence IDs (passed by value)
-    PythonCallbackFunc callback,     // Pointer to the Python callback function
-    int callback_threshold           // How many tokens before calling back
+    const std::vector<llama_seq_id> seq_ids // Sequence IDs (passed by value)
 );
 
 #endif // GENERATION_HELPER_H
