@@ -246,26 +246,32 @@ finally:
     # if bitmap:
     #     print("Freeing bitmap...")
     #     gbl.mtmd_bitmap_free(cppyy.addressof(bitmap))
-    # Free multimodal context BEFORE base context
-    if ctx_mtmd:
-        print("DEBUG: About to free multimodal context...") # ADDED
-        gbl.mtmd_free(ctx_mtmd)
-        print("DEBUG: Multimodal context freed.") # ADDED
-    if ctx:
-        print("DEBUG: About to free LLaMA context...") # ADDED
-        gbl.llama_free(ctx)
-        print("DEBUG: LLaMA context freed.") # ADDED
-    # Free sampler AFTER the context it depends on
-    if sampler:
-        print("DEBUG: About to free sampler...") # ADDED
-        gbl.common_sampler_free(sampler)
-        print("DEBUG: Sampler freed.") # ADDED
-    if model:
-        print("DEBUG: About to free LLaMA model...") # ADDED
-        gbl.llama_free_model(model)
-        print("DEBUG: LLaMA model freed.") # ADDED
-    if gbl: # Check if gbl was successfully assigned (headers included)
-        print("DEBUG: About to free LLaMA backend...") # ADDED
-        gbl.llama_backend_free()
-        print("DEBUG: LLaMA backend freed.") # ADDED
-    print("Resources freed.")
+    # --- DEBUG: Explicit frees commented out ---
+    # # Free multimodal context BEFORE base context
+    # if ctx_mtmd:
+    #     print("DEBUG: Skipping mtmd_free(ctx_mtmd)")
+    #     # gbl.mtmd_free(ctx_mtmd)
+    # if ctx:
+    #     print("DEBUG: Skipping llama_free(ctx)")
+    #     # gbl.llama_free(ctx)
+    # # Free sampler AFTER the context it depends on
+    # if sampler:
+    #     print("DEBUG: Skipping common_sampler_free(sampler)")
+    #     # gbl.common_sampler_free(sampler)
+    # if model:
+    #     print("DEBUG: Skipping llama_free_model(model)")
+    #     # gbl.llama_free_model(model)
+    # if gbl: # Check if gbl was successfully assigned (headers included)
+    #     print("DEBUG: Skipping llama_backend_free()")
+    #     # gbl.llama_backend_free()
+    # print("Skipped explicit resource freeing.")
+
+    # --- DEBUG: Check object existence at exit ---
+    print("\n--- Checking object status before exit ---")
+    print(f"DEBUG: model is {'valid' if model else 'None/invalid'}")
+    print(f"DEBUG: ctx_mtmd is {'valid' if ctx_mtmd else 'None/invalid'}")
+    print(f"DEBUG: ctx is {'valid' if ctx else 'None/invalid'}")
+    print(f"DEBUG: sampler is {'valid' if sampler else 'None/invalid'}")
+    # print(f"DEBUG: bitmap is {'valid' if bitmap else 'None/invalid'}") # Bitmap check might be less relevant now
+    print(f"DEBUG: gbl is {'valid' if gbl else 'None/invalid'}")
+    print("--- End of script ---")
