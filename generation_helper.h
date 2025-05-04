@@ -27,7 +27,7 @@ GenerationResult generate_tokens_cpp(
     int32_t n_past_start,            // Starting position in KV cache
     int32_t n_ctx,                   // Context size
     int32_t max_new_tokens,          // Max tokens to generate
-    const std::vector<llama_seq_id>& seq_ids, // Sequence IDs (usually just {0})
+    const std::vector<llama_seq_id>* seq_ids, // Sequence IDs (passed by pointer)
     PythonCallbackFunc callback,     // Pointer to the Python callback function
     int callback_threshold           // How many tokens before calling back
 );

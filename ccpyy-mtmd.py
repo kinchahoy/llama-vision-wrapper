@@ -377,8 +377,8 @@ try:
         initial_n_past,
         N_CTX,
         MAX_NEW_TOKENS,
-        seq_id_vec,           # Pass the std::vector directly
-        generation_callback,  # Pass the Python callback function
+        cppyy.addressof(seq_id_vec), # Pass pointer to the vector
+        generation_callback,         # Pass the Python callback function
         CALLBACK_TOKEN_THRESHOLD
     )
     # The C++ function now blocks until generation is complete,
