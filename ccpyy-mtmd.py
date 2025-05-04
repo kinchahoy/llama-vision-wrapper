@@ -241,8 +241,9 @@ finally:
     # --- 8. Cleanup ---
     print("\n--- Cleaning up ---")
     if sampler:
-        print("Freeing sampler...")
+        print("DEBUG: About to free sampler...") # ADDED
         gbl.common_sampler_free(sampler)
+        print("DEBUG: Sampler freed.") # ADDED
     # Bitmap cleanup is likely handled by mtmd library when ctx_mtmd is freed,
     # or potentially when bitmaps_vec goes out of scope if it manages ownership.
     # Explicit free was removed previously to avoid double-free. Keep commented.
@@ -251,15 +252,19 @@ finally:
     #     gbl.mtmd_bitmap_free(cppyy.addressof(bitmap))
     # Free multimodal context BEFORE base context
     if ctx_mtmd:
-        print("Freeing multimodal context...")
+        print("DEBUG: About to free multimodal context...") # ADDED
         gbl.mtmd_free(ctx_mtmd)
+        print("DEBUG: Multimodal context freed.") # ADDED
     if ctx:
-        print("Freeing LLaMA context...")
+        print("DEBUG: About to free LLaMA context...") # ADDED
         gbl.llama_free(ctx)
+        print("DEBUG: LLaMA context freed.") # ADDED
     if model:
-        print("Freeing LLaMA model...")
+        print("DEBUG: About to free LLaMA model...") # ADDED
         gbl.llama_free_model(model)
+        print("DEBUG: LLaMA model freed.") # ADDED
     if gbl: # Check if gbl was successfully assigned (headers included)
-        print("Freeing LLaMA backend...")
+        print("DEBUG: About to free LLaMA backend...") # ADDED
         gbl.llama_backend_free()
+        print("DEBUG: LLaMA backend freed.") # ADDED
     print("Resources freed.")
