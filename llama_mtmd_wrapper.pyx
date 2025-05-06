@@ -9,6 +9,7 @@ This module provides Python bindings for the C++ code.
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 from libc.stdint cimport int32_t
+from libc.stdlib cimport malloc, free
 from cpython.ref cimport PyObject
 
 # External C++ declarations
@@ -121,6 +122,10 @@ def cleanup_backend():
     if g_sampler != NULL:
         common_sampler_free(g_sampler)
         g_sampler = NULL
+    
+    if g_chunks != NULL:
+        free(g_chunks)
+        g_chunks = NULL
     
     if g_ctx != NULL:
         llama_free(g_ctx)
@@ -248,8 +253,10 @@ def tokenize_input(ctx_mtmd_handle, prompt, bitmap_handle):
     cdef vector[mtmd_bitmap] bitmaps
     bitmaps.push_back(g_bitmap)
     
-    # Create chunks
-    g_chunks = new mtmd_input_chunks()
+    # Create chunks - use malloc instead of new since mtmd_input_chunks is opaque
+    g_chunks = <mtmd_input_chunks*>malloc(sizeof(mtmd_input_chunks))
+    if g_chunks == NULL:
+        raise MemoryError("Failed to allocate memory for mtmd_input_chunks")
     
     # Tokenize
     cdef int ret = mtmd_tokenize(ctx_mtmd, g_chunks, input_text, bitmaps)
