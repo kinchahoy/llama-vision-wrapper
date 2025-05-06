@@ -28,7 +28,6 @@ cdef extern from "llama.h":
         int n_batch
         int n_threads
         int n_threads_batch
-        int log_level
     
     ctypedef int llama_seq_id
     
@@ -36,9 +35,9 @@ cdef extern from "llama.h":
     llama_context_params llama_context_default_params()
     void llama_backend_init()
     void llama_backend_free()
-    llama_model* llama_load_model_from_file(const char* path, llama_model_params params)
-    llama_context* llama_new_context_with_model(llama_model* model, llama_context_params params)
-    void llama_free_model(llama_model* model)
+    llama_model* llama_model_load_from_file(const char* path, llama_model_params params)
+    llama_context* llama_init_from_model(llama_model* model, llama_context_params params)
+    void llama_model_free(llama_model* model)
     void llama_free(llama_context* ctx)
     int llama_n_ctx(llama_context* ctx)
     int llama_n_ctx_train(llama_model* model)
@@ -58,6 +57,10 @@ cdef extern from "common.h":
     common_sampler* common_sampler_init(llama_model* model, common_params_sampling params)
     void common_sampler_free(common_sampler* sampler)
 
+cdef extern from "ggml.h":
+    ctypedef enum ggml_log_level:
+        GGML_LOG_LEVEL_ERROR = 2
+
 cdef extern from "mtmd.h":
     ctypedef struct mtmd_context:
         pass
@@ -65,7 +68,7 @@ cdef extern from "mtmd.h":
     ctypedef struct mtmd_context_params:
         int use_gpu
         int n_threads
-        int verbosity
+        ggml_log_level verbosity
     
     ctypedef struct mtmd_bitmap:
         int nx
@@ -81,10 +84,10 @@ cdef extern from "mtmd.h":
     
     mtmd_context* mtmd_init_from_file(const char* path, llama_model* model, mtmd_context_params params)
     void mtmd_free(mtmd_context* ctx_mtmd)
-    int mtmd_helper_bitmap_init_from_file(const char* path, mtmd_bitmap* bitmap)
-    int mtmd_tokenize(mtmd_context* ctx_mtmd, mtmd_input_chunks* chunks, mtmd_input_text input_text, vector[mtmd_bitmap] bitmaps)
-    int mtmd_helper_eval(mtmd_context* ctx_mtmd, llama_context* ctx, mtmd_input_chunks* chunks, int n_past, llama_seq_id seq_id, int n_batch)
-    int mtmd_helper_get_n_tokens(mtmd_input_chunks* chunks)
+    int mtmd_helper_bitmap_init_from_file(const char* path, mtmd_bitmap& bitmap)
+    int mtmd_tokenize(mtmd_context* ctx_mtmd, mtmd_input_chunks& chunks, mtmd_input_text input_text, vector[mtmd_bitmap] bitmaps)
+    int mtmd_helper_eval(mtmd_context* ctx_mtmd, llama_context* ctx, mtmd_input_chunks& chunks, int n_past, llama_seq_id seq_id, int n_batch)
+    int mtmd_helper_get_n_tokens(mtmd_input_chunks& chunks)
 
 cdef extern from "generation_helper.h":
     ctypedef struct GenerationResult:
@@ -136,7 +139,7 @@ def cleanup_backend():
         g_ctx_mtmd = NULL
     
     if g_model != NULL:
-        llama_free_model(g_model)
+        llama_model_free(g_model)
         g_model = NULL
     
     llama_backend_free()
@@ -149,7 +152,7 @@ def load_model(model_path, n_gpu_layers):
     params.n_gpu_layers = n_gpu_layers
     
     cdef bytes model_path_bytes = model_path.encode('utf-8')
-    g_model = llama_load_model_from_file(model_path_bytes, params)
+    g_model = llama_model_load_from_file(model_path_bytes, params)
     
     if g_model == NULL:
         raise RuntimeError(f"Failed to load model from {model_path}")
@@ -168,9 +171,8 @@ def create_context(model_handle, n_ctx, n_batch, n_threads):
     params.n_batch = n_batch
     params.n_threads = n_threads
     params.n_threads_batch = n_threads
-    params.log_level = 1  # GGML_LOG_LEVEL_ERROR
     
-    g_ctx = llama_new_context_with_model(model, params)
+    g_ctx = llama_init_from_model(model, params)
     
     if g_ctx == NULL:
         raise RuntimeError("Failed to create LLaMA context")
@@ -187,7 +189,7 @@ def load_mtmd_context(mmproj_path, model_handle, use_gpu, n_threads):
     cdef mtmd_context_params params
     params.use_gpu = 1 if use_gpu else 0
     params.n_threads = n_threads
-    params.verbosity = 1  # GGML_LOG_LEVEL_ERROR
+    params.verbosity = GGML_LOG_LEVEL_ERROR
     
     cdef bytes mmproj_path_bytes = mmproj_path.encode('utf-8')
     g_ctx_mtmd = mtmd_init_from_file(mmproj_path_bytes, model, params)
@@ -224,7 +226,7 @@ def load_image(image_path):
     global g_bitmap
     
     cdef bytes image_path_bytes = image_path.encode('utf-8')
-    cdef int ret = mtmd_helper_bitmap_init_from_file(image_path_bytes, &g_bitmap)
+    cdef int ret = mtmd_helper_bitmap_init_from_file(image_path_bytes, g_bitmap)
     
     if ret != 0:
         raise RuntimeError(f"Failed to load image {image_path} (code: {ret})")
@@ -258,14 +260,14 @@ def tokenize_input(ctx_mtmd_handle, prompt, bitmap_handle):
     if g_chunks == NULL:
         raise MemoryError("Failed to allocate memory for mtmd_input_chunks")
     
-    # Tokenize
-    cdef int ret = mtmd_tokenize(ctx_mtmd, g_chunks, input_text, bitmaps)
+    # Tokenize - pass by reference
+    cdef int ret = mtmd_tokenize(ctx_mtmd, g_chunks[0], input_text, bitmaps)
     
     if ret != 0:
         raise RuntimeError(f"Failed mtmd_tokenize (code: {ret})")
     
-    # Get token count
-    cdef int n_tokens = mtmd_helper_get_n_tokens(g_chunks)
+    # Get token count - pass by reference
+    cdef int n_tokens = mtmd_helper_get_n_tokens(g_chunks[0])
     
     return {
         'handle': <unsigned long>g_chunks,
@@ -282,14 +284,14 @@ def evaluate_input(ctx_mtmd_handle, ctx_handle, chunks_handle, n_batch):
     cdef int n_past = 0
     cdef llama_seq_id seq_id = 0
     
-    # Evaluate
-    cdef int ret = mtmd_helper_eval(ctx_mtmd, ctx, chunks, n_past, seq_id, n_batch)
+    # Evaluate - pass by reference
+    cdef int ret = mtmd_helper_eval(ctx_mtmd, ctx, chunks[0], n_past, seq_id, n_batch)
     
     if ret != 0:
         raise RuntimeError(f"Failed mtmd_helper_eval (code: {ret})")
     
-    # Get token count and update n_past
-    cdef int n_tokens = mtmd_helper_get_n_tokens(chunks)
+    # Get token count and update n_past - pass by reference
+    cdef int n_tokens = mtmd_helper_get_n_tokens(chunks[0])
     n_past += n_tokens
     
     return n_past
