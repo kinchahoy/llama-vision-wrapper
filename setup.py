@@ -12,6 +12,7 @@ include_dirs = [
     f"{LLAMA_CPP_DIR}/ggml/include",
     f"{LLAMA_CPP_DIR}/common",
     f"{LLAMA_CPP_DIR}/examples/llava",
+    f"{LLAMA_CPP_DIR}/ggml/src",  # For ggml.h
 ]
 
 # Library directories
