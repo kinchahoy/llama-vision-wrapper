@@ -1,0 +1,397 @@
+# Simplified test for multimodal generation using mtmd library
+# Assumes Gemma-3 model and a single image input.
+
+import cppyy
+import os
+import time
+import sys
+import argparse  # Added for potential future CLI arguments
+
+# --- 1. Configuration ---
+# TODO: Consider using environment variables or argparse for these paths
+LLAMA_CPP_SOURCE_DIRS = [
+    "/Users/raistlin/code/llama-cppyy/include",  # Core llama.h
+    "/Users/raistlin/code/llama-cppyy/ggml/include",  # Core ggml headers
+    "/Users/raistlin/code/llama-cppyy/common",  # Common headers (IMPORTANT for sampling)
+    "/Users/raistlin/code/llama-cppyy/examples/llava",  # For mtmd.h
+]
+LLAMA_BUILD_DIR = (
+    "/Users/raistlin/code/llama-cppyy/build/first/bin"  # Where lib*.dylib resides
+)
+LIB_NAMES = [
+    "libggml-base.dylib",
+    "libggml-blas.dylib",
+    "libggml-cpu.dylib",
+    "libggml-metal.dylib",
+    "libggml.dylib",
+    "libllama.dylib",
+    "libcommon.dylib",
+    "libllava_shared.dylib",
+    "libmtmd_shared.dylib",
+    "libllama.dylib",
+    "libllava_shared.dylib",  # Contains clip dependencies for mtmd
+    "libmtmd_shared.dylib",
+    # Specially built!
+    #   "libcommon_custom.dylib",  # Load our custom common library
+]
+
+# --- Model & Image Paths ---
+# TODO: Replace with your actual paths
+MODEL_PATH = "/Users/raistlin/models/gguf/gemma-3-4b-it-q4_0.gguf"
+MMPROJ_PATH = (
+    "/Users/raistlin/models/gguf/mmproj-model-f16-4B.gguf"  # Multimodal projector
+)
+IMAGE_PATH = "/Users/raistlin/code/llama-mtmd-py/test.jpg"  # Path to your test image
+
+# --- Parameters ---
+N_CTX = 2048  # Context size (adjust as needed)
+N_THREADS = 8  # Threads for computation
+N_GPU_LAYERS = 0  # GPU offload (0 = CPU only)
+N_BATCH = 512  # Batch size for prompt processing
+
+# Sampling Parameters
+TEMP = 0.8
+TOP_K = 40
+TOP_P = 0.95
+REPEAT_PENALTY = 1.1
+# Consider adding mirostat options if desired:
+# SAMPLING_PARAMS.mirostat = 0 # 0 = disabled, 1 = Mirostat V1, 2 = Mirostat V2
+# SAMPLING_PARAMS.mirostat_tau = 5.0
+# SAMPLING_PARAMS.mirostat_eta = 0.1
+
+# --- Prompt ---
+# Gemma-3 format: User message, image marker, Assistant prompt start
+# The image marker will be replaced by mtmd_tokenize
+PROMPT = "USER: Describe this image.\n<__image__>\nASSISTANT:"
+
+# --- Generation Limits ---
+MAX_NEW_TOKENS = 256
+
+# --- 2. cppyy Setup ---
+try:
+    print("--- cppyy Setup ---")
+    print("Adding include paths:")
+    for inc_path in LLAMA_CPP_SOURCE_DIRS:
+        print(f"- {inc_path}")
+        cppyy.add_include_path(inc_path)
+
+    print("\nLoading libraries:")
+    for lib_name in LIB_NAMES:
+        lib_path = os.path.join(LLAMA_BUILD_DIR, lib_name)
+        if not os.path.exists(lib_path):
+            print(f"Error: Library not found at {lib_path}")
+            print(
+                "Please ensure LLAMA_BUILD_DIR and LIB_NAMES are correct and llama.cpp was built."
+            )
+            sys.exit(1)
+        print(f"- Loading: {lib_path}")
+        cppyy.load_library(lib_path)
+    print("Libraries loaded successfully.")
+
+    # Include necessary headers
+    print("Including C++ headers...")
+    # Standard libraries often included implicitly, but good to be explicit if needed
+    # cppyy.include("stdlib.h")
+    # cppyy.include("stdio.h")
+    # cppyy.include("string.h")
+    cppyy.include("vector")
+    cppyy.include("llama.h")
+    cppyy.include("common.h")  # common helpers
+    cppyy.include("sampling.h")  # common_sampler
+    cppyy.include("mtmd.h")  # multimodal library
+    print("Headers included.")
+
+except Exception as e:
+    print(f"\n--- Error during cppyy setup ---")
+    print(e)
+    print("\nPossible issues:")
+    print(
+        "- Check LLAMA_CPP_SOURCE_DIRS: Ensure they point to the correct 'include' and 'common' directories of your llama.cpp source."
+    )
+    print(
+        "- Check LLAMA_BUILD_DIR and LIB_NAMES: Ensure they point to the compiled shared library (e.g., libllama.dylib, libllama.so)."
+    )
+    print(
+        "- Build Configuration: Make sure llama.cpp was built as a *shared* library (e.g., cmake -DBUILD_SHARED_LIBS=ON ...)."
+    )
+    print(
+        "- Header Dependencies: Ensure 'common.h' and 'sampling.h' exist and are accessible."
+    )
+    sys.exit(1)
+
+# Access C++ functions/structs via cppyy.gbl
+gbl = cppyy.gbl
+
+# --- 3. Initialization ---
+print("\n--- Initializing llama.cpp backend ---")
+# llama_backend_init now takes args for numa config, but defaults are often fine
+# gbl.llama_backend_init(False) # False = use NUMA if available
+gbl.llama_backend_init()  # Simpler call, uses defaults
+print("Backend initialized.")
+
+# --- 4. Load Model and Context ---
+print("\n--- Loading Model ---")
+model_params = gbl.llama_model_default_params()
+model_params.n_gpu_layers = N_GPU_LAYERS
+
+print(f"Loading model from: {MODEL_PATH}")
+model = gbl.llama_load_model_from_file(MODEL_PATH.encode("utf-8"), model_params)
+if not model:
+    print(f"Error: Failed to load model from {MODEL_PATH}")
+    gbl.llama_backend_free()
+    sys.exit(1)
+print(f"Text model loaded successfully. GPU layers = {model_params.n_gpu_layers}")
+
+# --- 4b. Initialize Multimodal Context ---
+print("\n--- Initializing Multimodal Context ---")
+mtmd_params = gbl.mtmd_context_params()
+# mtmd_params.use_gpu = N_GPU_LAYERS > 0 # Set based on whether you want GPU for CLIP
+mtmd_params.use_gpu = False  # Keep CLIP on CPU for simplicity unless needed
+mtmd_params.n_threads = N_THREADS
+# mtmd_params.verbosity = gbl.GGML_LOG_LEVEL_DEBUG # More verbose logging if needed
+
+print(f"Loading multimodal projector from: {MMPROJ_PATH}")
+# Use unique_ptr for automatic cleanup
+ctx_mtmd = gbl.mtmd_init_from_file(MMPROJ_PATH.encode("utf-8"), model, mtmd_params)
+if not ctx_mtmd:
+    print(f"Error: Failed to load multimodal projector from {MMPROJ_PATH}")
+    gbl.llama_free_model(model)
+    gbl.llama_backend_free()
+    sys.exit(1)
+print("Multimodal context initialized.")
+
+
+# --- 4c. Create LLaMA Context ---
+print("\n--- Creating LLaMA Context ---")
+ctx_params = gbl.llama_context_default_params()
+ctx_params.n_ctx = N_CTX
+# Use a reasonable batch size for decoding, mtmd_helper_eval handles internal batching
+ctx_params.n_batch = N_BATCH  # Can be smaller, e.g., 512, if only decoding 1 token/step
+ctx_params.n_threads = N_THREADS
+ctx_params.n_threads_batch = N_THREADS  # Often same as n_threads
+
+# Check if context size exceeds model's trained context
+model_n_ctx_train = gbl.llama_n_ctx_train(model)
+if N_CTX > model_n_ctx_train:
+    print(
+        f"Warning: N_CTX ({N_CTX}) > model training context ({model_n_ctx_train}). May lead to degraded performance."
+    )
+    # ctx_params.n_ctx = model_n_ctx_train # Option: Clamp to model max
+
+ctx = gbl.llama_new_context_with_model(model, ctx_params)
+if not ctx:
+    print("Error: Failed to create context")
+    gbl.llama_free_model(model)
+    gbl.llama_backend_free()
+    sys.exit(1)
+print(
+    f"LLaMA context created (n_ctx = {gbl.llama_n_ctx(ctx)}, n_batch = {gbl.llama_n_batch(ctx)}, n_threads = {N_THREADS})"
+)
+
+
+# --- 5. Load Image ---
+print("\n--- Loading Image ---")
+bitmap = gbl.mtmd_bitmap()
+ret = gbl.mtmd_helper_bitmap_init_from_file(IMAGE_PATH.encode("utf-8"), bitmap)
+if ret != 0:
+    print(
+        f"Error: Failed to load image from {IMAGE_PATH} (mtmd_helper_bitmap_init_from_file returned {ret})"
+    )
+    gbl.mtmd_free(ctx_mtmd)
+    gbl.llama_free(ctx)
+    gbl.llama_free_model(model)
+    gbl.llama_backend_free()
+    sys.exit(1)
+print(f"Image loaded: {bitmap.nx}x{bitmap.ny}")
+
+# --- 6. Prepare and Evaluate Multimodal Input ---
+print("\n--- Preparing and Evaluating Multimodal Input ---")
+start_time = time.time()
+
+# Prepare input text structure
+input_text = gbl.mtmd_input_text()
+input_text.text = PROMPT
+input_text.add_special = True  # Add BOS if needed by model/template
+input_text.parse_special = True  # Parse special tokens like <__image__>
+
+# Prepare image bitmap vector (only one image in this case)
+bitmaps_vec = gbl.std.vector[gbl.mtmd_bitmap]()
+bitmaps_vec.push_back(bitmap)  # Add the loaded bitmap
+
+# Prepare output chunk vector
+chunks = gbl.mtmd_input_chunks()
+
+# Tokenize text and image marker
+print("Tokenizing multimodal input...")
+ret = gbl.mtmd_tokenize(ctx_mtmd, chunks, input_text, bitmaps_vec)
+if ret != 0:
+    print(f"Error: Failed to tokenize multimodal input (mtmd_tokenize returned {ret})")
+    # Add cleanup
+    sys.exit(1)
+print(f"Input tokenized into {len(chunks)} chunks.")
+
+# Evaluate the chunks (text and image)
+print("Evaluating multimodal input chunks...")
+n_past = 0  # Initial position in KV cache
+seq_id = gbl.llama_seq_id(0)  # Simple case: sequence ID 0
+
+# mtmd_helper_eval handles decoding text and image chunks appropriately
+ret = gbl.mtmd_helper_eval(ctx_mtmd, ctx, chunks, n_past, seq_id, N_BATCH)
+if ret != 0:
+    print(
+        f"Error: Failed to evaluate multimodal input (mtmd_helper_eval returned {ret})"
+    )
+    # Add cleanup
+    sys.exit(1)
+
+# Update n_past based on the number of tokens processed by mtmd_helper_eval
+n_past += gbl.mtmd_helper_get_n_tokens(chunks)
+
+end_time = time.time()
+print(f"Multimodal input evaluation complete in {end_time - start_time:.2f} s.")
+print(f"KV cache position (n_past): {n_past}")
+
+# We don't need the bitmap data anymore after mtmd_tokenize/eval
+# bitmap.data.clear() # Optional: free image buffer memory if large
+
+# Initialize a batch for single-token decoding during generation
+# We only need space for 1 token at a time now.
+gen_batch = gbl.llama_batch_init(1, 0, 1)
+if not gen_batch:
+    print("Error: Failed to initialize generation batch")
+    # ... (cleanup)
+    sys.exit(1)
+
+
+# --- 7. Setup Sampler ---
+print("\n--- Setting up Sampler ---")
+sampling_params = gbl.common_params_sampling()  # Instantiate the struct (Correct)
+# Apply custom settings
+sampling_params.temp = TEMP
+sampling_params.top_k = TOP_K
+sampling_params.top_p = TOP_P
+sampling_params.penalty_repeat = REPEAT_PENALTY
+# Ensure the context size is known to the sampler for repeat penalty
+sampling_params.penalty_last_n = gbl.llama_n_ctx(
+    ctx
+)  # Use full context for penalty history
+sampling_params.grammar = ""  # Explicitly ensure no grammar is used
+
+# --- Debug: Print sampling params before init ---
+print("--- Debug: Sampling Parameters before common_sampler_init ---")
+print(f"  temp: {sampling_params.temp}")
+print(f"  top_k: {sampling_params.top_k}")
+print(f"  top_p: {sampling_params.top_p}")
+print(f"  penalty_repeat: {sampling_params.penalty_repeat}")
+print(f"  penalty_last_n: {sampling_params.penalty_last_n}")
+print(f"  mirostat: {sampling_params.mirostat}")
+print(f"  grammar empty: {not bool(sampling_params.grammar)}")
+print("----------------------------------------------------------")
+
+# Initialize the sampler
+try:
+    # --- Debug: Check model pointer before init ---
+    if not model:
+        print("Error: 'model' pointer is null just before common_sampler_init!")
+        raise RuntimeError("'model' pointer became null unexpectedly")
+    print("Debug: 'model' pointer seems valid before common_sampler_init.")
+
+    # Use the factory function common_sampler_init instead of a constructor
+    print("Debug: Calling common_sampler_init...")
+    sampler = gbl.common_sampler_init(model, sampling_params)
+    print(f"Debug: common_sampler_init returned: {sampler}")  # See if it's None/nullptr
+    if not sampler:
+        raise RuntimeError("common_sampler_init returned nullptr")
+    print("common_sampler initialized successfully.")
+except Exception as e:
+    print(f"Error initializing common_sampler: {e}")
+    print("Check the constructor signature in your llama.cpp common/sampling.h")
+    # ... (cleanup)
+
+
+# --- 8. Generation Loop ---
+print("\n--- Generating Response ---")
+print(f"{PROMPT}", end="", flush=True)  # Print prompt before generation
+
+result_tokens = []
+generated_text = ""
+generated_token_count = 0
+start_time_gen = time.time()
+
+# Make sure the last token from the prompt evaluation produced logits
+# (The prompt eval loop should ensure batch.logits[last_idx] was true)
+# if batch.n_tokens > 0 and not batch.logits[batch.n_tokens - 1]:
+#     print("\nWarning: Logits not available after prompt eval. Re-eval last token?")
+# Logits should be available from the last step of mtmd_helper_eval
+
+# Prepare sequence ID vector needed for batch add (even for single token)
+seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([seq_id])
+
+while n_past < N_CTX and generated_token_count < MAX_NEW_TOKENS:
+    # --- 1. Sample the next token ---
+    # common_sampler_sample requires the sampler, context, and index of logits
+    # In single-token generation, the logits index is typically 0 after llama_decode
+    next_token_id = gbl.common_sampler_sample(
+        sampler, ctx, -1
+    )  # -1 uses the last available logits
+
+    # --- 2. Accept the token ---
+    # Update the sampler's internal state (e.g., for repeat penalty)
+    # The third argument indicates whether to accept the token for grammar (if used)
+    gbl.common_sampler_accept(sampler, next_token_id, True)
+
+    vocab = gbl.llama_model_get_vocab(model)  # Get the vocabulary from the model
+    if gbl.llama_token_is_eog(vocab, next_token_id):
+        print("\n[EOS reached]")
+        break
+
+    result_tokens.append(next_token_id)
+    generated_token_count += 1
+
+    # --- 4. Decode the *single* sampled token ---
+    # Clear the batch (it only holds the token from the previous step)
+    gbl.common_batch_clear(gen_batch)
+    # Add the new token to the batch at the current position (n_past)
+    gbl.common_batch_add(
+        gen_batch, next_token_id, n_past, seq_id_vec.data(), True
+    )  # Request logits for next sample
+
+    # Decode the batch (containing just the one token)
+    ret = gbl.llama_decode(ctx, gen_batch)
+    if ret != 0:
+        print(f"\nError: llama_decode returned {ret} during generation (pos {n_past})")
+        # Add cleanup
+        sys.exit(1)
+
+    # --- 5. Update KV cache position ---
+    n_past += 1  # We processed one token
+
+    # --- 6. Convert token to text and print ---
+    # Use common_token_to_piece for potentially multi-byte characters
+    piece = gbl.common_token_to_piece(ctx, next_token_id)
+    print(f"{piece.decode('utf-8', errors='ignore')}", end="", flush=True)
+    generated_text += piece.decode("utf-8", errors="ignore")
+
+    # Optional: Check for interrupt signal if running interactively
+    # if is_interrupted(): break
+
+end_time_gen = time.time()
+print(f"\n--- Generation Complete ---")
+print(
+    f"Generated {generated_token_count} tokens in {end_time_gen - start_time_gen:.2f} s."
+)
+# print(f"Full response:\n{PROMPT}{generated_text}")
+
+
+# --- 9. Cleanup ---
+print("\n--- Cleaning up ---")
+if gen_batch:
+    gbl.llama_batch_free(gen_batch)
+if ctx:
+    gbl.llama_free(ctx)
+if ctx_mtmd:
+    gbl.mtmd_free(ctx_mtmd)  # Free multimodal context
+if model:
+    gbl.llama_free_model(model)
+gbl.llama_backend_free()
+print("Resources freed.")
