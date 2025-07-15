@@ -1,4 +1,4 @@
-"""Multimodal generation using mtmd library with Gemma-3 model and image input."""
+"""Multimodal generation using mtmd library with Huggingface GGUF models and image input."""
 
 import cppyy
 import os
@@ -151,18 +151,22 @@ class ResourceManager:
 
     def load_mtmd(self, mmproj_path, model, use_gpu, n_threads):
         self.log(f"Loading multimodal context from {mmproj_path}...")
-        
+
         # Check if file exists and is readable
         if not os.path.exists(mmproj_path):
-            raise RuntimeError(f"Multimodal projector file does not exist: {mmproj_path}")
-        
+            raise RuntimeError(
+                f"Multimodal projector file does not exist: {mmproj_path}"
+            )
+
         file_size = os.path.getsize(mmproj_path)
         self.log(f"Projector file size: {file_size} bytes")
-        
+
         params = cppyy.gbl.mtmd_context_params_default()
         params.use_gpu = use_gpu
         params.n_threads = n_threads
-        params.verbosity = cppyy.gbl.GGML_LOG_LEVEL_INFO  # Increase verbosity for debugging
+        params.verbosity = (
+            cppyy.gbl.GGML_LOG_LEVEL_INFO
+        )  # Increase verbosity for debugging
 
         with timed_operation("Multimodal projector loading"):
             ctx_mtmd = cppyy.gbl.mtmd_init_from_file(
@@ -325,13 +329,22 @@ def main():
             input_text.text = args.prompt
             input_text.add_special = input_text.parse_special = True
 
-            bitmaps_ptr_vec = gbl.std.vector['const mtmd_bitmap*']()
+            bitmaps_ptr_vec = gbl.std.vector["const mtmd_bitmap*"]()
             bitmaps_ptr_vec.push_back(bitmap)
             chunks = gbl.mtmd_input_chunks()
 
             # Tokenize and evaluate
             with timed_operation("Tokenization"):
-                if gbl.mtmd_tokenize(ctx_mtmd, chunks, input_text, bitmaps_ptr_vec.data(), bitmaps_ptr_vec.size()) != 0:
+                if (
+                    gbl.mtmd_tokenize(
+                        ctx_mtmd,
+                        chunks,
+                        input_text,
+                        bitmaps_ptr_vec.data(),
+                        bitmaps_ptr_vec.size(),
+                    )
+                    != 0
+                ):
                     raise RuntimeError("Failed mtmd_tokenize")
 
             n_past = 0
