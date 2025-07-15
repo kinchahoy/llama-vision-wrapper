@@ -151,10 +151,18 @@ class ResourceManager:
 
     def load_mtmd(self, mmproj_path, model, use_gpu, n_threads):
         self.log(f"Loading multimodal context from {mmproj_path}...")
+        
+        # Check if file exists and is readable
+        if not os.path.exists(mmproj_path):
+            raise RuntimeError(f"Multimodal projector file does not exist: {mmproj_path}")
+        
+        file_size = os.path.getsize(mmproj_path)
+        self.log(f"Projector file size: {file_size} bytes")
+        
         params = cppyy.gbl.mtmd_context_params()
         params.use_gpu = use_gpu
         params.n_threads = n_threads
-        params.verbosity = cppyy.gbl.GGML_LOG_LEVEL_ERROR
+        params.verbosity = cppyy.gbl.GGML_LOG_LEVEL_INFO  # Increase verbosity for debugging
 
         with timed_operation("Multimodal projector loading"):
             ctx_mtmd = cppyy.gbl.mtmd_init_from_file(
