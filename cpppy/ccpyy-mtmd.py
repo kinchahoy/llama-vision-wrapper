@@ -20,6 +20,7 @@ INCLUDE_DIRS = [
     f"{LLAMA_CPP_DIR}/ggml/include",
     f"{LLAMA_CPP_DIR}/common",
     f"{LLAMA_CPP_DIR}/tools/mtmd",
+    f"{BASE_DIR}/gen-helper",
 ]
 LLAMA_CPP_LIBS_DIR = f"{LLAMA_CPP_DIR}/build/bin"
 HELPER_LIB_DIR = f"{BASE_DIR}/gen-helper/build"
