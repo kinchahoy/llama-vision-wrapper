@@ -37,7 +37,8 @@ GenerationResult generate_tokens_cpp(
     }
 
     // Use a single batch for all token decoding - initialize once
-    struct llama_batch batch = llama_batch_init(1, 0, 1);
+    // The batch capacity should match the context's batch size for performance.
+    struct llama_batch batch = llama_batch_init(llama_n_batch(ctx), 0, 1);
     if (!batch.token) {
          fprintf(stderr, "Error: Failed to initialize batch in generate_tokens_cpp.\n");
          result.total_tokens_generated = -1;
