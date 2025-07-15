@@ -7,8 +7,8 @@ if(NOT CMAKE_BUILD_TYPE)
   message(STATUS "Setting build type to 'Release' as default.")
 endif()
 
-# Set C++ standard to C++11 (required by llama.cpp headers)
-set(CMAKE_CXX_STANDARD 11)
+# Set C++ standard to C++17 (required by llama.cpp headers)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
