@@ -67,9 +67,12 @@ cdef extern from "mtmd.h":
         pass
     
     ctypedef struct mtmd_context_params:
-        int use_gpu
+        bint use_gpu
+        bint print_timings
         int n_threads
         ggml_log_level verbosity
+        const char* image_marker
+        const char* media_marker
     
     ctypedef struct mtmd_bitmap:
         pass
@@ -82,6 +85,7 @@ cdef extern from "mtmd.h":
     ctypedef struct mtmd_input_chunks:
         pass
     
+    mtmd_context_params mtmd_context_params_default()
     mtmd_context* mtmd_init_from_file(const char* path, llama_model* model, mtmd_context_params params)
     void mtmd_free(mtmd_context* ctx_mtmd)
     uint32_t mtmd_bitmap_get_nx(const mtmd_bitmap* bitmap)
@@ -197,8 +201,8 @@ def load_mtmd_context(mmproj_path, model_handle, use_gpu, n_threads):
     # Convert Python object back to C++ pointer
     cdef llama_model* model = <llama_model*><unsigned long>model_handle
     
-    cdef mtmd_context_params params
-    params.use_gpu = 1 if use_gpu else 0
+    cdef mtmd_context_params params = mtmd_context_params_default()
+    params.use_gpu = use_gpu
     params.n_threads = n_threads
     params.verbosity = GGML_LOG_LEVEL_ERROR
     
