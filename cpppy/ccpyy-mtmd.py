@@ -289,6 +289,7 @@ def main():
             # Include headers
             for header in [
                 "vector",
+                "string",
                 "llama.h",
                 "common.h",
                 "sampling.h",
@@ -325,9 +326,9 @@ def main():
             print("Evaluating multimodal input...")
 
             # Setup input
-            prompt_bytes = args.prompt.encode("utf-8")
+            cpp_prompt_str = gbl.std.string(args.prompt)
             input_text = gbl.mtmd_input_text()
-            input_text.text = prompt_bytes
+            input_text.text = cpp_prompt_str.c_str()
             input_text.add_special = True
             input_text.parse_special = True
 
