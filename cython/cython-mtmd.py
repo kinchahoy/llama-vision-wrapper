@@ -116,7 +116,7 @@ def main():
         # Load image
         print("Loading image...")
         with timed_operation("Image loading"):
-            bitmap_info = load_image(args.image)
+            bitmap_info = load_image(ctx_mtmd, args.image)
             print(f"Image loaded: {bitmap_info['width']}x{bitmap_info['height']}")
     
         # Prepare and evaluate multimodal input

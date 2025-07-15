@@ -8,7 +8,7 @@ This module provides Python bindings for the C++ code.
 
 from libcpp.string cimport string
 from libcpp.vector cimport vector
-from libc.stdint cimport int32_t, uint8_t
+from libc.stdint cimport int32_t, uint8_t, uint32_t
 from libc.stdlib cimport malloc, free
 from cpython.ref cimport PyObject
 from libc.stddef cimport size_t
@@ -72,9 +72,7 @@ cdef extern from "mtmd.h":
         ggml_log_level verbosity
     
     ctypedef struct mtmd_bitmap:
-        uint8_t* data
-        size_t nx
-        size_t ny
+        pass
 
     ctypedef struct mtmd_input_text:
         const char* text
@@ -86,13 +84,17 @@ cdef extern from "mtmd.h":
     
     mtmd_context* mtmd_init_from_file(const char* path, llama_model* model, mtmd_context_params params)
     void mtmd_free(mtmd_context* ctx_mtmd)
-    mtmd_bitmap* mtmd_image_load_from_file(const char* fname)
+    uint32_t mtmd_bitmap_get_nx(const mtmd_bitmap* bitmap)
+    uint32_t mtmd_bitmap_get_ny(const mtmd_bitmap* bitmap)
     void mtmd_bitmap_free(mtmd_bitmap* bitmap)
     mtmd_input_chunks* mtmd_input_chunks_init()
     void mtmd_input_chunks_free(mtmd_input_chunks* chunks)
-    int mtmd_input_chunks_get_n_tokens(mtmd_input_chunks* chunks)
     int mtmd_tokenize(mtmd_context* ctx_mtmd, mtmd_input_chunks* chunks, const mtmd_input_text* input_text, const mtmd_bitmap** bitmaps, size_t n_bitmaps)
-    int mtmd_eval(mtmd_context* ctx_mtmd, llama_context* ctx, mtmd_input_chunks* chunks, int n_past, llama_seq_id seq_id, int n_batch)
+
+cdef extern from "mtmd-helper.h":
+    mtmd_bitmap* mtmd_helper_bitmap_init_from_file(mtmd_context* ctx, const char* fname)
+    size_t mtmd_helper_get_n_tokens(const mtmd_input_chunks* chunks)
+    int32_t mtmd_helper_eval_chunks(mtmd_context* ctx, llama_context* lctx, const mtmd_input_chunks* chunks, int n_past, llama_seq_id seq_id, int n_batch, bint logits_last, int* new_n_past)
 
 cdef extern from "generation_helper.h":
     ctypedef struct GenerationResult:
@@ -230,20 +232,21 @@ def create_sampler(model_handle, temp, top_k, top_p, repeat_penalty, ctx_size):
     
     return <unsigned long>g_sampler
 
-def load_image(image_path):
+def load_image(ctx_mtmd_handle, image_path):
     """Load an image from a file."""
-    global g_bitmap
-    
+    global g_bitmap, g_ctx_mtmd
+
+    cdef mtmd_context* ctx_mtmd = <mtmd_context*><unsigned long>ctx_mtmd_handle
     cdef bytes image_path_bytes = image_path.encode('utf-8')
-    g_bitmap = mtmd_image_load_from_file(image_path_bytes)
-    
+    g_bitmap = mtmd_helper_bitmap_init_from_file(ctx_mtmd, image_path_bytes)
+
     if g_bitmap == NULL:
         raise RuntimeError(f"Failed to load image {image_path}")
-    
+
     return {
         'handle': <unsigned long>g_bitmap,
-        'width': g_bitmap.nx,
-        'height': g_bitmap.ny
+        'width': mtmd_bitmap_get_nx(g_bitmap),
+        'height': mtmd_bitmap_get_ny(g_bitmap)
     }
 
 def tokenize_input(ctx_mtmd_handle, prompt, bitmap_handle):
@@ -277,7 +280,7 @@ def tokenize_input(ctx_mtmd_handle, prompt, bitmap_handle):
         raise RuntimeError(f"Failed mtmd_tokenize (code: {ret})")
     
     # Get token count
-    cdef int n_tokens = mtmd_input_chunks_get_n_tokens(g_chunks)
+    cdef int n_tokens = mtmd_helper_get_n_tokens(g_chunks)
     
     return {
         'handle': <unsigned long>g_chunks,
@@ -290,21 +293,18 @@ def evaluate_input(ctx_mtmd_handle, ctx_handle, chunks_handle, n_batch):
     cdef mtmd_context* ctx_mtmd = <mtmd_context*><unsigned long>ctx_mtmd_handle
     cdef llama_context* ctx = <llama_context*><unsigned long>ctx_handle
     cdef mtmd_input_chunks* chunks = <mtmd_input_chunks*><unsigned long>chunks_handle
-    
+
     cdef int n_past = 0
     cdef llama_seq_id seq_id = 0
-    
+    cdef int new_n_past = 0
+
     # Evaluate - pass by reference
-    cdef int ret = mtmd_eval(ctx_mtmd, ctx, chunks, n_past, seq_id, n_batch)
-    
+    cdef int ret = mtmd_helper_eval_chunks(ctx_mtmd, ctx, chunks, n_past, seq_id, n_batch, True, &new_n_past)
+
     if ret != 0:
-        raise RuntimeError(f"Failed mtmd_eval (code: {ret})")
-    
-    # Get token count and update n_past
-    cdef int n_tokens = mtmd_input_chunks_get_n_tokens(chunks)
-    n_past += n_tokens
-    
-    return n_past
+        raise RuntimeError(f"Failed mtmd_helper_eval_chunks (code: {ret})")
+
+    return new_n_past
 
 def generate_tokens(sampler_handle, ctx_handle, model_handle, n_past, n_ctx, max_new_tokens):
     """Generate tokens using the model."""
