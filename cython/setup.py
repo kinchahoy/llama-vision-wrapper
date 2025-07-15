@@ -37,7 +37,7 @@ extensions = [
         library_dirs=library_dirs,
         libraries=libraries,
         language="c++",
-        extra_compile_args=["-std=c++11"],
+        extra_compile_args=["-std=c++17"],
         extra_link_args=["-Wl,-rpath," + lib_dir for lib_dir in library_dirs],
     )
 ]
