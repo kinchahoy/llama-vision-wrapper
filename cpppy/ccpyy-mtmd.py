@@ -298,9 +298,9 @@ def main():
             print(f"Final KV cache position (n_past): {cpp_result.final_n_past}")
 
     except Exception as e:
-    print(f"\n--- ERROR ---")
-    print(f"{type(e).__name__}: {e}")
-    sys.exit(1)
+        print(f"\n--- ERROR ---")
+        print(f"{type(e).__name__}: {e}")
+        sys.exit(1)
 
 print("\n--- End of script ---")
 print("\nSummary of timing statistics:")
