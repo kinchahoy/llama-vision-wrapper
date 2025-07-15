@@ -8,9 +8,10 @@ This module provides Python bindings for the C++ code.
 
 from libcpp.string cimport string
 from libcpp.vector cimport vector
-from libc.stdint cimport int32_t
+from libc.stdint cimport int32_t, uint8_t
 from libc.stdlib cimport malloc, free
 from cpython.ref cimport PyObject
+from libc.stddef cimport size_t
 
 # External C++ declarations
 cdef extern from "llama.h":
@@ -71,11 +72,12 @@ cdef extern from "mtmd.h":
         ggml_log_level verbosity
     
     ctypedef struct mtmd_bitmap:
-        int nx
-        int ny
-    
+        uint8_t* data
+        size_t nx
+        size_t ny
+
     ctypedef struct mtmd_input_text:
-        string text
+        const char* text
         int add_special
         int parse_special
     
@@ -84,10 +86,13 @@ cdef extern from "mtmd.h":
     
     mtmd_context* mtmd_init_from_file(const char* path, llama_model* model, mtmd_context_params params)
     void mtmd_free(mtmd_context* ctx_mtmd)
-    int mtmd_helper_bitmap_init_from_file(const char* path, mtmd_bitmap& bitmap)
-    int mtmd_tokenize(mtmd_context* ctx_mtmd, mtmd_input_chunks& chunks, mtmd_input_text input_text, vector[mtmd_bitmap] bitmaps)
-    int mtmd_helper_eval(mtmd_context* ctx_mtmd, llama_context* ctx, mtmd_input_chunks& chunks, int n_past, llama_seq_id seq_id, int n_batch)
-    int mtmd_helper_get_n_tokens(mtmd_input_chunks& chunks)
+    mtmd_bitmap* mtmd_image_load_from_file(const char* fname)
+    void mtmd_bitmap_free(mtmd_bitmap* bitmap)
+    mtmd_input_chunks* mtmd_input_chunks_init()
+    void mtmd_input_chunks_free(mtmd_input_chunks* chunks)
+    int mtmd_input_chunks_get_n_tokens(mtmd_input_chunks* chunks)
+    int mtmd_tokenize(mtmd_context* ctx_mtmd, mtmd_input_chunks* chunks, const mtmd_input_text* input_text, const mtmd_bitmap** bitmaps, size_t n_bitmaps)
+    int mtmd_eval(mtmd_context* ctx_mtmd, llama_context* ctx, mtmd_input_chunks* chunks, int n_past, llama_seq_id seq_id, int n_batch)
 
 cdef extern from "generation_helper.h":
     ctypedef struct GenerationResult:
@@ -110,7 +115,7 @@ cdef llama_model* g_model = NULL
 cdef llama_context* g_ctx = NULL
 cdef mtmd_context* g_ctx_mtmd = NULL
 cdef common_sampler* g_sampler = NULL
-cdef mtmd_bitmap g_bitmap
+cdef mtmd_bitmap* g_bitmap = NULL
 cdef mtmd_input_chunks* g_chunks = NULL
 
 # Python-accessible functions
@@ -126,8 +131,12 @@ def cleanup_backend():
         common_sampler_free(g_sampler)
         g_sampler = NULL
     
+    if g_bitmap != NULL:
+        mtmd_bitmap_free(g_bitmap)
+        g_bitmap = NULL
+
     if g_chunks != NULL:
-        free(g_chunks)
+        mtmd_input_chunks_free(g_chunks)
         g_chunks = NULL
     
     if g_ctx != NULL:
@@ -226,13 +235,13 @@ def load_image(image_path):
     global g_bitmap
     
     cdef bytes image_path_bytes = image_path.encode('utf-8')
-    cdef int ret = mtmd_helper_bitmap_init_from_file(image_path_bytes, g_bitmap)
+    g_bitmap = mtmd_image_load_from_file(image_path_bytes)
     
-    if ret != 0:
-        raise RuntimeError(f"Failed to load image {image_path} (code: {ret})")
+    if g_bitmap == NULL:
+        raise RuntimeError(f"Failed to load image {image_path}")
     
     return {
-        'handle': <unsigned long>&g_bitmap,
+        'handle': <unsigned long>g_bitmap,
         'width': g_bitmap.nx,
         'height': g_bitmap.ny
     }
@@ -247,27 +256,28 @@ def tokenize_input(ctx_mtmd_handle, prompt, bitmap_handle):
     
     # Create input text
     cdef mtmd_input_text input_text
-    input_text.text = prompt.encode('utf-8')
+    cdef bytes prompt_bytes = prompt.encode('utf-8')
+    input_text.text = prompt_bytes
     input_text.add_special = 1
     input_text.parse_special = 1
     
-    # Create bitmap vector
-    cdef vector[mtmd_bitmap] bitmaps
-    bitmaps.push_back(g_bitmap)
+    # Create bitmap array
+    cdef const mtmd_bitmap* bitmaps[1]
+    bitmaps[0] = bitmap
     
-    # Create chunks - use malloc instead of new since mtmd_input_chunks is opaque
-    g_chunks = <mtmd_input_chunks*>malloc(sizeof(mtmd_input_chunks))
+    # Create chunks
+    g_chunks = mtmd_input_chunks_init()
     if g_chunks == NULL:
         raise MemoryError("Failed to allocate memory for mtmd_input_chunks")
     
-    # Tokenize - pass by reference
-    cdef int ret = mtmd_tokenize(ctx_mtmd, g_chunks[0], input_text, bitmaps)
+    # Tokenize
+    cdef int ret = mtmd_tokenize(ctx_mtmd, g_chunks, &input_text, bitmaps, 1)
     
     if ret != 0:
         raise RuntimeError(f"Failed mtmd_tokenize (code: {ret})")
     
-    # Get token count - pass by reference
-    cdef int n_tokens = mtmd_helper_get_n_tokens(g_chunks[0])
+    # Get token count
+    cdef int n_tokens = mtmd_input_chunks_get_n_tokens(g_chunks)
     
     return {
         'handle': <unsigned long>g_chunks,
@@ -285,13 +295,13 @@ def evaluate_input(ctx_mtmd_handle, ctx_handle, chunks_handle, n_batch):
     cdef llama_seq_id seq_id = 0
     
     # Evaluate - pass by reference
-    cdef int ret = mtmd_helper_eval(ctx_mtmd, ctx, chunks[0], n_past, seq_id, n_batch)
+    cdef int ret = mtmd_eval(ctx_mtmd, ctx, chunks, n_past, seq_id, n_batch)
     
     if ret != 0:
-        raise RuntimeError(f"Failed mtmd_helper_eval (code: {ret})")
+        raise RuntimeError(f"Failed mtmd_eval (code: {ret})")
     
-    # Get token count and update n_past - pass by reference
-    cdef int n_tokens = mtmd_helper_get_n_tokens(chunks[0])
+    # Get token count and update n_past
+    cdef int n_tokens = mtmd_input_chunks_get_n_tokens(chunks)
     n_past += n_tokens
     
     return n_past
