@@ -159,7 +159,7 @@ class ResourceManager:
         file_size = os.path.getsize(mmproj_path)
         self.log(f"Projector file size: {file_size} bytes")
         
-        params = cppyy.gbl.mtmd_context_params()
+        params = cppyy.gbl.mtmd_context_params_default()
         params.use_gpu = use_gpu
         params.n_threads = n_threads
         params.verbosity = cppyy.gbl.GGML_LOG_LEVEL_INFO  # Increase verbosity for debugging
