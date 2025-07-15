@@ -45,8 +45,10 @@ GenerationResult generate_tokens_cpp(
     }
 
     const struct llama_vocab * vocab = llama_model_get_vocab(model);
-    std::string generated_text;
-    generated_text.reserve(max_new_tokens * 4); // Pre-allocate for better performance
+    
+    // Optimize string handling - collect tokens first, convert later
+    std::vector<llama_token> generated_tokens;
+    generated_tokens.reserve(max_new_tokens);
 
     // Start timing
     auto t_start = std::chrono::high_resolution_clock::now();
@@ -55,18 +57,16 @@ GenerationResult generate_tokens_cpp(
         // Sample next token
         llama_token token_id = common_sampler_sample(sampler, ctx, -1);
         
-        // Accept the token
-        common_sampler_accept(sampler, token_id, true);
-
-        // Check for end of generation
+        // Check for end of generation first (before accepting)
         if (llama_vocab_is_eog(vocab, token_id)) {
             break;
         }
+        
+        // Accept the token
+        common_sampler_accept(sampler, token_id, true);
 
-        // Convert token to text and append immediately
-        std::string piece = common_token_to_piece(ctx, token_id);
-        generated_text += piece;
-
+        // Store token for later conversion
+        generated_tokens.push_back(token_id);
         result.total_tokens_generated++;
 
         // Prepare batch using common functions (like CLI does)
@@ -85,6 +85,13 @@ GenerationResult generate_tokens_cpp(
     // End timing
     auto t_end = std::chrono::high_resolution_clock::now();
     double total_seconds = std::chrono::duration<double>(t_end - t_start).count();
+
+    // Convert all tokens to text at once (outside the hot loop)
+    std::string generated_text;
+    generated_text.reserve(result.total_tokens_generated * 4);
+    for (llama_token token : generated_tokens) {
+        generated_text += common_token_to_piece(ctx, token);
+    }
 
     print_timing(total_seconds, result.total_tokens_generated);
 
