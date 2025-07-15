@@ -344,7 +344,7 @@ def main():
                         gbl.mtmd_tokenize(
                             ctx_mtmd,
                             chunks,
-                            input_text,
+                            cppyy.addressof(input_text),
                             bitmaps_ptr_vec.data(),
                             bitmaps_ptr_vec.size(),
                         )
