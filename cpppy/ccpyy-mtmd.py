@@ -289,6 +289,7 @@ def main():
                 "common.h",
                 "sampling.h",
                 "mtmd.h",
+                "mtmd-helper.h",
                 "generation_helper.h",
             ]:
                 cppyy.include(header)
@@ -307,15 +308,14 @@ def main():
             # Load image
             print("Loading image...")
             with timed_operation("Image loading"):
-                bitmap = gbl.mtmd_bitmap()
-                ret = gbl.mtmd_helper_bitmap_init_from_file(
-                    args.image.encode("utf-8"), bitmap
+                bitmap = gbl.mtmd_helper_bitmap_init_from_file(
+                    ctx_mtmd, args.image.encode("utf-8")
                 )
-                if ret != 0:
-                    raise RuntimeError(
-                        f"Failed to load image {args.image} (code: {ret})"
-                    )
-                print(f"Image loaded: {bitmap.nx}x{bitmap.ny}")
+                if not bitmap:
+                    raise RuntimeError(f"Failed to load image {args.image}")
+                print(
+                    f"Image loaded: {gbl.mtmd_bitmap_get_nx(bitmap)}x{gbl.mtmd_bitmap_get_ny(bitmap)}"
+                )
 
             # Prepare and evaluate multimodal input
             print("Evaluating multimodal input...")
@@ -325,29 +325,39 @@ def main():
             input_text.text = args.prompt
             input_text.add_special = input_text.parse_special = True
 
-            bitmaps_vec = gbl.std.vector[gbl.mtmd_bitmap]()
-            bitmaps_vec.push_back(bitmap)
+            bitmaps_ptr_vec = gbl.std.vector['const mtmd_bitmap*']()
+            bitmaps_ptr_vec.push_back(bitmap)
             chunks = gbl.mtmd_input_chunks()
 
             # Tokenize and evaluate
             with timed_operation("Tokenization"):
-                if gbl.mtmd_tokenize(ctx_mtmd, chunks, input_text, bitmaps_vec) != 0:
+                if gbl.mtmd_tokenize(ctx_mtmd, chunks, input_text, bitmaps_ptr_vec.data(), bitmaps_ptr_vec.size()) != 0:
                     raise RuntimeError("Failed mtmd_tokenize")
 
             n_past = 0
+            n_past_out = gbl.llama_pos(0)
             seq_id = gbl.llama_seq_id(0)
 
             # Process prompt tokens
             prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
             with timed_operation("Prompt evaluation", tokens=prompt_tokens):
                 if (
-                    gbl.mtmd_helper_eval(ctx_mtmd, ctx, chunks, n_past, seq_id, N_BATCH)
+                    gbl.mtmd_helper_eval_chunks(
+                        ctx_mtmd,
+                        ctx,
+                        chunks,
+                        n_past,
+                        seq_id,
+                        N_BATCH,
+                        False,
+                        cppyy.addressof(n_past_out),
+                    )
                     != 0
                 ):
-                    raise RuntimeError("Failed mtmd_helper_eval")
+                    raise RuntimeError("Failed mtmd_helper_eval_chunks")
 
             # Update KV cache position
-            n_past += prompt_tokens
+            n_past = n_past_out
             print(f"KV cache position (n_past): {n_past}")
 
             # Generate response
