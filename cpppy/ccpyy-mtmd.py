@@ -331,7 +331,7 @@ def main():
 
             bitmaps_ptr_vec = gbl.std.vector["const mtmd_bitmap*"]()
             bitmaps_ptr_vec.push_back(bitmap)
-            chunks = gbl.mtmd_input_chunks()
+            chunks = gbl.mtmd_input_chunks_init()
 
             # Tokenize and evaluate
             with timed_operation("Tokenization"):
