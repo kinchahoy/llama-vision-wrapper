@@ -24,16 +24,20 @@ LLAMA_CPP_LIBS_DIR = f"{LLAMA_CPP_DIR}/build/bin"
 HELPER_LIB_DIR = f"{BASE_DIR}/build"
 
 # Libraries to load (Linux .so files instead of macOS .dylib)
-LIB_NAMES = [
+# Required libraries
+REQUIRED_LIB_NAMES = [
     "libggml-base.so",
-    "libggml-blas.so",
     "libggml-cpu.so",
-    "libggml-metal.so",
     "libggml.so",
     "libllama.so",
-    #    "libllava_shared.so", #din't need this anymore
     "libmtmd_shared.so",
     "libgeneration_helper.so",
+]
+
+# Optional libraries (will continue if not found)
+OPTIONAL_LIB_NAMES = [
+    "libggml-blas.so",
+    "libggml-metal.so",
 ]
 
 
@@ -237,18 +241,34 @@ def main():
                     print(f"Warning: Include path does not exist: {inc_path}")
 
             print("Loading libraries...")
-            for lib_name in LIB_NAMES:
+            
+            # Load required libraries
+            for lib_name in REQUIRED_LIB_NAMES:
                 lib_dir = (
                     HELPER_LIB_DIR
-                    if lib_name == "libgeneration_helper.dylib"
+                    if lib_name == "libgeneration_helper.so"
                     else LLAMA_CPP_LIBS_DIR
                 )
                 lib_path = os.path.join(lib_dir, lib_name)
                 if not os.path.exists(lib_path):
                     raise FileNotFoundError(
-                        f"Library '{lib_name}' not found at {lib_path}"
+                        f"Required library '{lib_name}' not found at {lib_path}"
                     )
                 cppyy.load_library(lib_path)
+                print(f"  Loaded: {lib_name}")
+            
+            # Load optional libraries
+            for lib_name in OPTIONAL_LIB_NAMES:
+                lib_dir = LLAMA_CPP_LIBS_DIR
+                lib_path = os.path.join(lib_dir, lib_name)
+                if os.path.exists(lib_path):
+                    try:
+                        cppyy.load_library(lib_path)
+                        print(f"  Loaded (optional): {lib_name}")
+                    except Exception as e:
+                        print(f"  Warning: Failed to load optional library {lib_name}: {e}")
+                else:
+                    print(f"  Skipped (not found): {lib_name}")
 
             # Include headers
             for header in [
