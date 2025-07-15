@@ -398,7 +398,7 @@ def main():
                     n_past,
                     seq_id,
                     N_BATCH,
-                    False,
+                    True,
                     n_past_out_array.data(),
                 )
                 print(f"DEBUG: mtmd_helper_eval_chunks returned: {result}")
