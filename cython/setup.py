@@ -3,7 +3,7 @@ from Cython.Build import cythonize
 import os
 
 # Base directory for the project
-BASE_DIR = "/Users/raistlin/code/llama-mtmd-py"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Go up from cython/ to project root
 LLAMA_CPP_DIR = f"{BASE_DIR}/llama.cpp"
 
 # Include directories
@@ -11,20 +11,21 @@ include_dirs = [
     f"{LLAMA_CPP_DIR}/include",
     f"{LLAMA_CPP_DIR}/ggml/include",
     f"{LLAMA_CPP_DIR}/common",
-    f"{LLAMA_CPP_DIR}/examples/llava",
+    f"{LLAMA_CPP_DIR}/tools/mtmd",
+    f"{BASE_DIR}/gen-helper",
     f"{LLAMA_CPP_DIR}/ggml/src",  # For ggml.h
 ]
 
 # Library directories
 library_dirs = [
     f"{LLAMA_CPP_DIR}/build/bin",
-    f"{BASE_DIR}/build",
+    f"{BASE_DIR}/gen-helper/build",
 ]
 
-# Libraries to link against
+# Libraries to link against (Linux .so files)
 libraries = [
-    "ggml-base", "ggml-blas", "ggml-cpu", "ggml-metal", "ggml",
-    "llama", "llava_shared", "mtmd_shared", "generation_helper"
+    "ggml-base", "ggml-cpu", "ggml",
+    "llama", "mtmd", "generation_helper"
 ]
 
 # Define the extension
