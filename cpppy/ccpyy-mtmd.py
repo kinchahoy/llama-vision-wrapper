@@ -325,10 +325,10 @@ def main():
             # Prepare and evaluate multimodal input
             print("Evaluating multimodal input...")
 
-            # Setup input
-            cpp_prompt_str = gbl.std.string(args.prompt)
+            # Setup input - create on stack and keep string alive
+            prompt_cstr = args.prompt.encode('utf-8')
             input_text = gbl.mtmd_input_text()
-            input_text.text = cpp_prompt_str.c_str()
+            input_text.text = prompt_cstr
             input_text.add_special = True
             input_text.parse_special = True
 
