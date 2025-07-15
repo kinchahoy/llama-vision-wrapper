@@ -50,9 +50,24 @@ cd ..
 ```
 The required libraries will now be available in `llama.cpp/build/bin/` and `build/`.
 
-## 6. Run the Examples
+## 6. Set up Python Environment
 
-Before running, ensure you have downloaded the required models (e.g., a Gemma-3 GGUF model and the corresponding MMPROJ file) and update the hardcoded paths at the top of the scripts:
+This project uses `pyproject.toml` to declare its Python dependencies.
+
+1.  **Create a virtual environment and activate it.** If you are using `uv`:
+    ```bash
+    uv venv
+    source .venv/bin/activate
+    ```
+
+2.  **Install dependencies.** This will install `cppyy` and `Cython` into your virtual environment.
+    ```bash
+    uv pip install -e .
+    ```
+
+## 7. Run the Examples
+
+Before running, ensure you have downloaded the required models (e.g., a Gemma-3 GGUF model and the corresponding MMPROJ file) and updated the hardcoded paths at the top of the scripts:
 - `cython/cython-mtmd.py`
 - `cpppy/ccpyy-mtmd.py`
 
@@ -61,16 +76,9 @@ There are two example implementations available:
 ### Option A: Run with `cppyy` (Dynamic Bindings)
 
 This approach is simpler for development as it loads C++ code at runtime.
-
-1.  **Install dependencies:**
-    ```bash
-    pip install cppyy
-    ```
-
-2.  **Run the script:**
-    ```bash
-    python cpppy/ccpyy-mtmd.py
-    ```
+```bash
+python cpppy/ccpyy-mtmd.py
+```
 
 ### Option B: Run with Cython (Compiled Extension)
 

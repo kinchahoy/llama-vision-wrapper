@@ -1,0 +1,8 @@
+[project]
+name = "llama-mtmd-py"
+version = "0.1.0"
+description = "Python bindings for llama.cpp multimodal functionality using cppyy and Cython."
+dependencies = [
+    "cppyy",
+    "Cython",
+]
