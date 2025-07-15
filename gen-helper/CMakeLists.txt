@@ -32,22 +32,47 @@ include_directories(
 
 # --- Find Required Libraries ---
 # Use find_library for robustness, specify the build dir hint
-# Check both 'libllama.dylib' (macOS) and 'libllama.so' (Linux)
-find_library(LLAMA_LIBRARY NAMES llama libllama PATHS ${LLAMA_CPP_BUILD_DIR} REQUIRED)
-# Check both 'libcommon.dylib' (macOS) and 'libcommon.so' (Linux)
-find_library(COMMON_LIBRARY NAMES common libcommon PATHS ${LLAMA_CPP_BUILD_DIR} REQUIRED)
-# Add other ggml libs if common/llama don't pull them in transitively (might be needed depending on build)
-# find_library(GGML_LIBRARY NAMES ggml libggml PATHS ${LLAMA_CPP_BUILD_DIR} REQUIRED)
+# Look in both build and build/bin directories, and check various naming patterns
+set(LLAMA_SEARCH_PATHS 
+    ${LLAMA_CPP_BUILD_DIR}
+    ${LLAMA_CPP_BUILD_DIR}/bin
+    ${LLAMA_CPP_BUILD_DIR}/lib
+    ${LLAMA_CPP_BUILD_DIR}/src
+)
+
+# Find llama library
+find_library(LLAMA_LIBRARY 
+    NAMES llama libllama llama.so libllama.so llama.dylib libllama.dylib
+    PATHS ${LLAMA_SEARCH_PATHS}
+    NO_DEFAULT_PATH
+)
+
+# Find common library  
+find_library(COMMON_LIBRARY 
+    NAMES common libcommon common.so libcommon.so common.dylib libcommon.dylib
+    PATHS ${LLAMA_SEARCH_PATHS}
+    NO_DEFAULT_PATH
+)
+
+# Find ggml libraries (often required)
+find_library(GGML_LIBRARY 
+    NAMES ggml libggml ggml.so libggml.so ggml.dylib libggml.dylib
+    PATHS ${LLAMA_SEARCH_PATHS}
+    NO_DEFAULT_PATH
+)
 
 if(NOT LLAMA_LIBRARY)
-    message(FATAL_ERROR "libllama not found in ${LLAMA_CPP_BUILD_DIR}. Ensure llama.cpp was built with BUILD_SHARED_LIBS=ON.")
+    message(FATAL_ERROR "libllama not found in ${LLAMA_CPP_BUILD_DIR} or subdirectories. Ensure llama.cpp was built with BUILD_SHARED_LIBS=ON.")
 endif()
 if(NOT COMMON_LIBRARY)
-    message(FATAL_ERROR "libcommon not found in ${LLAMA_CPP_BUILD_DIR}. Ensure llama.cpp was built with BUILD_SHARED_LIBS=ON.")
+    message(FATAL_ERROR "libcommon not found in ${LLAMA_CPP_BUILD_DIR} or subdirectories. Ensure llama.cpp was built with BUILD_SHARED_LIBS=ON.")
 endif()
 
 message(STATUS "Found libllama: ${LLAMA_LIBRARY}")
 message(STATUS "Found libcommon: ${COMMON_LIBRARY}")
+if(GGML_LIBRARY)
+    message(STATUS "Found libggml: ${GGML_LIBRARY}")
+endif()
 
 # --- Build Our Shared Library ---
 add_library(generation_helper SHARED generation_helper.cpp generation_helper.h)
@@ -56,8 +81,12 @@ add_library(generation_helper SHARED generation_helper.cpp generation_helper.h)
 target_link_libraries(generation_helper PRIVATE
     ${LLAMA_LIBRARY}
     ${COMMON_LIBRARY}
-    # ${GGML_LIBRARY} # Add if needed
 )
+
+# Add ggml library if found
+if(GGML_LIBRARY)
+    target_link_libraries(generation_helper PRIVATE ${GGML_LIBRARY})
+endif()
 
 # --- Installation (Optional but Recommended) ---
 # Install the library and header file to a known location
