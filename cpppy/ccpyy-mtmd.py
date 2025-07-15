@@ -15,9 +15,8 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Go up 
 LLAMA_CPP_DIR = f"{BASE_DIR}/llama.cpp"
 INCLUDE_DIRS = [
     f"{LLAMA_CPP_DIR}/include",
-    f"{LLAMA_CPP_DIR}/ggml/include",
+    f"{LLAMA_CPP_DIR}/ggml/include", 
     f"{LLAMA_CPP_DIR}/common",
-    f"{LLAMA_CPP_DIR}/examples/llava",
 ]
 LLAMA_CPP_LIBS_DIR = f"{LLAMA_CPP_DIR}/build/bin"
 HELPER_LIB_DIR = f"{BASE_DIR}/build"
@@ -181,7 +180,7 @@ def main():
                         help="Model file name in the repository.")
     parser.add_argument("--mmproj", type=str, default="mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
                         help="Multimodal projector file name in the repository.")
-    parser.add_argument("--image", type=str, default="test.jpg",
+    parser.add_argument("--image", type=str, default="debug.jpg",
                         help="Path to the input image.")
     parser.add_argument("--prompt", type=str, default="USER: Describe this image.\n<__image__>\nASSISTANT:",
                         help="The prompt for the model.")
@@ -201,7 +200,10 @@ def main():
         with timed_operation("cppyy setup"):
             # Setup cppyy
             for inc_path in INCLUDE_DIRS:
-                cppyy.add_include_path(inc_path)
+                if os.path.exists(inc_path):
+                    cppyy.add_include_path(inc_path)
+                else:
+                    print(f"Warning: Include path does not exist: {inc_path}")
 
             print("Loading libraries...")
             for lib_name in LIB_NAMES:
