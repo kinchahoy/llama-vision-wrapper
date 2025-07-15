@@ -415,33 +415,9 @@ def main():
             print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
             print(f"{args.prompt}", end="", flush=True)
 
-            # Ensure context is ready for generation by running a decode step
-            print("DEBUG: Preparing context for generation...")
-            
             # Reset sampler state for generation
+            print("DEBUG: Preparing context for generation...")
             gbl.common_sampler_reset(sampler)
-            
-            # Make sure we have valid logits by running llama_decode if needed
-            # The context should already have the processed tokens, but we need to ensure
-            # the output buffer is properly set up for sampling
-            print(f"DEBUG: Context n_outputs before generation: {gbl.llama_n_outputs(ctx)}")
-            
-            # If no outputs are available, we need to run a decode step
-            if gbl.llama_n_outputs(ctx) == 0:
-                print("DEBUG: No outputs available, running decode step...")
-                # Create a dummy batch to get logits
-                batch = gbl.llama_batch_init(1, 0, 1)
-                batch.n_tokens = 0  # Empty batch just to get logits
-                
-                decode_result = gbl.llama_decode(ctx, batch)
-                print(f"DEBUG: llama_decode result: {decode_result}")
-                
-                gbl.llama_batch_free(batch)
-                
-                if decode_result != 0:
-                    raise RuntimeError(f"Failed to prepare context for generation: llama_decode returned {decode_result}")
-                    
-                print(f"DEBUG: Context n_outputs after decode: {gbl.llama_n_outputs(ctx)}")
 
             # Call C++ generation function
             seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
