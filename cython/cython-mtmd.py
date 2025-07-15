@@ -3,17 +3,15 @@
 import os
 import time
 import sys
+import argparse
 from dataclasses import dataclass
 from typing import Optional
 from contextlib import contextmanager
+from huggingface_hub import hf_hub_download
 
 # Configuration
 BASE_DIR = "/Users/raistlin/code/llama-mtmd-py"
 LLAMA_CPP_DIR = f"{BASE_DIR}/llama.cpp"
-MODEL_PATH = "/Users/raistlin/models/gguf/gemma-3-4b-it-q4_0.gguf"
-MMPROJ_PATH = "/Users/raistlin/models/gguf/mmproj-model-f16-4B.gguf"
-IMAGE_PATH = f"{BASE_DIR}/test.jpg"
-PROMPT = "USER: Describe this image.\n<__image__>\nASSISTANT:"
 
 # Runtime parameters
 N_CTX = 2048
@@ -73,22 +71,44 @@ except ImportError as e:
     print("python setup.py build_ext --inplace")
     sys.exit(1)
 
-# Main execution
-try:
-    print("--- Initializing ---")
+def main():
+    """Main execution function."""
+    parser = argparse.ArgumentParser(description="Run multimodal generation with Cython wrapper.")
+    parser.add_argument("--repo-id", "-hf", type=str, default="ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+                        help="Hugging Face repository ID for GGUF models.")
+    parser.add_argument("--model", "-m", type=str, default="SmolVLM-2.2B-Instruct.gguf",
+                        help="Model file name in the repository.")
+    parser.add_argument("--mmproj", type=str, default="mmproj-model-f16.gguf",
+                        help="Multimodal projector file name in the repository.")
+    parser.add_argument("--image", type=str, default=f"{BASE_DIR}/test.jpg",
+                        help="Path to the input image.")
+    parser.add_argument("--prompt", type=str, default="USER: Describe this image.\n<__image__>\nASSISTANT:",
+                        help="The prompt for the model.")
+    args = parser.parse_args()
+
+    try:
+        print("--- Initializing ---")
+
+        print("--- Downloading models from Hugging Face Hub ---")
+        with timed_operation("Model download"):
+            model_path = hf_hub_download(repo_id=args.repo_id, filename=args.model)
+        with timed_operation("MMPROJ download"):
+            mmproj_path = hf_hub_download(repo_id=args.repo_id, filename=args.mmproj)
+        print(f"Model path: {model_path}")
+        print(f"MMPROJ path: {mmproj_path}")
+
+        with timed_operation("Backend initialization"):
+            initialize_backend()
     
-    with timed_operation("Backend initialization"):
-        initialize_backend()
+        # Load model and create contexts
+        with timed_operation("Model loading"):
+            model = load_model(model_path, N_GPU_LAYERS)
     
-    # Load model and create contexts
-    with timed_operation("Model loading"):
-        model = load_model(MODEL_PATH, N_GPU_LAYERS)
+        with timed_operation("Context creation"):
+            ctx = create_context(model, N_CTX, N_BATCH, N_THREADS)
     
-    with timed_operation("Context creation"):
-        ctx = create_context(model, N_CTX, N_BATCH, N_THREADS)
-    
-    with timed_operation("Multimodal projector loading"):
-        ctx_mtmd = load_mtmd_context(MMPROJ_PATH, model, N_GPU_LAYERS > 0, N_THREADS)
+        with timed_operation("Multimodal projector loading"):
+            ctx_mtmd = load_mtmd_context(mmproj_path, model, N_GPU_LAYERS > 0, N_THREADS)
     
     with timed_operation("Sampler initialization"):
         sampler = create_sampler(model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, N_CTX)
@@ -96,7 +116,7 @@ try:
     # Load image
     print("Loading image...")
     with timed_operation("Image loading"):
-        bitmap_info = load_image(IMAGE_PATH)
+        bitmap_info = load_image(args.image)
         print(f"Image loaded: {bitmap_info['width']}x{bitmap_info['height']}")
     
     # Prepare and evaluate multimodal input
@@ -104,7 +124,7 @@ try:
     
     # Tokenize input
     with timed_operation("Tokenization"):
-        chunks_info = tokenize_input(ctx_mtmd, PROMPT, bitmap_info['handle'])
+        chunks_info = tokenize_input(ctx_mtmd, args.prompt, bitmap_info['handle'])
     
     # Process prompt tokens
     prompt_tokens = chunks_info['n_tokens']
@@ -115,7 +135,7 @@ try:
     
     # Generate response
     print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
-    print(f"{PROMPT}", end="", flush=True)
+    print(f"{args.prompt}", end="", flush=True)
     
     # Generate tokens
     with timed_operation("Token generation") as timing_ctx:
@@ -146,4 +166,8 @@ for i, stat in enumerate(all_timings, 1):
 print("=" * 50)
 print(f"Total operations: {len(all_timings)}")
 total_time = sum(stat.duration for stat in all_timings)
-print(f"Total measured time: {total_time:.2f}s")
+print(f"Total measured time: {total_time:.2f}    print(f"Total measured time: {total_time:.2f}s")
+
+
+print(f"Total measured time: {total_time:.2f}if __name__ == "__main__":
+print(f"Total measured time: {total_time:.2f}    main()
