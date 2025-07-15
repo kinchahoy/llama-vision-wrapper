@@ -326,33 +326,30 @@ def main():
 
             # Setup input
             prompt_bytes = args.prompt.encode("utf-8")
-            input_text = cppyy.gbl.new['mtmd_input_text']()
-            try:
-                input_text.text = prompt_bytes
-                input_text.add_special = True
-                input_text.parse_special = True
+            input_text = gbl.mtmd_input_text()
+            input_text.text = prompt_bytes
+            input_text.add_special = True
+            input_text.parse_special = True
 
-                bitmaps_ptr_vec = gbl.std.vector["const mtmd_bitmap*"]()
-                bitmaps_ptr_vec.push_back(bitmap)
-                chunks = gbl.mtmd_input_chunks_init()
-                if not chunks:
-                    raise RuntimeError("Failed to initialize mtmd_input_chunks: mtmd_input_chunks_init returned null")
+            bitmaps_ptr_vec = gbl.std.vector["const mtmd_bitmap*"]()
+            bitmaps_ptr_vec.push_back(bitmap)
+            chunks = gbl.mtmd_input_chunks_init()
+            if not chunks:
+                raise RuntimeError("Failed to initialize mtmd_input_chunks: mtmd_input_chunks_init returned null")
 
-                # Tokenize and evaluate
-                with timed_operation("Tokenization"):
-                    if (
-                        gbl.mtmd_tokenize(
-                            ctx_mtmd,
-                            chunks,
-                            input_text,
-                            bitmaps_ptr_vec.data(),
-                            bitmaps_ptr_vec.size(),
-                        )
-                        != 0
-                    ):
-                        raise RuntimeError("Failed mtmd_tokenize")
-            finally:
-                cppyy.gbl.delete(input_text)
+            # Tokenize and evaluate
+            with timed_operation("Tokenization"):
+                if (
+                    gbl.mtmd_tokenize(
+                        ctx_mtmd,
+                        chunks,
+                        cppyy.addressof(input_text),
+                        bitmaps_ptr_vec.data(),
+                        bitmaps_ptr_vec.size(),
+                    )
+                    != 0
+                ):
+                    raise RuntimeError("Failed mtmd_tokenize")
 
             n_past = 0
             n_past_out = gbl.llama_pos(0)
