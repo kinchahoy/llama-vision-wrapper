@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from huggingface_hub import hf_hub_download
 
 # Configuration
-BASE_DIR = "/Users/raistlin/code/llama-mtmd-py"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Go up from cython/ to project root
 LLAMA_CPP_DIR = f"{BASE_DIR}/llama.cpp"
 
 # Runtime parameters
@@ -76,11 +76,11 @@ def main():
     parser = argparse.ArgumentParser(description="Run multimodal generation with Cython wrapper.")
     parser.add_argument("--repo-id", "-hf", type=str, default="ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
                         help="Hugging Face repository ID for GGUF models.")
-    parser.add_argument("--model", "-m", type=str, default="SmolVLM-2.2B-Instruct.gguf",
+    parser.add_argument("--model", "-m", type=str, default="SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
                         help="Model file name in the repository.")
-    parser.add_argument("--mmproj", type=str, default="mmproj-model-f16.gguf",
+    parser.add_argument("--mmproj", type=str, default="mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
                         help="Multimodal projector file name in the repository.")
-    parser.add_argument("--image", type=str, default=f"{BASE_DIR}/test.jpg",
+    parser.add_argument("--image", type=str, default="debug.jpg",
                         help="Path to the input image.")
     parser.add_argument("--prompt", type=str, default="USER: Describe this image.\n<__image__>\nASSISTANT:",
                         help="The prompt for the model.")
