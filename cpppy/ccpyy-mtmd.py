@@ -363,18 +363,21 @@ def main():
             print("DEBUG: Tokenization completed successfully")
             
             n_past = 0
-            n_past_out = gbl.llama_pos(0)
             seq_id = gbl.llama_seq_id(0)
             
             print(f"DEBUG: Initial values:")
             print(f"  n_past: {n_past}")
-            print(f"  n_past_out: {n_past_out}")
             print(f"  seq_id: {seq_id}")
 
             # Process prompt tokens
             print("DEBUG: About to call mtmd_helper_get_n_tokens")
             prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
             print(f"DEBUG: prompt_tokens: {prompt_tokens}")
+            
+            # Create a proper C++ variable for the output parameter
+            print("DEBUG: Creating n_past_out as C++ array")
+            n_past_out_array = cppyy.gbl.std.array[gbl.llama_pos, 1]()
+            n_past_out_array[0] = gbl.llama_pos(n_past)
             
             print("DEBUG: About to call mtmd_helper_eval_chunks")
             with timed_operation("Prompt evaluation", tokens=prompt_tokens):
@@ -386,7 +389,7 @@ def main():
                 print(f"  seq_id: {seq_id}")
                 print(f"  N_BATCH: {N_BATCH}")
                 print(f"  False: {False}")
-                print(f"  addressof(n_past_out): {cppyy.addressof(n_past_out)}")
+                print(f"  n_past_out_array.data(): {n_past_out_array.data()}")
                 
                 result = gbl.mtmd_helper_eval_chunks(
                     ctx_mtmd,
@@ -396,7 +399,7 @@ def main():
                     seq_id,
                     N_BATCH,
                     False,
-                    cppyy.addressof(n_past_out),
+                    n_past_out_array.data(),
                 )
                 print(f"DEBUG: mtmd_helper_eval_chunks returned: {result}")
                 if result != 0:
@@ -404,8 +407,8 @@ def main():
 
             # Update KV cache position
             print("DEBUG: mtmd_helper_eval_chunks completed successfully")
-            n_past = n_past_out
-            print(f"DEBUG: Updated n_past from n_past_out: {n_past}")
+            n_past = int(n_past_out_array[0])
+            print(f"DEBUG: Updated n_past from n_past_out_array[0]: {n_past}")
             print(f"KV cache position (n_past): {n_past}")
 
             # Generate response
