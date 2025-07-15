@@ -110,50 +110,50 @@ def main():
         with timed_operation("Multimodal projector loading"):
             ctx_mtmd = load_mtmd_context(mmproj_path, model, N_GPU_LAYERS > 0, N_THREADS)
     
-    with timed_operation("Sampler initialization"):
-        sampler = create_sampler(model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, N_CTX)
+        with timed_operation("Sampler initialization"):
+            sampler = create_sampler(model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, N_CTX)
     
-    # Load image
-    print("Loading image...")
-    with timed_operation("Image loading"):
-        bitmap_info = load_image(args.image)
-        print(f"Image loaded: {bitmap_info['width']}x{bitmap_info['height']}")
+        # Load image
+        print("Loading image...")
+        with timed_operation("Image loading"):
+            bitmap_info = load_image(args.image)
+            print(f"Image loaded: {bitmap_info['width']}x{bitmap_info['height']}")
     
-    # Prepare and evaluate multimodal input
-    print("Evaluating multimodal input...")
+        # Prepare and evaluate multimodal input
+        print("Evaluating multimodal input...")
     
-    # Tokenize input
-    with timed_operation("Tokenization"):
-        chunks_info = tokenize_input(ctx_mtmd, args.prompt, bitmap_info['handle'])
+        # Tokenize input
+        with timed_operation("Tokenization"):
+            chunks_info = tokenize_input(ctx_mtmd, args.prompt, bitmap_info['handle'])
     
-    # Process prompt tokens
-    prompt_tokens = chunks_info['n_tokens']
-    with timed_operation("Prompt evaluation", tokens=prompt_tokens):
-        n_past = evaluate_input(ctx_mtmd, ctx, chunks_info['handle'], N_BATCH)
+        # Process prompt tokens
+        prompt_tokens = chunks_info['n_tokens']
+        with timed_operation("Prompt evaluation", tokens=prompt_tokens):
+            n_past = evaluate_input(ctx_mtmd, ctx, chunks_info['handle'], N_BATCH)
     
-    print(f"KV cache position (n_past): {n_past}")
+        print(f"KV cache position (n_past): {n_past}")
     
-    # Generate response
-    print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
-    print(f"{args.prompt}", end="", flush=True)
+        # Generate response
+        print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
+        print(f"{args.prompt}", end="", flush=True)
     
-    # Generate tokens
-    with timed_operation("Token generation") as timing_ctx:
-        result = generate_tokens(sampler, ctx, model, n_past, N_CTX, MAX_NEW_TOKENS)
-        
-        # Print results
-        print(f"{result['text']}")
-        
-        # Update timing with token count
-        timing_ctx.tokens = result['n_tokens']
+        # Generate tokens
+        with timed_operation("Token generation") as timing_ctx:
+            result = generate_tokens(sampler, ctx, model, n_past, N_CTX, MAX_NEW_TOKENS)
+            
+            # Print results
+            print(f"{result['text']}")
+            
+            # Update timing with token count
+            timing_ctx.tokens = result['n_tokens']
     
-    print(f"Final KV cache position (n_past): {result['final_n_past']}")
+        print(f"Final KV cache position (n_past): {result['final_n_past']}")
     
-    # Cleanup
-    with timed_operation("Backend cleanup"):
-        cleanup_backend()
+        # Cleanup
+        with timed_operation("Backend cleanup"):
+            cleanup_backend()
 
-except Exception as e:
+    except Exception as e:
     print(f"\n--- ERROR ---")
     print(f"{type(e).__name__}: {e}")
     sys.exit(1)
