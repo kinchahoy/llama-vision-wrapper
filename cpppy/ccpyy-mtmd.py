@@ -326,7 +326,7 @@ def main():
 
             # Setup input
             prompt_bytes = args.prompt.encode("utf-8")
-            input_text = cppyy.gbl.new('mtmd_input_text')
+            input_text = cppyy.gbl.new['mtmd_input_text']()
             try:
                 input_text.text = prompt_bytes
                 input_text.add_special = True
