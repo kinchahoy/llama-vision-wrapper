@@ -30,7 +30,7 @@ REQUIRED_LIB_NAMES = [
     "libggml-cpu.so",
     "libggml.so",
     "libllama.so",
-    "libmtmd_shared.so",
+    "libmtmd.so",
     "libgeneration_helper.so",
 ]
 
@@ -241,7 +241,7 @@ def main():
                     print(f"Warning: Include path does not exist: {inc_path}")
 
             print("Loading libraries...")
-            
+
             # Load required libraries
             for lib_name in REQUIRED_LIB_NAMES:
                 lib_dir = (
@@ -256,7 +256,7 @@ def main():
                     )
                 cppyy.load_library(lib_path)
                 print(f"  Loaded: {lib_name}")
-            
+
             # Load optional libraries
             for lib_name in OPTIONAL_LIB_NAMES:
                 lib_dir = LLAMA_CPP_LIBS_DIR
@@ -266,7 +266,9 @@ def main():
                         cppyy.load_library(lib_path)
                         print(f"  Loaded (optional): {lib_name}")
                     except Exception as e:
-                        print(f"  Warning: Failed to load optional library {lib_name}: {e}")
+                        print(
+                            f"  Warning: Failed to load optional library {lib_name}: {e}"
+                        )
                 else:
                     print(f"  Skipped (not found): {lib_name}")
 
