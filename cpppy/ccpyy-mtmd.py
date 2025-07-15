@@ -326,7 +326,7 @@ def main():
 
             # Setup input
             prompt_bytes = args.prompt.encode("utf-8")
-            input_text = cppyy.gbl.mtmd_input_text()
+            input_text = cppyy.gbl.new('mtmd_input_text')
             try:
                 input_text.text = prompt_bytes
                 input_text.add_special = True
@@ -344,15 +344,15 @@ def main():
                         gbl.mtmd_tokenize(
                             ctx_mtmd,
                             chunks,
-                            cppyy.addressof(input_text),
+                            input_text,
                             bitmaps_ptr_vec.data(),
                             bitmaps_ptr_vec.size(),
                         )
                         != 0
                     ):
                         raise RuntimeError("Failed mtmd_tokenize")
-            except Exception as e:
-                raise RuntimeError(f"Failed during multimodal input processing: {e}")
+            finally:
+                cppyy.gbl.delete(input_text)
 
             n_past = 0
             n_past_out = gbl.llama_pos(0)
