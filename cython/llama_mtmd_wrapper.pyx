@@ -125,7 +125,7 @@ def initialize_backend():
 
 def cleanup_backend():
     """Clean up the llama backend."""
-    global g_model, g_ctx, g_ctx_mtmd, g_sampler, g_chunks
+    global g_model, g_ctx, g_ctx_mtmd, g_sampler, g_bitmap, g_chunks
     
     if g_sampler != NULL:
         common_sampler_free(g_sampler)
