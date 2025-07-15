@@ -166,8 +166,8 @@ for i, stat in enumerate(all_timings, 1):
 print("=" * 50)
 print(f"Total operations: {len(all_timings)}")
 total_time = sum(stat.duration for stat in all_timings)
-print(f"Total measured time: {total_time:.2f}    print(f"Total measured time: {total_time:.2f}s")
+print(f"Total measured time: {total_time:.2f}s")
 
 
-print(f"Total measured time: {total_time:.2f}if __name__ == "__main__":
-print(f"Total measured time: {total_time:.2f}    main()
+if __name__ == "__main__":
+    main()

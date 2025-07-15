@@ -50,7 +50,7 @@ message(STATUS "Found libllama: ${LLAMA_LIBRARY}")
 message(STATUS "Found libcommon: ${COMMON_LIBRARY}")
 
 # --- Build Our Shared Library ---
-add_library(generation_helper SHARED gen-helper/generation_helper.cpp gen-helper/generation_helper.h)
+add_library(generation_helper SHARED generation_helper.cpp generation_helper.h)
 
 # Link our helper library against llama and common
 target_link_libraries(generation_helper PRIVATE
@@ -63,4 +63,4 @@ target_link_libraries(generation_helper PRIVATE
 # Install the library and header file to a known location
 # Adjust CMAKE_INSTALL_PREFIX if needed when running cmake
 install(TARGETS generation_helper DESTINATION lib)
-install(FILES gen-helper/generation_helper.h DESTINATION include)
+install(FILES generation_helper.h DESTINATION include)
