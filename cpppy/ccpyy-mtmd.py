@@ -335,6 +335,8 @@ def main():
                 bitmaps_ptr_vec = gbl.std.vector["const mtmd_bitmap*"]()
                 bitmaps_ptr_vec.push_back(bitmap)
                 chunks = gbl.mtmd_input_chunks_init()
+                if not chunks:
+                    raise RuntimeError("Failed to initialize mtmd_input_chunks: mtmd_input_chunks_init returned null")
 
                 # Tokenize and evaluate
                 with timed_operation("Tokenization"):
@@ -349,8 +351,8 @@ def main():
                         != 0
                     ):
                         raise RuntimeError("Failed mtmd_tokenize")
-            except:
-                raise RuntimeError("Failed to initialize mtmd_input_text")
+            except Exception as e:
+                raise RuntimeError(f"Failed during multimodal input processing: {e}")
 
             n_past = 0
             n_past_out = gbl.llama_pos(0)
