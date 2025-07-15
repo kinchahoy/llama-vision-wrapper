@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from huggingface_hub import hf_hub_download
 
 # Configuration
-BASE_DIR = "/Users/raistlin/code/llama-mtmd-py"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Go up from cpppy/ to project root
 LLAMA_CPP_DIR = f"{BASE_DIR}/llama.cpp"
 INCLUDE_DIRS = [
     f"{LLAMA_CPP_DIR}/include",
@@ -22,17 +22,17 @@ INCLUDE_DIRS = [
 LLAMA_CPP_LIBS_DIR = f"{LLAMA_CPP_DIR}/build/bin"
 HELPER_LIB_DIR = f"{BASE_DIR}/build"
 
-# Libraries to load
+# Libraries to load (Linux .so files instead of macOS .dylib)
 LIB_NAMES = [
-    "libggml-base.dylib",
-    "libggml-blas.dylib",
-    "libggml-cpu.dylib",
-    "libggml-metal.dylib",
-    "libggml.dylib",
-    "libllama.dylib",
-    "libllava_shared.dylib",
-    "libmtmd_shared.dylib",
-    "libgeneration_helper.dylib",
+    "libggml-base.so",
+    "libggml-blas.so", 
+    "libggml-cpu.so",
+    "libggml-metal.so",
+    "libggml.so",
+    "libllama.so",
+    "libllava_shared.so",
+    "libmtmd_shared.so",
+    "libgeneration_helper.so",
 ]
 
 
@@ -181,7 +181,7 @@ def main():
                         help="Model file name in the repository.")
     parser.add_argument("--mmproj", type=str, default="mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
                         help="Multimodal projector file name in the repository.")
-    parser.add_argument("--image", type=str, default=f"{BASE_DIR}/test.jpg",
+    parser.add_argument("--image", type=str, default="test.jpg",
                         help="Path to the input image.")
     parser.add_argument("--prompt", type=str, default="USER: Describe this image.\n<__image__>\nASSISTANT:",
                         help="The prompt for the model.")
