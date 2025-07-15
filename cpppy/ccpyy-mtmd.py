@@ -288,7 +288,6 @@ def main():
 
             # Include headers
             for header in [
-                "new",
                 "vector",
                 "llama.h",
                 "common.h",
@@ -327,7 +326,7 @@ def main():
 
             # Setup input
             prompt_bytes = args.prompt.encode("utf-8")
-            input_text = cppyy.gbl.new['mtmd_input_text']()
+            input_text = cppyy.gbl.mtmd_input_text()
             try:
                 input_text.text = prompt_bytes
                 input_text.add_special = True
@@ -350,8 +349,8 @@ def main():
                         != 0
                     ):
                         raise RuntimeError("Failed mtmd_tokenize")
-            finally:
-                cppyy.gbl.delete(input_text)
+            except:
+                raise RuntimeError("Failed to initialize mtmd_input_text")
 
             n_past = 0
             n_past_out = gbl.llama_pos(0)
