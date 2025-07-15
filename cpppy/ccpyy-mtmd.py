@@ -233,69 +233,69 @@ def main():
             model = rm.load_model(model_path, N_GPU_LAYERS)
             ctx = rm.create_context(model, N_CTX, N_BATCH, N_THREADS)
             ctx_mtmd = rm.load_mtmd(mmproj_path, model, N_GPU_LAYERS > 0, N_THREADS)
-        sampler = rm.create_sampler(
-            model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
-        )
-
-        # Load image
-        print("Loading image...")
-        with timed_operation("Image loading"):
-            bitmap = gbl.mtmd_bitmap()
-            ret = gbl.mtmd_helper_bitmap_init_from_file(args.image.encode("utf-8"), bitmap)
-            if ret != 0:
-                raise RuntimeError(f"Failed to load image {args.image} (code: {ret})")
-            print(f"Image loaded: {bitmap.nx}x{bitmap.ny}")
-
-        # Prepare and evaluate multimodal input
-        print("Evaluating multimodal input...")
-
-        # Setup input
-        input_text = gbl.mtmd_input_text()
-        input_text.text = args.prompt
-        input_text.add_special = input_text.parse_special = True
-
-        bitmaps_vec = gbl.std.vector[gbl.mtmd_bitmap]()
-        bitmaps_vec.push_back(bitmap)
-        chunks = gbl.mtmd_input_chunks()
-
-        # Tokenize and evaluate
-        with timed_operation("Tokenization"):
-            if gbl.mtmd_tokenize(ctx_mtmd, chunks, input_text, bitmaps_vec) != 0:
-                raise RuntimeError("Failed mtmd_tokenize")
-
-        n_past = 0
-        seq_id = gbl.llama_seq_id(0)
-        
-        # Process prompt tokens
-        prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
-        with timed_operation("Prompt evaluation", tokens=prompt_tokens):
-            if gbl.mtmd_helper_eval(ctx_mtmd, ctx, chunks, n_past, seq_id, N_BATCH) != 0:
-                raise RuntimeError("Failed mtmd_helper_eval")
-
-        # Update KV cache position
-        n_past += prompt_tokens
-        print(f"KV cache position (n_past): {n_past}")
-
-        # Generate response
-        print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
-        print(f"{args.prompt}", end="", flush=True)
-
-        # Call C++ generation function
-        seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
-
-        # Generate tokens using C++ helper function
-        with timed_operation("Token generation") as timing_ctx:
-            cpp_result = gbl.generate_tokens_cpp(
-                sampler, ctx, model, n_past, N_CTX, MAX_NEW_TOKENS, seq_id_vec
+            sampler = rm.create_sampler(
+                model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
             )
 
-            # Print results
-            print(f"{cpp_result.generated_text}")
-            
-            # Update timing with token count
-            timing_ctx.tokens = cpp_result.total_tokens_generated
+            # Load image
+            print("Loading image...")
+            with timed_operation("Image loading"):
+                bitmap = gbl.mtmd_bitmap()
+                ret = gbl.mtmd_helper_bitmap_init_from_file(args.image.encode("utf-8"), bitmap)
+                if ret != 0:
+                    raise RuntimeError(f"Failed to load image {args.image} (code: {ret})")
+                print(f"Image loaded: {bitmap.nx}x{bitmap.ny}")
 
-        print(f"Final KV cache position (n_past): {cpp_result.final_n_past}")
+            # Prepare and evaluate multimodal input
+            print("Evaluating multimodal input...")
+
+            # Setup input
+            input_text = gbl.mtmd_input_text()
+            input_text.text = args.prompt
+            input_text.add_special = input_text.parse_special = True
+
+            bitmaps_vec = gbl.std.vector[gbl.mtmd_bitmap]()
+            bitmaps_vec.push_back(bitmap)
+            chunks = gbl.mtmd_input_chunks()
+
+            # Tokenize and evaluate
+            with timed_operation("Tokenization"):
+                if gbl.mtmd_tokenize(ctx_mtmd, chunks, input_text, bitmaps_vec) != 0:
+                    raise RuntimeError("Failed mtmd_tokenize")
+
+            n_past = 0
+            seq_id = gbl.llama_seq_id(0)
+            
+            # Process prompt tokens
+            prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
+            with timed_operation("Prompt evaluation", tokens=prompt_tokens):
+                if gbl.mtmd_helper_eval(ctx_mtmd, ctx, chunks, n_past, seq_id, N_BATCH) != 0:
+                    raise RuntimeError("Failed mtmd_helper_eval")
+
+            # Update KV cache position
+            n_past += prompt_tokens
+            print(f"KV cache position (n_past): {n_past}")
+
+            # Generate response
+            print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
+            print(f"{args.prompt}", end="", flush=True)
+
+            # Call C++ generation function
+            seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
+
+            # Generate tokens using C++ helper function
+            with timed_operation("Token generation") as timing_ctx:
+                cpp_result = gbl.generate_tokens_cpp(
+                    sampler, ctx, model, n_past, N_CTX, MAX_NEW_TOKENS, seq_id_vec
+                )
+
+                # Print results
+                print(f"{cpp_result.generated_text}")
+                
+                # Update timing with token count
+                timing_ctx.tokens = cpp_result.total_tokens_generated
+
+            print(f"Final KV cache position (n_past): {cpp_result.final_n_past}")
 
 except Exception as e:
     print(f"\n--- ERROR ---")
@@ -310,8 +310,8 @@ for i, stat in enumerate(all_timings, 1):
 print("=" * 50)
 print(f"Total operations: {len(all_timings)}")
 total_time = sum(stat.duration for stat in all_timings)
-print(f"Total measured time: {total_time:.2f}    print(f"Total measured time: {total_time:.2f}s")
+print(f"Total measured time: {total_time:.2f}s")
 
 
-print(f"Total measured time: {total_time:.2f}if __name__ == "__main__":
-print(f"Total measured time: {total_time:.2f}    main()
+if __name__ == "__main__":
+    main()
