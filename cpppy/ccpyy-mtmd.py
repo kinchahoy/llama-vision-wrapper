@@ -340,42 +340,72 @@ def main():
 
             # Tokenize and evaluate
             with timed_operation("Tokenization"):
-                if (
-                    gbl.mtmd_tokenize(
-                        ctx_mtmd,
-                        chunks,
-                        input_text,
-                        bitmaps_ptr_vec.data(),
-                        bitmaps_ptr_vec.size(),
-                    )
-                    != 0
-                ):
+                print(f"DEBUG: About to call mtmd_tokenize with:")
+                print(f"  ctx_mtmd: {ctx_mtmd}")
+                print(f"  chunks: {chunks}")
+                print(f"  input_text: {input_text}")
+                print(f"  input_text.text: {input_text.text}")
+                print(f"  input_text.add_special: {input_text.add_special}")
+                print(f"  input_text.parse_special: {input_text.parse_special}")
+                print(f"  bitmaps_ptr_vec.size(): {bitmaps_ptr_vec.size()}")
+                
+                result = gbl.mtmd_tokenize(
+                    ctx_mtmd,
+                    chunks,
+                    input_text,
+                    bitmaps_ptr_vec.data(),
+                    bitmaps_ptr_vec.size(),
+                )
+                print(f"DEBUG: mtmd_tokenize returned: {result}")
+                if result != 0:
                     raise RuntimeError("Failed mtmd_tokenize")
 
+            print("DEBUG: Tokenization completed successfully")
+            
             n_past = 0
             n_past_out = gbl.llama_pos(0)
             seq_id = gbl.llama_seq_id(0)
+            
+            print(f"DEBUG: Initial values:")
+            print(f"  n_past: {n_past}")
+            print(f"  n_past_out: {n_past_out}")
+            print(f"  seq_id: {seq_id}")
 
             # Process prompt tokens
+            print("DEBUG: About to call mtmd_helper_get_n_tokens")
             prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
+            print(f"DEBUG: prompt_tokens: {prompt_tokens}")
+            
+            print("DEBUG: About to call mtmd_helper_eval_chunks")
             with timed_operation("Prompt evaluation", tokens=prompt_tokens):
-                if (
-                    gbl.mtmd_helper_eval_chunks(
-                        ctx_mtmd,
-                        ctx,
-                        chunks,
-                        n_past,
-                        seq_id,
-                        N_BATCH,
-                        False,
-                        cppyy.addressof(n_past_out),
-                    )
-                    != 0
-                ):
+                print(f"DEBUG: mtmd_helper_eval_chunks parameters:")
+                print(f"  ctx_mtmd: {ctx_mtmd}")
+                print(f"  ctx: {ctx}")
+                print(f"  chunks: {chunks}")
+                print(f"  n_past: {n_past}")
+                print(f"  seq_id: {seq_id}")
+                print(f"  N_BATCH: {N_BATCH}")
+                print(f"  False: {False}")
+                print(f"  addressof(n_past_out): {cppyy.addressof(n_past_out)}")
+                
+                result = gbl.mtmd_helper_eval_chunks(
+                    ctx_mtmd,
+                    ctx,
+                    chunks,
+                    n_past,
+                    seq_id,
+                    N_BATCH,
+                    False,
+                    cppyy.addressof(n_past_out),
+                )
+                print(f"DEBUG: mtmd_helper_eval_chunks returned: {result}")
+                if result != 0:
                     raise RuntimeError("Failed mtmd_helper_eval_chunks")
 
             # Update KV cache position
+            print("DEBUG: mtmd_helper_eval_chunks completed successfully")
             n_past = n_past_out
+            print(f"DEBUG: Updated n_past from n_past_out: {n_past}")
             print(f"KV cache position (n_past): {n_past}")
 
             # Generate response
