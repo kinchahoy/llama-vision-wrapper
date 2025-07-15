@@ -21,7 +21,7 @@ INCLUDE_DIRS = [
     f"{LLAMA_CPP_DIR}/common",
 ]
 LLAMA_CPP_LIBS_DIR = f"{LLAMA_CPP_DIR}/build/bin"
-HELPER_LIB_DIR = f"{BASE_DIR}/build"
+HELPER_LIB_DIR = f"{BASE_DIR}/gen-helper/build"
 
 # Libraries to load (Linux .so files instead of macOS .dylib)
 # Required libraries
