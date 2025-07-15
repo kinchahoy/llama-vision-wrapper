@@ -177,7 +177,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run multimodal generation with cppyy.")
     parser.add_argument("--repo-id", "-hf", type=str, default="ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
                         help="Hugging Face repository ID for GGUF models.")
-    parser.add_argument("--model", "-m", type=str, default="SmolVLM-2.2B-Instruct.gguf",
+    parser.add_argument("--model", "-m", type=str, default="SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
                         help="Model file name in the repository.")
     parser.add_argument("--mmproj", type=str, default="mmproj-model-f16.gguf",
                         help="Multimodal projector file name in the repository.")
