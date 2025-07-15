@@ -12,110 +12,64 @@ GenerationResult generate_tokens_cpp(
     int32_t n_past_start,
     int32_t n_ctx,
     int32_t max_new_tokens,
-    const std::vector<llama_seq_id> seq_ids) // Changed to pass by value
-    // Removed callback parameters
+    const std::vector<llama_seq_id> seq_ids)
 {
-    // fprintf(stderr, "DEBUG: Entering generate_tokens_cpp (n_past_start=%d, max_new_tokens=%d)\n", n_past_start, max_new_tokens); // Optional: Keep for debugging
     GenerationResult result;
     result.final_n_past = n_past_start;
     result.total_tokens_generated = 0;
-    result.generated_text = ""; // Initialize the string
-    std::vector<llama_token> generated_tokens; // Vector to store generated token IDs
-    // Pre-allocate vector based on the maximum possible tokens to generate
-    generated_tokens.reserve(max_new_tokens);
+    result.generated_text = "";
 
-    // Check if the vector is empty (no need to check for null pointer now)
+    // Check if the vector is empty
     if (seq_ids.empty()) {
         fprintf(stderr, "Error: Empty sequence ID vector provided to generate_tokens_cpp.\n");
-        result.total_tokens_generated = -1; // Indicate error
-        return result; // Return empty result
+        result.total_tokens_generated = -1;
+        return result;
     }
-    // Get data pointer directly from the vector value
-    const llama_seq_id * p_seq_id_const = seq_ids.data();
-    const size_t n_seq_ids = seq_ids.size(); // Get size for batch init
 
-    // Use a local batch for single-token decoding within the loop
-    // Initialize batch for 1 token, 0 embedding data, n_seq_ids sequence IDs per token
-    struct llama_batch batch = llama_batch_init(1, 0, n_seq_ids);
-    if (!batch.token) { // Check if init failed
+    // Use a single batch for all token decoding - initialize once
+    struct llama_batch batch = llama_batch_init(1, 0, 1);
+    if (!batch.token) {
          fprintf(stderr, "Error: Failed to initialize batch in generate_tokens_cpp.\n");
-         result.total_tokens_generated = -1; // Indicate error
+         result.total_tokens_generated = -1;
          return result;
     }
 
-    // Removed callback-related variables (current_chunk, tokens_in_current_chunk)
-    const int buffer_size = 256; // Max size for a single token piece string
-    char piece_buffer[buffer_size];
-    const struct llama_vocab * vocab = llama_model_get_vocab(model); // Get vocab once
+    const struct llama_vocab * vocab = llama_model_get_vocab(model);
+    std::string generated_text;
+    generated_text.reserve(max_new_tokens * 4); // Pre-allocate for better performance
 
     while (result.final_n_past < n_ctx && result.total_tokens_generated < max_new_tokens) {
-        // 1. Sample
-        llama_token id = common_sampler_sample(sampler, ctx, -1);
+        // Sample next token
+        llama_token token_id = common_sampler_sample(sampler, ctx, -1);
+        
+        // Accept the token
+        common_sampler_accept(sampler, token_id, true);
 
-        // 2. Accept
-        common_sampler_accept(sampler, id, true);
-
-        // 3. Check for End-of-Sequence
-        if (llama_vocab_is_eog(vocab, id)) {
-            // fprintf(stderr, "\n[EOS reached in C++]\n"); // Optional debug
+        // Check for end of generation
+        if (llama_vocab_is_eog(vocab, token_id)) {
             break;
         }
 
-        // 4. Convert token to piece AND PRINT directly
-        int n_chars = llama_token_to_piece(vocab, id, piece_buffer, buffer_size, 0, false);
-        if (n_chars < 0) {
-             fprintf(stderr, "\nError: llama_token_to_piece returned %d\n", n_chars);
-             break; // Stop generation on error
-        }
-        // Store the token ID instead of converting and appending immediately
-        generated_tokens.push_back(id);
+        // Convert token to text and append immediately
+        std::string piece = common_token_to_piece(ctx, token_id);
+        generated_text += piece;
 
-        result.total_tokens_generated++; // Increment token count *after* successful processing/appending
+        result.total_tokens_generated++;
 
-        // 5. Prepare batch for decoding this single token
-        batch.n_tokens = 1; // Explicitly set number of tokens in batch
-        batch.token [0] = id;
-        batch.pos   [0] = result.final_n_past;
-        batch.n_seq_id[0] = n_seq_ids; // Set the number of seq IDs for this token
-        // Copy the sequence IDs into the batch's managed memory
-        for (size_t i = 0; i < n_seq_ids; ++i) {
-            batch.seq_id[0][i] = p_seq_id_const[i];
-        }
-        batch.logits[0] = true; // We need logits for sampling the *next* token
+        // Prepare batch using common functions (like CLI does)
+        common_batch_clear(batch);
+        common_batch_add(batch, token_id, result.final_n_past, {0}, true);
 
-        // 6. Decode the batch
-        int decode_ret = llama_decode(ctx, batch);
-        if (decode_ret != 0) {
-            fprintf(stderr, "\nError: llama_decode returned %d in C++ loop (pos %d)\n", decode_ret, result.final_n_past);
-            llama_batch_free(batch); // Clean up local batch before returning
-            return result;
+        // Decode the token
+        if (llama_decode(ctx, batch)) {
+            fprintf(stderr, "Error: llama_decode failed at position %d\n", result.final_n_past);
+            break;
         }
 
-        // 7. Update KV cache position
         result.final_n_past++;
-
-        // 8. Callback logic removed
-    }
-    // Removed final newline print
-
-    // 9. Remaining chunk callback removed
-
-    // Convert collected token IDs to string after the loop
-    result.generated_text.reserve(result.total_tokens_generated * 6); // Pre-allocate roughly (average token length guess)
-    for (llama_token token_id : generated_tokens) {
-        int n_chars = llama_token_to_piece(vocab, token_id, piece_buffer, buffer_size, 0, false);
-        if (n_chars < 0) {
-            fprintf(stderr, "\nError: llama_token_to_piece returned %d during final conversion\n", n_chars);
-            // Handle error? Maybe append an error marker? For now, just skip.
-            continue;
-        }
-        result.generated_text.append(piece_buffer, n_chars);
     }
 
-    // Clean up the local batch
+    result.generated_text = std::move(generated_text);
     llama_batch_free(batch);
-    // fprintf(stderr, "DEBUG: Local batch freed in generate_tokens_cpp\n"); // Optional debug
-
-    // fprintf(stderr, "DEBUG: Exiting generate_tokens_cpp (final_n_past=%d, total_tokens=%d)\n", result.final_n_past, result.total_tokens_generated); // Optional debug
     return result;
 }
