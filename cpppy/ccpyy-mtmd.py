@@ -288,6 +288,7 @@ def main():
 
             # Include headers
             for header in [
+                "new",
                 "vector",
                 "llama.h",
                 "common.h",
