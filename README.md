@@ -60,16 +60,27 @@ This project uses `pyproject.toml` to declare its Python dependencies.
     source .venv/bin/activate
     ```
 
-2.  **Install dependencies.** This will install `cppyy` and `Cython` into your virtual environment.
+2.  **Install dependencies.** This will install `cppyy`, `Cython`, and `huggingface-hub` into your virtual environment.
     ```bash
     uv pip install -e .
     ```
 
 ## 7. Run the Examples
 
-Before running, ensure you have downloaded the required models (e.g., a Gemma-3 GGUF model and the corresponding MMPROJ file) and updated the hardcoded paths at the top of the scripts:
-- `cython/cython-mtmd.py`
-- `cpppy/ccpyy-mtmd.py`
+The scripts will automatically download the necessary models from Hugging Face Hub. The default model is `ggml-org/SmolVLM2-2.2B-Instruct-GGUF`.
+
+You can customize the model, image, and prompt using command-line arguments. For example:
+```bash
+python cpppy/ccpyy-mtmd.py --image my_image.png --prompt "USER: What is in this picture?\n<__image__>\nASSISTANT:"
+```
+
+To use a different model from Hugging Face Hub, use the `-hf` (or `--repo-id`), `-m` (`--model`), and `--mmproj` arguments:
+```bash
+python cpppy/ccpyy-mtmd.py \
+  -hf "another-org/another-model-GGUF" \
+  -m "model-file.gguf" \
+  --mmproj "mmproj-file.gguf"
+```
 
 There are two example implementations available:
 
@@ -77,7 +88,11 @@ There are two example implementations available:
 
 This approach is simpler for development as it loads C++ code at runtime.
 ```bash
+# Run with default model and test image
 python cpppy/ccpyy-mtmd.py
+
+# Run with a specific image
+python cpppy/ccpyy-mtmd.py --image path/to/your/image.jpg
 ```
 
 ### Option B: Run with Cython (Compiled Extension)
@@ -93,6 +108,10 @@ This approach offers the best performance by compiling the wrapper into a native
 
 2.  **Run the script:**
     ```bash
+    # Run with default model and test image
     python cython/cython-mtmd.py
+
+    # Run with a specific image and prompt
+    python cython/cython-mtmd.py --image path/to/your/image.jpg --prompt "USER: What's this?\n<__image__>\nASSISTANT:"
     ```
 

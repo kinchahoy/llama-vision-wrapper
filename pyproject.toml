@@ -5,4 +5,5 @@ description = "Python bindings for llama.cpp multimodal functionality using cppy
 dependencies = [
     "cppyy",
     "Cython",
+    "huggingface-hub",
 ]

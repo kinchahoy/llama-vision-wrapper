@@ -4,12 +4,11 @@ import cppyy
 import os
 import time
 import sys
+import argparse
 from dataclasses import dataclass
 from typing import Optional
 from contextlib import contextmanager
-from dataclasses import dataclass
-from typing import Optional
-from contextlib import contextmanager
+from huggingface_hub import hf_hub_download
 
 # Configuration
 BASE_DIR = "/Users/raistlin/code/llama-mtmd-py"
@@ -36,11 +35,6 @@ LIB_NAMES = [
     "libgeneration_helper.dylib",
 ]
 
-# Paths and parameters
-MODEL_PATH = "/Users/raistlin/models/gguf/gemma-3-4b-it-q4_0.gguf"
-MMPROJ_PATH = "/Users/raistlin/models/gguf/mmproj-model-f16-4B.gguf"
-IMAGE_PATH = f"{BASE_DIR}/test.jpg"
-PROMPT = "USER: Describe this image.\n<__image__>\nASSISTANT:"
 
 # Runtime parameters
 N_CTX = 2048
@@ -178,45 +172,67 @@ class ResourceManager:
         return sampler
 
 
-# Main execution
-try:
-    print("--- Initializing ---")
-    
-    with timed_operation("cppyy setup"):
-        # Setup cppyy
-        for inc_path in INCLUDE_DIRS:
-            cppyy.add_include_path(inc_path)
+def main():
+    """Main execution function."""
+    parser = argparse.ArgumentParser(description="Run multimodal generation with cppyy.")
+    parser.add_argument("--repo-id", "-hf", type=str, default="ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+                        help="Hugging Face repository ID for GGUF models.")
+    parser.add_argument("--model", "-m", type=str, default="SmolVLM-2.2B-Instruct.gguf",
+                        help="Model file name in the repository.")
+    parser.add_argument("--mmproj", type=str, default="mmproj-model-f16.gguf",
+                        help="Multimodal projector file name in the repository.")
+    parser.add_argument("--image", type=str, default=f"{BASE_DIR}/test.jpg",
+                        help="Path to the input image.")
+    parser.add_argument("--prompt", type=str, default="USER: Describe this image.\n<__image__>\nASSISTANT:",
+                        help="The prompt for the model.")
+    args = parser.parse_args()
 
-        print("Loading libraries...")
-        for lib_name in LIB_NAMES:
-            lib_dir = (
-                HELPER_LIB_DIR
-                if lib_name == "libgeneration_helper.dylib"
-                else LLAMA_CPP_LIBS_DIR
-            )
-            lib_path = os.path.join(lib_dir, lib_name)
-            if not os.path.exists(lib_path):
-                raise FileNotFoundError(f"Library '{lib_name}' not found at {lib_path}")
-            cppyy.load_library(lib_path)
+    try:
+        print("--- Initializing ---")
 
-        # Include headers
-        for header in [
-            "vector",
-            "llama.h",
-            "common.h",
-            "sampling.h",
-            "mtmd.h",
-            "generation_helper.h",
-        ]:
-            cppyy.include(header)
-        gbl = cppyy.gbl
+        print("--- Downloading models from Hugging Face Hub ---")
+        with timed_operation("Model download"):
+            model_path = hf_hub_download(repo_id=args.repo_id, filename=args.model)
+        with timed_operation("MMPROJ download"):
+            mmproj_path = hf_hub_download(repo_id=args.repo_id, filename=args.mmproj)
+        print(f"Model path: {model_path}")
+        print(f"MMPROJ path: {mmproj_path}")
+        
+        with timed_operation("cppyy setup"):
+            # Setup cppyy
+            for inc_path in INCLUDE_DIRS:
+                cppyy.add_include_path(inc_path)
 
-    # Initialize resources
-    with ResourceManager() as rm:
-        # Load model and create contexts
-        model = rm.load_model(MODEL_PATH, N_GPU_LAYERS)
-        ctx = rm.create_context(model, N_CTX, N_BATCH, N_THREADS)
-        ctx_mtmd = rm.load_mtmd(MMPROJ_PATH, model, N_GPU_LAYERS > 0, N_THREADS)
+            print("Loading libraries...")
+            for lib_name in LIB_NAMES:
+                lib_dir = (
+                    HELPER_LIB_DIR
+                    if lib_name == "libgeneration_helper.dylib"
+                    else LLAMA_CPP_LIBS_DIR
+                )
+                lib_path = os.path.join(lib_dir, lib_name)
+                if not os.path.exists(lib_path):
+                    raise FileNotFoundError(f"Library '{lib_name}' not found at {lib_path}")
+                cppyy.load_library(lib_path)
+
+            # Include headers
+            for header in [
+                "vector",
+                "llama.h",
+                "common.h",
+                "sampling.h",
+                "mtmd.h",
+                "generation_helper.h",
+            ]:
+                cppyy.include(header)
+            gbl = cppyy.gbl
+
+        # Initialize resources
+        with ResourceManager() as rm:
+            # Load model and create contexts
+            model = rm.load_model(model_path, N_GPU_LAYERS)
+            ctx = rm.create_context(model, N_CTX, N_BATCH, N_THREADS)
+            ctx_mtmd = rm.load_mtmd(mmproj_path, model, N_GPU_LAYERS > 0, N_THREADS)
         sampler = rm.create_sampler(
             model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
         )
@@ -225,9 +241,9 @@ try:
         print("Loading image...")
         with timed_operation("Image loading"):
             bitmap = gbl.mtmd_bitmap()
-            ret = gbl.mtmd_helper_bitmap_init_from_file(IMAGE_PATH.encode("utf-8"), bitmap)
+            ret = gbl.mtmd_helper_bitmap_init_from_file(args.image.encode("utf-8"), bitmap)
             if ret != 0:
-                raise RuntimeError(f"Failed to load image {IMAGE_PATH} (code: {ret})")
+                raise RuntimeError(f"Failed to load image {args.image} (code: {ret})")
             print(f"Image loaded: {bitmap.nx}x{bitmap.ny}")
 
         # Prepare and evaluate multimodal input
@@ -235,7 +251,7 @@ try:
 
         # Setup input
         input_text = gbl.mtmd_input_text()
-        input_text.text = PROMPT
+        input_text.text = args.prompt
         input_text.add_special = input_text.parse_special = True
 
         bitmaps_vec = gbl.std.vector[gbl.mtmd_bitmap]()
@@ -262,7 +278,7 @@ try:
 
         # Generate response
         print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
-        print(f"{PROMPT}", end="", flush=True)
+        print(f"{args.prompt}", end="", flush=True)
 
         # Call C++ generation function
         seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
@@ -294,4 +310,8 @@ for i, stat in enumerate(all_timings, 1):
 print("=" * 50)
 print(f"Total operations: {len(all_timings)}")
 total_time = sum(stat.duration for stat in all_timings)
-print(f"Total measured time: {total_time:.2f}s")
+print(f"Total measured time: {total_time:.2f}    print(f"Total measured time: {total_time:.2f}s")
+
+
+print(f"Total measured time: {total_time:.2f}if __name__ == "__main__":
+print(f"Total measured time: {total_time:.2f}    main()
