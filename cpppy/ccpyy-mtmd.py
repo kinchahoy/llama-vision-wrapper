@@ -179,7 +179,7 @@ def main():
                         help="Hugging Face repository ID for GGUF models.")
     parser.add_argument("--model", "-m", type=str, default="SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
                         help="Model file name in the repository.")
-    parser.add_argument("--mmproj", type=str, default="mmproj-model-Q8_0.gguf",
+    parser.add_argument("--mmproj", type=str, default="mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
                         help="Multimodal projector file name in the repository.")
     parser.add_argument("--image", type=str, default=f"{BASE_DIR}/test.jpg",
                         help="Path to the input image.")
