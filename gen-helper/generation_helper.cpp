@@ -45,12 +45,6 @@ GenerationResult generate_tokens_cpp(
          return result;
     }
 
-    // Check for single-threaded decoding, which can be a major performance bottleneck.
-    if (llama_get_context_params(ctx).n_threads == 1) {
-        fprintf(stderr, "[WARN] Decoding with 1 thread, performance may be poor. "
-                        "Adjust thread count during context creation for a significant speed up.\n");
-    }
-
     const struct llama_vocab * vocab = llama_model_get_vocab(model);
     
     // Optimize string handling - collect tokens first, convert later
