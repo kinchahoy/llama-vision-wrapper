@@ -1,0 +1,13 @@
+diff --git a/llama.cpp/common/CMakeLists.txt b/llama.cpp/common/CMakeLists.txt
+index 43533fc8..d277384e 100644
+--- a/llama.cpp/common/CMakeLists.txt
++++ b/llama.cpp/common/CMakeLists.txt
+@@ -52,7 +52,7 @@ endif()
+
+ set(TARGET common)
+
+-add_library(${TARGET} STATIC
++add_library(${TARGET}
+     arg.cpp
+     arg.h
+     base64.hpp
