@@ -133,13 +133,17 @@ class ResourceManager:
         self.log(f"Model loaded (GPU layers: {gpu_layers})")
         return model
 
-    def create_context(self, model, n_ctx, n_batch, n_threads):
+    def create_context(self, model, n_ctx, n_batch, n_threads, verbose_cpp=False):
         self.log("Creating LLaMA context...")
         params = cppyy.gbl.llama_context_default_params()
         params.n_ctx = n_ctx
         params.n_batch = n_batch
         params.n_threads = params.n_threads_batch = n_threads
-        params.log_level = cppyy.gbl.GGML_LOG_LEVEL_ERROR
+        params.log_level = (
+            cppyy.gbl.GGML_LOG_LEVEL_INFO
+            if verbose_cpp
+            else cppyy.gbl.GGML_LOG_LEVEL_ERROR
+        )
 
         with timed_operation("Context creation"):
             ctx = cppyy.gbl.llama_new_context_with_model(model, params)
@@ -157,7 +161,7 @@ class ResourceManager:
 
         return ctx
 
-    def load_mtmd(self, mmproj_path, model, use_gpu, n_threads):
+    def load_mtmd(self, mmproj_path, model, use_gpu, n_threads, verbose_cpp=False):
         self.log(f"Loading multimodal context from {mmproj_path}...")
 
         # Check if file exists and is readable
@@ -174,7 +178,9 @@ class ResourceManager:
         params.n_threads = n_threads
         params.verbosity = (
             cppyy.gbl.GGML_LOG_LEVEL_INFO
-        )  # Increase verbosity for debugging
+            if verbose_cpp
+            else cppyy.gbl.GGML_LOG_LEVEL_ERROR
+        )
 
         with timed_operation("Multimodal projector loading"):
             ctx_mtmd = cppyy.gbl.mtmd_init_from_file(
@@ -240,6 +246,11 @@ def main():
         type=str,
         default="USER: Describe this image.\n<__image__>\nASSISTANT:",
         help="The prompt for the model.",
+    )
+    parser.add_argument(
+        "--verbose-cpp",
+        action="store_true",
+        help="Enable verbose logging from the C++ backend.",
     )
     args = parser.parse_args()
 
@@ -312,8 +323,10 @@ def main():
         with ResourceManager() as rm:
             # Load model and create contexts
             model = rm.load_model(model_path, N_GPU_LAYERS)
-            ctx = rm.create_context(model, N_CTX, N_BATCH, N_THREADS)
-            ctx_mtmd = rm.load_mtmd(mmproj_path, model, N_GPU_LAYERS > 0, N_THREADS)
+            ctx = rm.create_context(model, N_CTX, N_BATCH, N_THREADS, args.verbose_cpp)
+            ctx_mtmd = rm.load_mtmd(
+                mmproj_path, model, N_GPU_LAYERS > 0, N_THREADS, args.verbose_cpp
+            )
             sampler = rm.create_sampler(
                 model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
             )
