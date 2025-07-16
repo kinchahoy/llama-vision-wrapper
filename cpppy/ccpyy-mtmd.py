@@ -45,7 +45,6 @@ OPTIONAL_LIB_NAMES = [
 
 # Runtime parameters
 N_CTX = 2048
-N_THREADS = 8
 N_GPU_LAYERS = 0
 N_BATCH = 512
 MAX_NEW_TOKENS = 256
@@ -156,7 +155,7 @@ class ResourceManager:
         if n_threads == 1:
             self.log(
                 "[WARN] Decoding with 1 thread, performance may be poor. "
-                "Adjust N_THREADS for a significant speed up."
+                "Adjust --n-threads for a significant speed up."
             )
 
         return ctx
@@ -248,6 +247,12 @@ def main():
         help="The prompt for the model.",
     )
     parser.add_argument(
+        "--n-threads",
+        type=int,
+        default=8,
+        help="Number of threads to use for computation.",
+    )
+    parser.add_argument(
         "--verbose-cpp",
         action="store_true",
         help="Enable verbose logging from the C++ backend.",
@@ -323,9 +328,11 @@ def main():
         with ResourceManager() as rm:
             # Load model and create contexts
             model = rm.load_model(model_path, N_GPU_LAYERS)
-            ctx = rm.create_context(model, N_CTX, N_BATCH, N_THREADS, args.verbose_cpp)
+            ctx = rm.create_context(
+                model, N_CTX, N_BATCH, args.n_threads, args.verbose_cpp
+            )
             ctx_mtmd = rm.load_mtmd(
-                mmproj_path, model, N_GPU_LAYERS > 0, N_THREADS, args.verbose_cpp
+                mmproj_path, model, N_GPU_LAYERS > 0, args.n_threads, args.verbose_cpp
             )
             sampler = rm.create_sampler(
                 model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
