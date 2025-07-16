@@ -4,17 +4,6 @@
 #include <string> // For std::string
 #include "llama.h" // Ensure llama definitions are included
 #include "common.h" // For llama_token_to_piece
-#include <chrono> // For timing
-
-// Helper for timing output
-static void print_timing(double total_seconds, int total_tokens) {
-    if (total_tokens > 0) {
-        printf("[Timing] Total: %.3f sec, Per token: %.3f ms\n",
-               total_seconds, (total_seconds * 1000.0) / total_tokens);
-    } else {
-        printf("[Timing] Total: %.3f sec, No tokens generated.\n", total_seconds);
-    }
-}
 GenerationResult generate_tokens_cpp(
     common_sampler * sampler,
     struct llama_context * ctx,
@@ -51,9 +40,6 @@ GenerationResult generate_tokens_cpp(
     std::vector<llama_token> generated_tokens;
     generated_tokens.reserve(max_new_tokens);
 
-    // Start timing
-    auto t_start = std::chrono::high_resolution_clock::now();
-
     while (result.final_n_past < n_ctx && result.total_tokens_generated < max_new_tokens) {
         // Sample next token
         llama_token token_id = common_sampler_sample(sampler, ctx, -1);
@@ -83,18 +69,12 @@ GenerationResult generate_tokens_cpp(
         result.final_n_past++;
     }
 
-    // End timing
-    auto t_end = std::chrono::high_resolution_clock::now();
-    double total_seconds = std::chrono::duration<double>(t_end - t_start).count();
-
     // Convert all tokens to text at once (outside the hot loop)
     std::string generated_text;
     generated_text.reserve(result.total_tokens_generated * 4);
     for (llama_token token : generated_tokens) {
         generated_text += common_token_to_piece(ctx, token);
     }
-
-    print_timing(total_seconds, result.total_tokens_generated);
 
     result.generated_text = std::move(generated_text);
     llama_batch_free(batch);
