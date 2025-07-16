@@ -97,7 +97,7 @@ def timed_operation(name: str, tokens: Optional[int] = None):
 class ResourceManager:
     """Combined resource manager for all llama.cpp resources"""
 
-    def __init__(self, verbose=True):
+    def __init__(self, verbose=False):
         self.verbose = verbose
         self.resources = {}
         self.timings = []
@@ -347,7 +347,7 @@ def main():
             print("Evaluating multimodal input...")
 
             # Setup input - create on stack and keep string alive
-            prompt_cstr = args.prompt.encode('utf-8')
+            prompt_cstr = args.prompt.encode("utf-8")
             input_text = gbl.mtmd_input_text()
             input_text.text = prompt_cstr
             input_text.add_special = True
@@ -357,7 +357,9 @@ def main():
             bitmaps_ptr_vec.push_back(bitmap)
             chunks = gbl.mtmd_input_chunks_init()
             if not chunks:
-                raise RuntimeError("Failed to initialize mtmd_input_chunks: mtmd_input_chunks_init returned null")
+                raise RuntimeError(
+                    "Failed to initialize mtmd_input_chunks: mtmd_input_chunks_init returned null"
+                )
 
             # Tokenize and evaluate
             with timed_operation("Tokenization"):
@@ -369,7 +371,7 @@ def main():
                 print(f"  input_text.add_special: {input_text.add_special}")
                 print(f"  input_text.parse_special: {input_text.parse_special}")
                 print(f"  bitmaps_ptr_vec.size(): {bitmaps_ptr_vec.size()}")
-                
+
                 result = gbl.mtmd_tokenize(
                     ctx_mtmd,
                     chunks,
@@ -382,10 +384,10 @@ def main():
                     raise RuntimeError("Failed mtmd_tokenize")
 
             print("DEBUG: Tokenization completed successfully")
-            
+
             n_past = 0
             seq_id = gbl.llama_seq_id(0)
-            
+
             print(f"DEBUG: Initial values:")
             print(f"  n_past: {n_past}")
             print(f"  seq_id: {seq_id}")
@@ -394,12 +396,12 @@ def main():
             print("DEBUG: About to call mtmd_helper_get_n_tokens")
             prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
             print(f"DEBUG: prompt_tokens: {prompt_tokens}")
-            
+
             # Create a proper C++ variable for the output parameter
             print("DEBUG: Creating n_past_out as C++ array")
             n_past_out_array = cppyy.gbl.std.array[gbl.llama_pos, 1]()
             n_past_out_array[0] = gbl.llama_pos(n_past)
-            
+
             print("DEBUG: About to call mtmd_helper_eval_chunks")
             with timed_operation("Prompt evaluation", tokens=prompt_tokens):
                 print(f"DEBUG: mtmd_helper_eval_chunks parameters:")
@@ -411,7 +413,7 @@ def main():
                 print(f"  N_BATCH: {N_BATCH}")
                 print(f"  False: {False}")
                 print(f"  n_past_out_array.data(): {n_past_out_array.data()}")
-                
+
                 result = gbl.mtmd_helper_eval_chunks(
                     ctx_mtmd,
                     ctx,
