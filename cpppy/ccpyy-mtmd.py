@@ -372,15 +372,6 @@ def main():
 
             # Tokenize and evaluate
             with timed_operation("Tokenization"):
-                print(f"DEBUG: About to call mtmd_tokenize with:")
-                print(f"  ctx_mtmd: {ctx_mtmd}")
-                print(f"  chunks: {chunks}")
-                print(f"  input_text: {input_text}")
-                print(f"  input_text.text: {input_text.text}")
-                print(f"  input_text.add_special: {input_text.add_special}")
-                print(f"  input_text.parse_special: {input_text.parse_special}")
-                print(f"  bitmaps_ptr_vec.size(): {bitmaps_ptr_vec.size()}")
-
                 result = gbl.mtmd_tokenize(
                     ctx_mtmd,
                     chunks,
@@ -388,41 +379,20 @@ def main():
                     bitmaps_ptr_vec.data(),
                     bitmaps_ptr_vec.size(),
                 )
-                print(f"DEBUG: mtmd_tokenize returned: {result}")
                 if result != 0:
                     raise RuntimeError("Failed mtmd_tokenize")
-
-            print("DEBUG: Tokenization completed successfully")
 
             n_past = 0
             seq_id = gbl.llama_seq_id(0)
 
-            print(f"DEBUG: Initial values:")
-            print(f"  n_past: {n_past}")
-            print(f"  seq_id: {seq_id}")
-
             # Process prompt tokens
-            print("DEBUG: About to call mtmd_helper_get_n_tokens")
             prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
-            print(f"DEBUG: prompt_tokens: {prompt_tokens}")
 
             # Create a proper C++ variable for the output parameter
-            print("DEBUG: Creating n_past_out as C++ array")
             n_past_out_array = cppyy.gbl.std.array[gbl.llama_pos, 1]()
             n_past_out_array[0] = gbl.llama_pos(n_past)
 
-            print("DEBUG: About to call mtmd_helper_eval_chunks")
             with timed_operation("Prompt evaluation", tokens=prompt_tokens):
-                print(f"DEBUG: mtmd_helper_eval_chunks parameters:")
-                print(f"  ctx_mtmd: {ctx_mtmd}")
-                print(f"  ctx: {ctx}")
-                print(f"  chunks: {chunks}")
-                print(f"  n_past: {n_past}")
-                print(f"  seq_id: {seq_id}")
-                print(f"  N_BATCH: {N_BATCH}")
-                print(f"  False: {False}")
-                print(f"  n_past_out_array.data(): {n_past_out_array.data()}")
-
                 result = gbl.mtmd_helper_eval_chunks(
                     ctx_mtmd,
                     ctx,
@@ -433,14 +403,11 @@ def main():
                     True,
                     n_past_out_array.data(),
                 )
-                print(f"DEBUG: mtmd_helper_eval_chunks returned: {result}")
                 if result != 0:
                     raise RuntimeError("Failed mtmd_helper_eval_chunks")
 
             # Update KV cache position
-            print("DEBUG: mtmd_helper_eval_chunks completed successfully")
             n_past = int(n_past_out_array[0])
-            print(f"DEBUG: Updated n_past from n_past_out_array[0]: {n_past}")
             print(f"KV cache position (n_past): {n_past}")
 
             # Generate response
@@ -448,7 +415,6 @@ def main():
             print(f"{args.prompt}", end="", flush=True)
 
             # Reset sampler state for generation
-            print("DEBUG: Preparing context for generation...")
             gbl.common_sampler_reset(sampler)
 
             # Call C++ generation function
@@ -456,7 +422,6 @@ def main():
 
             # Generate tokens using C++ helper function
             with timed_operation("Token generation") as timing_ctx:
-                print("DEBUG: Calling generate_tokens_cpp...")
                 cpp_result = gbl.generate_tokens_cpp(
                     sampler, ctx, model, n_past, N_CTX, MAX_NEW_TOKENS, seq_id_vec
                 )
