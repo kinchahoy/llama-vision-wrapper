@@ -147,6 +147,14 @@ class ResourceManager:
                 raise RuntimeError("Failed to create LLaMA context")
 
         self.log(f"LLaMA context created (n_ctx: {cppyy.gbl.llama_n_ctx(ctx)})")
+
+        # Check for single-threaded decoding, which can be a major performance bottleneck.
+        if n_threads == 1:
+            self.log(
+                "[WARN] Decoding with 1 thread, performance may be poor. "
+                "Adjust N_THREADS for a significant speed up."
+            )
+
         return ctx
 
     def load_mtmd(self, mmproj_path, model, use_gpu, n_threads):
