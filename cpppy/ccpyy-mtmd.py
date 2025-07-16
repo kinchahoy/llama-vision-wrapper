@@ -247,9 +247,10 @@ def main():
         help="The prompt for the model.",
     )
     parser.add_argument(
-        "--n-threads",
+        "-t",
         type=int,
         default=8,
+        dest="n_threads",
         help="Number of threads to use for computation.",
     )
     parser.add_argument(
@@ -261,6 +262,7 @@ def main():
 
     try:
         print("--- Initializing ---")
+        print("Threads set to :", args.n_threads)
 
         print("--- Downloading models from Hugging Face Hub ---")
         with timed_operation("Model download"):
