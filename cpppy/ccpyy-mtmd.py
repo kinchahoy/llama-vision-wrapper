@@ -45,7 +45,6 @@ OPTIONAL_LIB_NAMES = [
 
 # Runtime parameters
 N_CTX = 2048
-N_GPU_LAYERS = 0
 N_BATCH = 512
 MAX_NEW_TOKENS = 256
 
@@ -247,6 +246,14 @@ def main():
         help="The prompt for the model.",
     )
     parser.add_argument(
+        "--n-gpu-layers",
+        "-ngl",
+        type=int,
+        default=0,
+        dest="n_gpu_layers",
+        help="Number of layers to offload to GPU.",
+    )
+    parser.add_argument(
         "-t",
         type=int,
         default=8,
@@ -329,12 +336,12 @@ def main():
         # Initialize resources
         with ResourceManager() as rm:
             # Load model and create contexts
-            model = rm.load_model(model_path, N_GPU_LAYERS)
+            model = rm.load_model(model_path, args.n_gpu_layers)
             ctx = rm.create_context(
                 model, N_CTX, N_BATCH, args.n_threads, args.verbose_cpp
             )
             ctx_mtmd = rm.load_mtmd(
-                mmproj_path, model, N_GPU_LAYERS > 0, args.n_threads, args.verbose_cpp
+                mmproj_path, model, args.n_gpu_layers > 0, args.n_threads, args.verbose_cpp
             )
             sampler = rm.create_sampler(
                 model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
