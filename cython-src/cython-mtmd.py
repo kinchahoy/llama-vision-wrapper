@@ -265,7 +265,7 @@ print(f"Total measured time: {total_time:.2f}s")
 
 # Save benchmark results
 benchmark_results["total_time"] = total_time
-benchmark_filename = "benchmark_cython.json"
+benchmark_filename = "benchmark.json"
 try:
     with open(benchmark_filename, "w") as f:
         json.dump(benchmark_results, f, indent=2)
