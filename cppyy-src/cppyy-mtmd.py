@@ -68,7 +68,7 @@ benchmark_results = {
     "token_generation_rate": 0.0,
     "total_tokens_generated": 0,
     "final_output": "",
-    "total_time": 0.0,
+    "total_time": 0,
     "timestamp": "",
     "model_info": {},
     "parameters": {}
@@ -507,7 +507,7 @@ total_time = sum(stat.duration for stat in all_timings)
 print(f"Total measured time: {total_time:.2f}s")
 
 # Save benchmark results
-benchmark_results["total_time"] = total_time
+benchmark_results["total_time"] = int(total_time)
 benchmark_filename = "benchmark.json"
 try:
     with open(benchmark_filename, "w") as f:
