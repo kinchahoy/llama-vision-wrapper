@@ -263,27 +263,27 @@ def main():
         sys.exit(1)
 
 
-print("\n--- End of script ---")
+    print("\n--- End of script ---")
 
-if args.benchmark:
-    print("\nSummary of timing statistics:")
-    print("=" * 50)
-    for i, stat in enumerate(all_timings, 1):
-        print(f"{i}. {stat}")
-    print("=" * 50)
-    print(f"Total operations: {len(all_timings)}")
-    total_time = sum(stat.duration for stat in all_timings)
-    print(f"Total measured time: {total_time:.2f}s")
+    if args.benchmark:
+        print("\nSummary of timing statistics:")
+        print("=" * 50)
+        for i, stat in enumerate(all_timings, 1):
+            print(f"{i}. {stat}")
+        print("=" * 50)
+        print(f"Total operations: {len(all_timings)}")
+        total_time = sum(stat.duration for stat in all_timings)
+        print(f"Total measured time: {total_time:.2f}s")
 
-    # Save benchmark results
-    benchmark_results["total_time"] = int(total_time)
-    benchmark_filename = "benchmark.json"
-    try:
-        with open(benchmark_filename, "w") as f:
-            json.dump(benchmark_results, f, indent=2)
-        print(f"\nBenchmark results saved to {benchmark_filename}")
-    except Exception as e:
-        print(f"Warning: Failed to save benchmark results: {e}")
+        # Save benchmark results
+        benchmark_results["total_time"] = int(total_time)
+        benchmark_filename = "benchmark.json"
+        try:
+            with open(benchmark_filename, "w") as f:
+                json.dump(benchmark_results, f, indent=2)
+            print(f"\nBenchmark results saved to {benchmark_filename}")
+        except Exception as e:
+            print(f"Warning: Failed to save benchmark results: {e}")
 
 
 if __name__ == "__main__":
