@@ -58,6 +58,21 @@ REPEAT_PENALTY = 1.1
 # Global list to collect timing statistics
 all_timings = []
 
+# Global benchmark results
+benchmark_results = {
+    "version": "cppyy",
+    "model_loading_time": 0.0,
+    "prompt_processing_time": 0.0,
+    "image_processing_time": 0.0,
+    "token_generation_rate": 0.0,
+    "total_tokens_generated": 0,
+    "final_output": "",
+    "total_time": 0.0,
+    "timestamp": "",
+    "model_info": {},
+    "parameters": {}
+}
+
 
 @dataclass
 class TimingStats:
@@ -279,6 +294,27 @@ def main():
         print(f"Model path: {model_path}")
         print(f"MMPROJ path: {mmproj_path}")
 
+        # Store model info and parameters for benchmark
+        benchmark_results["model_info"] = {
+            "repo_id": args.repo_id,
+            "model_file": args.model,
+            "mmproj_file": args.mmproj,
+            "model_path": model_path,
+            "mmproj_path": mmproj_path
+        }
+        benchmark_results["parameters"] = {
+            "n_ctx": N_CTX,
+            "n_batch": N_BATCH,
+            "n_threads": args.n_threads,
+            "n_gpu_layers": args.n_gpu_layers,
+            "max_new_tokens": MAX_NEW_TOKENS,
+            "temp": TEMP,
+            "top_k": TOP_K,
+            "top_p": TOP_P,
+            "repeat_penalty": REPEAT_PENALTY
+        }
+        benchmark_results["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
         with timed_operation("cppyy setup"):
             # Setup cppyy
             for inc_path in INCLUDE_DIRS:
@@ -336,6 +372,7 @@ def main():
         # Initialize resources
         with ResourceManager() as rm:
             # Load model and create contexts
+            start_model_load = time.time()
             model = rm.load_model(model_path, args.n_gpu_layers)
             ctx = rm.create_context(
                 model, N_CTX, N_BATCH, args.n_threads, args.verbose_cpp
@@ -346,9 +383,11 @@ def main():
             sampler = rm.create_sampler(
                 model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
             )
+            benchmark_results["model_loading_time"] = time.time() - start_model_load
 
             # Load image
             print("Loading image...")
+            start_image_load = time.time()
             with timed_operation("Image loading"):
                 bitmap = gbl.mtmd_helper_bitmap_init_from_file(
                     ctx_mtmd, args.image.encode("utf-8")
@@ -358,6 +397,7 @@ def main():
                 print(
                     f"Image loaded: {gbl.mtmd_bitmap_get_nx(bitmap)}x{gbl.mtmd_bitmap_get_ny(bitmap)}"
                 )
+            benchmark_results["image_processing_time"] = time.time() - start_image_load
 
             # Prepare and evaluate multimodal input
             print("Evaluating multimodal input...")
@@ -399,6 +439,7 @@ def main():
             n_past_out_array = cppyy.gbl.std.array[gbl.llama_pos, 1]()
             n_past_out_array[0] = gbl.llama_pos(n_past)
 
+            start_prompt_eval = time.time()
             with timed_operation("Prompt evaluation", tokens=prompt_tokens):
                 result = gbl.mtmd_helper_eval_chunks(
                     ctx_mtmd,
@@ -412,6 +453,7 @@ def main():
                 )
                 if result != 0:
                     raise RuntimeError("Failed mtmd_helper_eval_chunks")
+            benchmark_results["prompt_processing_time"] = time.time() - start_prompt_eval
 
             # Update KV cache position
             n_past = int(n_past_out_array[0])
@@ -439,6 +481,12 @@ def main():
                 # Update timing with token count
                 timing_ctx.tokens = cpp_result.total_tokens_generated
 
+                # Store benchmark results
+                benchmark_results["total_tokens_generated"] = cpp_result.total_tokens_generated
+                benchmark_results["final_output"] = cpp_result.generated_text
+                if timing_ctx.duration > 0:
+                    benchmark_results["token_generation_rate"] = cpp_result.total_tokens_generated / timing_ctx.duration
+
             print(f"Final KV cache position (n_past): {cpp_result.final_n_past}")
 
     except Exception as e:
@@ -456,6 +504,16 @@ print("=" * 50)
 print(f"Total operations: {len(all_timings)}")
 total_time = sum(stat.duration for stat in all_timings)
 print(f"Total measured time: {total_time:.2f}s")
+
+# Save benchmark results
+benchmark_results["total_time"] = total_time
+benchmark_filename = "benchmark_cppyy.json"
+try:
+    with open(benchmark_filename, "w") as f:
+        json.dump(benchmark_results, f, indent=2)
+    print(f"\nBenchmark results saved to {benchmark_filename}")
+except Exception as e:
+    print(f"Warning: Failed to save benchmark results: {e}")
 
 
 if __name__ == "__main__":
