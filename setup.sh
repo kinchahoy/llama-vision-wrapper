@@ -32,18 +32,13 @@ select cuda in "Yes" "No"; do
 done
 
 echo "Building llama.cpp shared libraries..."
-cd llama.cpp || exit 1
-cmake -B build -DBUILD_SHARED_LIBS=ON $cuda_flag
-cmake --build build --config Release -j "$JOBS"
-cd ..
+cmake -B llama.cpp/build -DBUILD_SHARED_LIBS=ON $cuda_flag
+cmake --build llama.cpp/build --config Release -j "$JOBS"
 
 # Step 5: Build helper library
 echo "Building generation_helper shared library..."
-mkdir -p build
-cd build || exit 1
-cmake .. 
-make
-cd ..
+mkdir -p gen-helper/build
+cmake gen-helper/build
 
 echo "Libraries built in llama.cpp/build/bin/ and build/."
 
