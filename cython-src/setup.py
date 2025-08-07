@@ -3,7 +3,14 @@ from Cython.Build import cythonize
 import os
 
 # Base directory for the project
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Go up from cython/ to project root
+# Handle both cases: running from cython-src/ and from project root
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if os.path.basename(script_dir) == "cython-src":
+    # Running from cython-src directory
+    BASE_DIR = os.path.dirname(script_dir)
+else:
+    # Running from project root (e.g., via uv run cython-src/setup.py)
+    BASE_DIR = os.getcwd()
 LLAMA_CPP_DIR = f"{BASE_DIR}/llama.cpp"
 
 # Include directories
