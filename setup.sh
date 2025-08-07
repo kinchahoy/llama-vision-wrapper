@@ -4,8 +4,8 @@
 echo "=== Llama Vision Wrapper Interactive Setup ==="
 
 # Step 2: Submodule update
-echo "Initializing and updating llama.cpp submodule..."
-git submodule update --init --recursive
+# echo "Initializing and updating llama.cpp submodule..."
+# git submodule update --init --recursive
 
 # Step 3: Apply patch
 if [ ! -f patch_llama_common_for_dynamic.patch ]; then
