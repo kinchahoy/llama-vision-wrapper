@@ -281,6 +281,11 @@ def main():
         action="store_true",
         help="Enable verbose logging from the C++ backend.",
     )
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Enable benchmarking and save results to benchmark.json.",
+    )
     args = parser.parse_args()
 
     try:
@@ -295,26 +300,27 @@ def main():
         print(f"Model path: {model_path}")
         print(f"MMPROJ path: {mmproj_path}")
 
-        # Store model info and parameters for benchmark
-        benchmark_results["model_info"] = {
-            "repo_id": args.repo_id,
-            "model_file": args.model,
-            "mmproj_file": args.mmproj,
-            "model_path": model_path,
-            "mmproj_path": mmproj_path
-        }
-        benchmark_results["parameters"] = {
-            "n_ctx": N_CTX,
-            "n_batch": N_BATCH,
-            "n_threads": args.n_threads,
-            "n_gpu_layers": args.n_gpu_layers,
-            "max_new_tokens": MAX_NEW_TOKENS,
-            "temp": TEMP,
-            "top_k": TOP_K,
-            "top_p": TOP_P,
-            "repeat_penalty": REPEAT_PENALTY
-        }
-        benchmark_results["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        if args.benchmark:
+            # Store model info and parameters for benchmark
+            benchmark_results["model_info"] = {
+                "repo_id": args.repo_id,
+                "model_file": args.model,
+                "mmproj_file": args.mmproj,
+                "model_path": model_path,
+                "mmproj_path": mmproj_path
+            }
+            benchmark_results["parameters"] = {
+                "n_ctx": N_CTX,
+                "n_batch": N_BATCH,
+                "n_threads": args.n_threads,
+                "n_gpu_layers": args.n_gpu_layers,
+                "max_new_tokens": MAX_NEW_TOKENS,
+                "temp": TEMP,
+                "top_k": TOP_K,
+                "top_p": TOP_P,
+                "repeat_penalty": REPEAT_PENALTY
+            }
+            benchmark_results["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
         with timed_operation("cppyy setup"):
             # Setup cppyy
@@ -384,7 +390,8 @@ def main():
             sampler = rm.create_sampler(
                 model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
             )
-            benchmark_results["model_loading_time"] = time.time() - start_model_load
+            if args.benchmark:
+                benchmark_results["model_loading_time"] = time.time() - start_model_load
 
             # Load image
             print("Loading image...")
@@ -398,7 +405,8 @@ def main():
                 print(
                     f"Image loaded: {gbl.mtmd_bitmap_get_nx(bitmap)}x{gbl.mtmd_bitmap_get_ny(bitmap)}"
                 )
-            benchmark_results["image_processing_time"] = time.time() - start_image_load
+            if args.benchmark:
+                benchmark_results["image_processing_time"] = time.time() - start_image_load
 
             # Prepare and evaluate multimodal input
             print("Evaluating multimodal input...")
@@ -454,7 +462,8 @@ def main():
                 )
                 if result != 0:
                     raise RuntimeError("Failed mtmd_helper_eval_chunks")
-            benchmark_results["prompt_processing_time"] = time.time() - start_prompt_eval
+            if args.benchmark:
+                benchmark_results["prompt_processing_time"] = time.time() - start_prompt_eval
 
             # Update KV cache position
             n_past = int(n_past_out_array[0])
@@ -483,10 +492,11 @@ def main():
                 timing_ctx.tokens = cpp_result.total_tokens_generated
 
                 # Store benchmark results
-                benchmark_results["total_tokens_generated"] = cpp_result.total_tokens_generated
-                benchmark_results["final_output"] = str(cpp_result.generated_text)
-                if timing_ctx.duration > 0:
-                    benchmark_results["token_generation_rate"] = cpp_result.total_tokens_generated / timing_ctx.duration
+                if args.benchmark:
+                    benchmark_results["total_tokens_generated"] = cpp_result.total_tokens_generated
+                    benchmark_results["final_output"] = str(cpp_result.generated_text)
+                    if timing_ctx.duration > 0:
+                        benchmark_results["token_generation_rate"] = cpp_result.total_tokens_generated / timing_ctx.duration
 
             print(f"Final KV cache position (n_past): {cpp_result.final_n_past}")
 
@@ -498,24 +508,26 @@ def main():
 
 
     print("\n--- End of script ---")
-    print("\nSummary of timing statistics:")
-    print("=" * 50)
-    for i, stat in enumerate(all_timings, 1):
-        print(f"{i}. {stat}")
-    print("=" * 50)
-    print(f"Total operations: {len(all_timings)}")
-    total_time = sum(stat.duration for stat in all_timings)
-    print(f"Total measured time: {total_time:.2f}s")
 
-    # Save benchmark results
-    benchmark_results["total_time"] = int(total_time)
-    benchmark_filename = "benchmark.json"
-    try:
-        with open(benchmark_filename, "w") as f:
-            json.dump(benchmark_results, f, indent=2)
-        print(f"\nBenchmark results saved to {benchmark_filename}")
-    except Exception as e:
-        print(f"Warning: Failed to save benchmark results: {e}")
+    if args.benchmark:
+        print("\nSummary of timing statistics:")
+        print("=" * 50)
+        for i, stat in enumerate(all_timings, 1):
+            print(f"{i}. {stat}")
+        print("=" * 50)
+        print(f"Total operations: {len(all_timings)}")
+        total_time = sum(stat.duration for stat in all_timings)
+        print(f"Total measured time: {total_time:.2f}s")
+
+        # Save benchmark results
+        benchmark_results["total_time"] = int(total_time)
+        benchmark_filename = "benchmark.json"
+        try:
+            with open(benchmark_filename, "w") as f:
+                json.dump(benchmark_results, f, indent=2)
+            print(f"\nBenchmark results saved to {benchmark_filename}")
+        except Exception as e:
+            print(f"Warning: Failed to save benchmark results: {e}")
 
 
 

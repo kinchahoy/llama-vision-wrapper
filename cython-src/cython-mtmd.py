@@ -143,6 +143,11 @@ def main():
         default="USER: Describe this image.\n<__image__>\nASSISTANT:",
         help="The prompt for the model.",
     )
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Enable benchmarking and save results to benchmark.json.",
+    )
     args = parser.parse_args()
 
     try:
@@ -156,26 +161,27 @@ def main():
         print(f"Model path: {model_path}")
         print(f"MMPROJ path: {mmproj_path}")
 
-        # Store model info and parameters for benchmark
-        benchmark_results["model_info"] = {
-            "repo_id": args.repo_id,
-            "model_file": args.model,
-            "mmproj_file": args.mmproj,
-            "model_path": model_path,
-            "mmproj_path": mmproj_path
-        }
-        benchmark_results["parameters"] = {
-            "n_ctx": N_CTX,
-            "n_batch": N_BATCH,
-            "n_threads": N_THREADS,
-            "n_gpu_layers": N_GPU_LAYERS,
-            "max_new_tokens": MAX_NEW_TOKENS,
-            "temp": TEMP,
-            "top_k": TOP_K,
-            "top_p": TOP_P,
-            "repeat_penalty": REPEAT_PENALTY
-        }
-        benchmark_results["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        if args.benchmark:
+            # Store model info and parameters for benchmark
+            benchmark_results["model_info"] = {
+                "repo_id": args.repo_id,
+                "model_file": args.model,
+                "mmproj_file": args.mmproj,
+                "model_path": model_path,
+                "mmproj_path": mmproj_path
+            }
+            benchmark_results["parameters"] = {
+                "n_ctx": N_CTX,
+                "n_batch": N_BATCH,
+                "n_threads": N_THREADS,
+                "n_gpu_layers": N_GPU_LAYERS,
+                "max_new_tokens": MAX_NEW_TOKENS,
+                "temp": TEMP,
+                "top_k": TOP_K,
+                "top_p": TOP_P,
+                "repeat_penalty": REPEAT_PENALTY
+            }
+            benchmark_results["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
         with timed_operation("Backend initialization"):
             initialize_backend()
@@ -195,7 +201,8 @@ def main():
 
         with timed_operation("Sampler initialization"):
             sampler = create_sampler(model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, N_CTX)
-        benchmark_results["model_loading_time"] = time.time() - start_model_load
+        if args.benchmark:
+            benchmark_results["model_loading_time"] = time.time() - start_model_load
 
         # Load image
         print("Loading image...")
@@ -203,7 +210,8 @@ def main():
         with timed_operation("Image loading"):
             bitmap_info = load_image(ctx_mtmd, args.image)
             print(f"Image loaded: {bitmap_info['width']}x{bitmap_info['height']}")
-        benchmark_results["image_processing_time"] = time.time() - start_image_load
+        if args.benchmark:
+            benchmark_results["image_processing_time"] = time.time() - start_image_load
 
         # Prepare and evaluate multimodal input
         print("Evaluating multimodal input...")
@@ -217,7 +225,8 @@ def main():
         start_prompt_eval = time.time()
         with timed_operation("Prompt evaluation", tokens=prompt_tokens):
             n_past = evaluate_input(ctx_mtmd, ctx, chunks_info["handle"], N_BATCH)
-        benchmark_results["prompt_processing_time"] = time.time() - start_prompt_eval
+        if args.benchmark:
+            benchmark_results["prompt_processing_time"] = time.time() - start_prompt_eval
 
         print(f"KV cache position (n_past): {n_past}")
 
@@ -236,10 +245,11 @@ def main():
             timing_ctx.tokens = result["n_tokens"]
 
             # Store benchmark results
-            benchmark_results["total_tokens_generated"] = result["n_tokens"]
-            benchmark_results["final_output"] = result["text"]
-            if timing_ctx.duration > 0:
-                benchmark_results["token_generation_rate"] = result["n_tokens"] / timing_ctx.duration
+            if args.benchmark:
+                benchmark_results["total_tokens_generated"] = result["n_tokens"]
+                benchmark_results["final_output"] = result["text"]
+                if timing_ctx.duration > 0:
+                    benchmark_results["token_generation_rate"] = result["n_tokens"] / timing_ctx.duration
 
         print(f"Final KV cache position (n_past): {result['final_n_past']}")
 
@@ -254,24 +264,26 @@ def main():
 
 
 print("\n--- End of script ---")
-print("\nSummary of timing statistics:")
-print("=" * 50)
-for i, stat in enumerate(all_timings, 1):
-    print(f"{i}. {stat}")
-print("=" * 50)
-print(f"Total operations: {len(all_timings)}")
-total_time = sum(stat.duration for stat in all_timings)
-print(f"Total measured time: {total_time:.2f}s")
 
-# Save benchmark results
-benchmark_results["total_time"] = int(total_time)
-benchmark_filename = "benchmark.json"
-try:
-    with open(benchmark_filename, "w") as f:
-        json.dump(benchmark_results, f, indent=2)
-    print(f"\nBenchmark results saved to {benchmark_filename}")
-except Exception as e:
-    print(f"Warning: Failed to save benchmark results: {e}")
+if args.benchmark:
+    print("\nSummary of timing statistics:")
+    print("=" * 50)
+    for i, stat in enumerate(all_timings, 1):
+        print(f"{i}. {stat}")
+    print("=" * 50)
+    print(f"Total operations: {len(all_timings)}")
+    total_time = sum(stat.duration for stat in all_timings)
+    print(f"Total measured time: {total_time:.2f}s")
+
+    # Save benchmark results
+    benchmark_results["total_time"] = int(total_time)
+    benchmark_filename = "benchmark.json"
+    try:
+        with open(benchmark_filename, "w") as f:
+            json.dump(benchmark_results, f, indent=2)
+        print(f"\nBenchmark results saved to {benchmark_filename}")
+    except Exception as e:
+        print(f"Warning: Failed to save benchmark results: {e}")
 
 
 if __name__ == "__main__":
