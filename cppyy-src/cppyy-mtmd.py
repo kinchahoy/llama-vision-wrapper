@@ -484,7 +484,7 @@ def main():
 
                 # Store benchmark results
                 benchmark_results["total_tokens_generated"] = cpp_result.total_tokens_generated
-                benchmark_results["final_output"] = cpp_result.generated_text
+                benchmark_results["final_output"] = str(cpp_result.generated_text)
                 if timing_ctx.duration > 0:
                     benchmark_results["token_generation_rate"] = cpp_result.total_tokens_generated / timing_ctx.duration
 
