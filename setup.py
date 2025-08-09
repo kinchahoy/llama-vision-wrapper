@@ -1,11 +1,3 @@
-#!/usr/bin/env -S uv --quiet run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#     "typer[all]",
-#     "sh",
-# ]
-# ///
 
 """
 Llama-Vision-Wrapper interactive setup
@@ -128,7 +120,7 @@ def setup(
 
     # ── 5. sync venv ──────────────────────────────────────────────────────
     banner("Sync virtual-env via uv")
-    run(["uv", "sync"], dry=dry_run)
+    #run(["uv", "sync"], dry=dry_run)
 
     # ── 6. optional examples ─────────────────────────────────────────────
     banner("Run example (optional)")
@@ -136,8 +128,8 @@ def setup(
     if ex == "cppyy":
         run(["uv", "run", "cppyy-src/cppyy-mtmd.py"], dry=dry_run)
     elif ex == "cython":
-        run(["uv", "run", "cython-src/setup.py", "build_ext", "--inplace"], dry=dry_run)
-        run(["uv", "run", "cython/cython-mtmd.py"], dry=dry_run)
+        run(["uv", "run", "--directory", "cython-src", "setup.py", "build_ext", "--inplace"], dry=dry_run)
+        run(["uv", "run", "--directory", "cython-src", "cython-mtmd.py"], dry=dry_run)
 
     typer.secho("\n✅  Setup finished successfully!",
                 fg=typer.colors.GREEN, bold=True)
