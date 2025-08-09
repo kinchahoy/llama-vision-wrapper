@@ -41,7 +41,7 @@
         ],
         "name": "llama_mtmd_wrapper",
         "sources": [
-            "llama_mtmd_wrapper.pyx"
+            "/home/raist/trackedproj/llama-vision-wrapper/cython-src/llama_mtmd_wrapper.pyx"
         ]
     },
     "module_name": "llama_mtmd_wrapper"
@@ -1400,9 +1400,9 @@ static const char *__pyx_filename;
 /* #### Code section: filename_table ### */
 
 static const char* const __pyx_f[] = {
-  "llama_mtmd_wrapper.pyx",
+  "cython-src/llama_mtmd_wrapper.pyx",
   "<stringsource>",
-  "cpython/type.pxd",
+  ".venv/lib/python3.13/site-packages/Cython/Includes/cpython/type.pxd",
 };
 /* #### Code section: utility_code_proto_before_types ### */
 /* Atomics.proto */
@@ -2467,7 +2467,6 @@ static const char __pyx_k_initialize_backend[] = "initialize_backend";
 static const char __pyx_k_llama_mtmd_wrapper[] = "llama_mtmd_wrapper";
 static const char __pyx_k_Failed_to_load_image[] = "Failed to load image ";
 static const char __pyx_k_nO1_C1_1_Q_q_Q_vS_l_1[] = "\200\001\340\004\005\360\006\000\005\037\230n\250O\2701\340\004'\320'C\3001\330\004\n\210)\2201\330\004\n\210+\220Q\330\004\n\210-\220q\330\004\n\320\n\035\230Q\340\004\014\320\014!\240\021\240'\250\021\340\004\007\200v\210S\220\001\330\010\016\210l\230!\2301\340\004\013\210?\230!";
-static const char __pyx_k_llama_mtmd_wrapper_pyx[] = "llama_mtmd_wrapper.pyx";
 static const char __pyx_k_G1A_0_1_y_1_l_2_6a_1A_AQ[] = "\200\001\340\004\005\340\004\"\240/\260\037\300\001\330\004\"\240*\250G\2601\260A\330\004\017\320\0170\260\001\260\032\2701\340\004\007\200y\220\003\2201\330\010\016\210l\230!\2302\320\0356\260a\340\004\005\330\010\022\220/\240\021\330\010\021\320\021#\2401\240A\330\010\022\320\022$\240A\240Q";
 static const char __pyx_k_Failed_mtmd_tokenize_code[] = "Failed mtmd_tokenize (code: ";
 static const char __pyx_k_Failed_to_load_model_from[] = "Failed to load model from ";
@@ -2483,6 +2482,7 @@ static const char __pyx_k_Failed_mtmd_helper_eval_chunks_c[] = "Failed mtmd_help
 static const char __pyx_k_Failed_to_allocate_memory_for_mt[] = "Failed to allocate memory for mtmd_input_chunks";
 static const char __pyx_k_Failed_to_initialize_common_samp[] = "Failed to initialize common_sampler";
 static const char __pyx_k_Failed_to_load_multimodal_projec[] = "Failed to load multimodal projector from ";
+static const char __pyx_k_cython_src_llama_mtmd_wrapper_py[] = "cython-src/llama_mtmd_wrapper.pyx";
 /* #### Code section: decls ### */
 static PyObject *__pyx_pf_18llama_mtmd_wrapper_initialize_backend(CYTHON_UNUSED PyObject *__pyx_self); /* proto */
 static PyObject *__pyx_pf_18llama_mtmd_wrapper_2cleanup_backend(CYTHON_UNUSED PyObject *__pyx_self); /* proto */
@@ -2601,22 +2601,22 @@ static __pyx_mstatetype * const __pyx_mstate_global = &__pyx_mstate_global_stati
 #define __pyx_n_u_ctx_mtmd __pyx_string_tab[25]
 #define __pyx_n_u_ctx_mtmd_handle __pyx_string_tab[26]
 #define __pyx_n_u_ctx_size __pyx_string_tab[27]
-#define __pyx_n_u_decode __pyx_string_tab[28]
-#define __pyx_n_u_encode __pyx_string_tab[29]
-#define __pyx_n_u_errors __pyx_string_tab[30]
-#define __pyx_n_u_evaluate_input __pyx_string_tab[31]
-#define __pyx_n_u_final_n_past __pyx_string_tab[32]
-#define __pyx_n_u_func __pyx_string_tab[33]
-#define __pyx_n_u_generate_tokens __pyx_string_tab[34]
-#define __pyx_n_u_handle __pyx_string_tab[35]
-#define __pyx_n_u_height __pyx_string_tab[36]
-#define __pyx_n_u_image_path __pyx_string_tab[37]
-#define __pyx_n_u_image_path_bytes __pyx_string_tab[38]
-#define __pyx_n_u_initialize_backend __pyx_string_tab[39]
-#define __pyx_n_u_input_text __pyx_string_tab[40]
-#define __pyx_n_u_is_coroutine __pyx_string_tab[41]
-#define __pyx_n_u_llama_mtmd_wrapper __pyx_string_tab[42]
-#define __pyx_kp_u_llama_mtmd_wrapper_pyx __pyx_string_tab[43]
+#define __pyx_kp_u_cython_src_llama_mtmd_wrapper_py __pyx_string_tab[28]
+#define __pyx_n_u_decode __pyx_string_tab[29]
+#define __pyx_n_u_encode __pyx_string_tab[30]
+#define __pyx_n_u_errors __pyx_string_tab[31]
+#define __pyx_n_u_evaluate_input __pyx_string_tab[32]
+#define __pyx_n_u_final_n_past __pyx_string_tab[33]
+#define __pyx_n_u_func __pyx_string_tab[34]
+#define __pyx_n_u_generate_tokens __pyx_string_tab[35]
+#define __pyx_n_u_handle __pyx_string_tab[36]
+#define __pyx_n_u_height __pyx_string_tab[37]
+#define __pyx_n_u_image_path __pyx_string_tab[38]
+#define __pyx_n_u_image_path_bytes __pyx_string_tab[39]
+#define __pyx_n_u_initialize_backend __pyx_string_tab[40]
+#define __pyx_n_u_input_text __pyx_string_tab[41]
+#define __pyx_n_u_is_coroutine __pyx_string_tab[42]
+#define __pyx_n_u_llama_mtmd_wrapper __pyx_string_tab[43]
 #define __pyx_n_u_load_image __pyx_string_tab[44]
 #define __pyx_n_u_load_model __pyx_string_tab[45]
 #define __pyx_n_u_load_mtmd_context __pyx_string_tab[46]
@@ -6417,6 +6417,7 @@ static const __Pyx_StringTabEntry __pyx_string_tab[] = {
   {__pyx_k_ctx_mtmd, sizeof(__pyx_k_ctx_mtmd), 0, 1, 1}, /* PyObject cname: __pyx_n_u_ctx_mtmd */
   {__pyx_k_ctx_mtmd_handle, sizeof(__pyx_k_ctx_mtmd_handle), 0, 1, 1}, /* PyObject cname: __pyx_n_u_ctx_mtmd_handle */
   {__pyx_k_ctx_size, sizeof(__pyx_k_ctx_size), 0, 1, 1}, /* PyObject cname: __pyx_n_u_ctx_size */
+  {__pyx_k_cython_src_llama_mtmd_wrapper_py, sizeof(__pyx_k_cython_src_llama_mtmd_wrapper_py), 0, 1, 0}, /* PyObject cname: __pyx_kp_u_cython_src_llama_mtmd_wrapper_py */
   {__pyx_k_decode, sizeof(__pyx_k_decode), 0, 1, 1}, /* PyObject cname: __pyx_n_u_decode */
   {__pyx_k_encode, sizeof(__pyx_k_encode), 0, 1, 1}, /* PyObject cname: __pyx_n_u_encode */
   {__pyx_k_errors, sizeof(__pyx_k_errors), 0, 1, 1}, /* PyObject cname: __pyx_n_u_errors */
@@ -6432,7 +6433,6 @@ static const __Pyx_StringTabEntry __pyx_string_tab[] = {
   {__pyx_k_input_text, sizeof(__pyx_k_input_text), 0, 1, 1}, /* PyObject cname: __pyx_n_u_input_text */
   {__pyx_k_is_coroutine, sizeof(__pyx_k_is_coroutine), 0, 1, 1}, /* PyObject cname: __pyx_n_u_is_coroutine */
   {__pyx_k_llama_mtmd_wrapper, sizeof(__pyx_k_llama_mtmd_wrapper), 0, 1, 1}, /* PyObject cname: __pyx_n_u_llama_mtmd_wrapper */
-  {__pyx_k_llama_mtmd_wrapper_pyx, sizeof(__pyx_k_llama_mtmd_wrapper_pyx), 0, 1, 0}, /* PyObject cname: __pyx_kp_u_llama_mtmd_wrapper_pyx */
   {__pyx_k_load_image, sizeof(__pyx_k_load_image), 0, 1, 1}, /* PyObject cname: __pyx_n_u_load_image */
   {__pyx_k_load_model, sizeof(__pyx_k_load_model), 0, 1, 1}, /* PyObject cname: __pyx_n_u_load_model */
   {__pyx_k_load_mtmd_context, sizeof(__pyx_k_load_mtmd_context), 0, 1, 1}, /* PyObject cname: __pyx_n_u_load_mtmd_context */
@@ -6539,52 +6539,52 @@ static int __Pyx_CreateCodeObjects(__pyx_mstatetype *__pyx_mstate) {
   {
     const __Pyx_PyCode_New_function_description descr = {0, 0, 0, 0, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 128, 7};
     PyObject* const varnames[] = {0};
-    __pyx_mstate_global->__pyx_codeobj_tab[0] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_initialize_backend, __pyx_k_a, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[0])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[0] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_initialize_backend, __pyx_k_a, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[0])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {0, 0, 0, 0, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 132, 136};
     PyObject* const varnames[] = {0};
-    __pyx_mstate_global->__pyx_codeobj_tab[1] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_cleanup_backend, __pyx_k_z_A_1A_A_y_1_1_y_1_aq_1_vS_1_Q, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[1])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[1] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_cleanup_backend, __pyx_k_z_A_1A_A_y_1_1_y_1_aq_1_vS_1_Q, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[1])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {2, 0, 0, 4, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 162, 75};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_model_path, __pyx_mstate->__pyx_n_u_n_gpu_layers, __pyx_mstate->__pyx_n_u_params, __pyx_mstate->__pyx_n_u_model_path_bytes};
-    __pyx_mstate_global->__pyx_codeobj_tab[2] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_load_model, __pyx_k_q_G1A_1_xs_l_2_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[2])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[2] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_load_model, __pyx_k_q_G1A_1_xs_l_2_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[2])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {4, 0, 0, 6, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 177, 90};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_model_handle, __pyx_mstate->__pyx_n_u_n_ctx, __pyx_mstate->__pyx_n_u_n_batch, __pyx_mstate->__pyx_n_u_n_threads, __pyx_mstate->__pyx_n_u_model, __pyx_mstate->__pyx_n_u_params};
-    __pyx_mstate_global->__pyx_codeobj_tab[3] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_create_context, __pyx_k_nO1_C1_1_Q_q_Q_vS_l_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[3])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[3] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_create_context, __pyx_k_nO1_C1_1_Q_q_Q_vS_l_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[3])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {4, 0, 0, 7, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 197, 101};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_mmproj_path, __pyx_mstate->__pyx_n_u_model_handle, __pyx_mstate->__pyx_n_u_use_gpu, __pyx_mstate->__pyx_n_u_n_threads, __pyx_mstate->__pyx_n_u_model, __pyx_mstate->__pyx_n_u_params, __pyx_mstate->__pyx_n_u_mmproj_path_bytes};
-    __pyx_mstate_global->__pyx_codeobj_tab[4] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_load_mtmd_context, __pyx_k_nO1_A_Q_q_q_gQa_A_8_q_Q_l_2_J, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[4])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[4] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_load_mtmd_context, __pyx_k_nO1_A_Q_q_q_gQa_A_8_q_Q_l_2_J, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[4])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {6, 0, 0, 8, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 217, 99};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_model_handle, __pyx_mstate->__pyx_n_u_temp, __pyx_mstate->__pyx_n_u_top_k, __pyx_mstate->__pyx_n_u_top_p, __pyx_mstate->__pyx_n_u_repeat_penalty, __pyx_mstate->__pyx_n_u_ctx_size, __pyx_mstate->__pyx_n_u_model, __pyx_mstate->__pyx_n_u_params};
-    __pyx_mstate_global->__pyx_codeobj_tab[5] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_create_sampler, __pyx_k_nO1_1_1_A_A_Q_1G1_z_A_l_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[5])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[5] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_create_sampler, __pyx_k_nO1_1_1_A_A_Q_1G1_z_A_l_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[5])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {2, 0, 0, 4, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 239, 90};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_ctx_mtmd_handle, __pyx_mstate->__pyx_n_u_image_path, __pyx_mstate->__pyx_n_u_ctx_mtmd, __pyx_mstate->__pyx_n_u_image_path_bytes};
-    __pyx_mstate_global->__pyx_codeobj_tab[6] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_load_image, __pyx_k_G1A_0_1_y_1_l_2_6a_1A_AQ, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[6])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[6] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_load_image, __pyx_k_G1A_0_1_y_1_l_2_6a_1A_AQ, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[6])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {3, 0, 0, 10, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 256, 170};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_ctx_mtmd_handle, __pyx_mstate->__pyx_n_u_prompt, __pyx_mstate->__pyx_n_u_bitmap_handle, __pyx_mstate->__pyx_n_u_ctx_mtmd, __pyx_mstate->__pyx_n_u_bitmap, __pyx_mstate->__pyx_n_u_input_text, __pyx_mstate->__pyx_n_u_prompt_bytes, __pyx_mstate->__pyx_n_u_bitmaps, __pyx_mstate->__pyx_n_u_ret, __pyx_mstate->__pyx_n_u_n_tokens};
-    __pyx_mstate_global->__pyx_codeobj_tab[7] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_tokenize_input, __pyx_k_A_fG1A_ha_oQ_q_1E_Q_y_1_k_Ql_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[7])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[7] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_tokenize_input, __pyx_k_A_fG1A_ha_oQ_q_1E_Q_y_1_k_Ql_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[7])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {4, 0, 0, 11, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 294, 108};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_ctx_mtmd_handle, __pyx_mstate->__pyx_n_u_ctx_handle, __pyx_mstate->__pyx_n_u_chunks_handle, __pyx_mstate->__pyx_n_u_n_batch, __pyx_mstate->__pyx_n_u_ctx_mtmd, __pyx_mstate->__pyx_n_u_ctx, __pyx_mstate->__pyx_n_u_chunks, __pyx_mstate->__pyx_n_u_n_past, __pyx_mstate->__pyx_n_u_seq_id, __pyx_mstate->__pyx_n_u_new_n_past, __pyx_mstate->__pyx_n_u_ret};
-    __pyx_mstate_global->__pyx_codeobj_tab[8] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_evaluate_input, __pyx_k_oQ_9_a_q_U_R_aabbc_t3a_l_2_Gq_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[8])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[8] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_evaluate_input, __pyx_k_oQ_9_a_q_U_R_aabbc_t3a_l_2_Gq_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[8])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {6, 0, 0, 11, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 313, 106};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_sampler_handle, __pyx_mstate->__pyx_n_u_ctx_handle, __pyx_mstate->__pyx_n_u_model_handle, __pyx_mstate->__pyx_n_u_n_past, __pyx_mstate->__pyx_n_u_n_ctx, __pyx_mstate->__pyx_n_u_max_new_tokens, __pyx_mstate->__pyx_n_u_sampler, __pyx_mstate->__pyx_n_u_ctx, __pyx_mstate->__pyx_n_u_model, __pyx_mstate->__pyx_n_u_seq_ids, __pyx_mstate->__pyx_n_u_result};
-    __pyx_mstate_global->__pyx_codeobj_tab[9] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_llama_mtmd_wrapper_pyx, __pyx_mstate->__pyx_n_u_generate_tokens, __pyx_k_4O1_oQ_nO1_Qa_6a_gXW_A_oWAYgQ_F, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[9])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[9] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_cython_src_llama_mtmd_wrapper_py, __pyx_mstate->__pyx_n_u_generate_tokens, __pyx_k_4O1_oQ_nO1_Qa_6a_gXW_A_oWAYgQ_F, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[9])) goto bad;
   }
   Py_DECREF(tuple_dedup_map);
   return 0;

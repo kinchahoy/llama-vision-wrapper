@@ -8,4 +8,6 @@ dependencies = [
     "Cython",
     "huggingface-hub",
     "setuptools>=80.9.0",
+    "typer",
+    "sh",
 ]
