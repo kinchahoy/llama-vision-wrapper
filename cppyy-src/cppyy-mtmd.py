@@ -1,5 +1,6 @@
-"""Multimodal generation using mtmd library with Huggingface GGUF models and image input."""
+"""Get weeds level access to llama.cpp from python!"""
 
+#cppyy is magic isn't it?
 import cppyy
 import os
 import time
@@ -26,23 +27,31 @@ INCLUDE_DIRS = [
 LLAMA_CPP_LIBS_DIR = f"{LLAMA_CPP_DIR}/build/bin"
 HELPER_LIB_DIR = f"{BASE_DIR}/gen-helper/build"
 
+# Dynamics libraries are different across linux and macos
+ 
+if sys.platform == "linux":
+    LIB_EXT = "so"
+elif sys.platform == "darwin":
+    LIB_EXT = "dylib"
+else:
+    raise RuntimeError("Unsupported platform")
+
 # Libraries to load (Linux .so files instead of macOS .dylib)
 # Required libraries
 REQUIRED_LIB_NAMES = [
-    "libggml-base.so",
-    "libggml-cpu.so",
-    "libggml.so",
-    "libllama.so",
-    "libmtmd.so",
-    "libgeneration_helper.so",
+    f"libggml-base.{LIB_EXT}",
+    f"libggml-cpu.{LIB_EXT}",
+    f"libggml.{LIB_EXT}",
+    f"libllama.{LIB_EXT}",
+    f"libmtmd.{LIB_EXT}",
+    f"libgeneration_helper.{LIB_EXT}",
 ]
 
 # Optional libraries (will continue if not found)
 OPTIONAL_LIB_NAMES = [
-    "libggml-blas.so",
-    "libggml-metal.so",
+    f"libggml-blas.{LIB_EXT}",
+    f"libggml-metal.{LIB_EXT}",
 ]
-
 
 # Runtime parameters
 N_CTX = 2048
@@ -54,7 +63,6 @@ TEMP = 0.8
 TOP_K = 40
 TOP_P = 0.95
 REPEAT_PENALTY = 1.1
-
 
 # Global list to collect timing statistics
 all_timings = []
@@ -528,9 +536,6 @@ def main():
             print(f"\nBenchmark results saved to {benchmark_filename}")
         except Exception as e:
             print(f"Warning: Failed to save benchmark results: {e}")
-
-
-
 
 if __name__ == "__main__":
     main()
