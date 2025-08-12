@@ -265,3 +265,73 @@ class ResourceManager:
 
         self.log("Sampler initialized.")
         return sampler
+
+    def load_image(self, ctx_mtmd, image_path):
+        with timed_operation("Image loading") as timing_ctx:
+            bitmap = gbl.mtmd_helper_bitmap_init_from_file(
+                ctx_mtmd, image_path.encode("utf-8")
+            )
+            if not bitmap:
+                raise RuntimeError(f"Failed to load image {image_path}")
+        return bitmap, timing_ctx.duration
+
+    def process_prompt(self, ctx, ctx_mtmd, prompt, bitmap, n_batch):
+        # Keep prompt string alive
+        prompt_cstr = prompt.encode("utf-8")
+
+        input_text = gbl.mtmd_input_text()
+        input_text.text = prompt_cstr
+        input_text.add_special = True
+        input_text.parse_special = True
+
+        bitmaps_ptr_vec = gbl.std.vector["const mtmd_bitmap*"]()
+        bitmaps_ptr_vec.push_back(bitmap)
+        chunks = gbl.mtmd_input_chunks_init()
+        if not chunks:
+            raise RuntimeError(
+                "Failed to initialize mtmd_input_chunks: mtmd_input_chunks_init returned null"
+            )
+
+        with timed_operation("Tokenization"):
+            if gbl.mtmd_tokenize(
+                ctx_mtmd,
+                chunks,
+                input_text,
+                bitmaps_ptr_vec.data(),
+                bitmaps_ptr_vec.size(),
+            ) != 0:
+                raise RuntimeError("Failed mtmd_tokenize")
+
+        n_past = 0
+        seq_id = gbl.llama_seq_id(0)
+        prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
+        n_past_out_array = gbl.std.array[gbl.llama_pos, 1]()
+        n_past_out_array[0] = gbl.llama_pos(n_past)
+
+        with timed_operation("Prompt evaluation", tokens=prompt_tokens) as timing_ctx:
+            if gbl.mtmd_helper_eval_chunks(
+                ctx_mtmd,
+                ctx,
+                chunks,
+                n_past,
+                seq_id,
+                n_batch,
+                True,
+                n_past_out_array.data(),
+            ) != 0:
+                raise RuntimeError("Failed mtmd_helper_eval_chunks")
+
+        n_past = int(n_past_out_array[0])
+        return n_past, timing_ctx.duration
+
+    def generate(self, sampler, ctx, model, n_past, n_ctx, max_new_tokens):
+        gbl.common_sampler_reset(sampler)
+        seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
+
+        with timed_operation("Token generation") as timing_ctx:
+            cpp_result = gbl.generate_tokens_cpp(
+                sampler, ctx, model, n_past, n_ctx, max_new_tokens, seq_id_vec
+            )
+            timing_ctx.tokens = cpp_result.total_tokens_generated
+
+        return cpp_result, timing_ctx

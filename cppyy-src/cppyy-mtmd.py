@@ -158,116 +158,44 @@ def main():
 
             # Load image
             print("Loading image...")
-            start_image_load = time.time()
-            with timed_operation("Image loading"):
-                bitmap = gbl.mtmd_helper_bitmap_init_from_file(
-                    ctx_mtmd, args.image.encode("utf-8")
-                )
-                if not bitmap:
-                    raise RuntimeError(f"Failed to load image {args.image}")
-                print(
-                    f"Image loaded: {gbl.mtmd_bitmap_get_nx(bitmap)}x{gbl.mtmd_bitmap_get_ny(bitmap)}"
-                )
+            bitmap, image_load_duration = rm.load_image(ctx_mtmd, args.image)
+            print(
+                f"Image loaded: {gbl.mtmd_bitmap_get_nx(bitmap)}x{gbl.mtmd_bitmap_get_ny(bitmap)}"
+            )
             if args.benchmark:
-                benchmark_results["image_processing_time"] = (
-                    time.time() - start_image_load
-                )
+                benchmark_results["image_processing_time"] = image_load_duration
 
             # Prepare and evaluate multimodal input
             print("Evaluating multimodal input...")
-
-            # Setup input - create on stack and keep string alive
-            prompt_cstr = args.prompt.encode("utf-8")
-            input_text = gbl.mtmd_input_text()
-            input_text.text = prompt_cstr
-            input_text.add_special = True
-            input_text.parse_special = True
-
-            bitmaps_ptr_vec = gbl.std.vector["const mtmd_bitmap*"]()
-            bitmaps_ptr_vec.push_back(bitmap)
-            chunks = gbl.mtmd_input_chunks_init()
-            if not chunks:
-                raise RuntimeError(
-                    "Failed to initialize mtmd_input_chunks: mtmd_input_chunks_init returned null"
-                )
-
-            # Tokenize and evaluate
-            with timed_operation("Tokenization"):
-                result = gbl.mtmd_tokenize(
-                    ctx_mtmd,
-                    chunks,
-                    input_text,
-                    bitmaps_ptr_vec.data(),
-                    bitmaps_ptr_vec.size(),
-                )
-                if result != 0:
-                    raise RuntimeError("Failed mtmd_tokenize")
-
-            n_past = 0
-            seq_id = gbl.llama_seq_id(0)
-
-            # Process prompt tokens
-            prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
-
-            # Create a proper C++ variable for the output parameter
-            n_past_out_array = gbl.std.array[gbl.llama_pos, 1]()
-            n_past_out_array[0] = gbl.llama_pos(n_past)
-
-            start_prompt_eval = time.time()
-            with timed_operation("Prompt evaluation", tokens=prompt_tokens):
-                result = gbl.mtmd_helper_eval_chunks(
-                    ctx_mtmd,
-                    ctx,
-                    chunks,
-                    n_past,
-                    seq_id,
-                    N_BATCH,
-                    True,
-                    n_past_out_array.data(),
-                )
-                if result != 0:
-                    raise RuntimeError("Failed mtmd_helper_eval_chunks")
+            n_past, prompt_eval_duration = rm.process_prompt(
+                ctx, ctx_mtmd, args.prompt, bitmap, N_BATCH
+            )
             if args.benchmark:
-                benchmark_results["prompt_processing_time"] = (
-                    time.time() - start_prompt_eval
-                )
+                benchmark_results["prompt_processing_time"] = prompt_eval_duration
 
-            # Update KV cache position
-            n_past = int(n_past_out_array[0])
             print(f"KV cache position (n_past): {n_past}")
 
             # Generate response
             print(f"\n--- Generating Response ({MAX_NEW_TOKENS} tokens max) ---")
             print(f"{args.prompt}", end="", flush=True)
 
-            # Reset sampler state for generation
-            gbl.common_sampler_reset(sampler)
+            cpp_result, gen_timing_ctx = rm.generate(
+                sampler, ctx, model, n_past, N_CTX, MAX_NEW_TOKENS
+            )
 
-            # Call C++ generation function
-            seq_id_vec = gbl.std.vector[gbl.llama_seq_id]([gbl.llama_seq_id(0)])
+            # Print results
+            print(f"{cpp_result.generated_text}")
 
-            # Generate tokens using C++ helper function
-            with timed_operation("Token generation") as timing_ctx:
-                cpp_result = gbl.generate_tokens_cpp(
-                    sampler, ctx, model, n_past, N_CTX, MAX_NEW_TOKENS, seq_id_vec
-                )
-
-                # Print results
-                print(f"{cpp_result.generated_text}")
-
-                # Update timing with token count
-                timing_ctx.tokens = cpp_result.total_tokens_generated
-
-                # Store benchmark results
-                if args.benchmark:
-                    benchmark_results[
-                        "total_tokens_generated"
-                    ] = cpp_result.total_tokens_generated
-                    benchmark_results["final_output"] = str(cpp_result.generated_text)
-                    if timing_ctx.duration > 0:
-                        benchmark_results["token_generation_rate"] = (
-                            cpp_result.total_tokens_generated / timing_ctx.duration
-                        )
+            # Store benchmark results
+            if args.benchmark:
+                benchmark_results[
+                    "total_tokens_generated"
+                ] = cpp_result.total_tokens_generated
+                benchmark_results["final_output"] = str(cpp_result.generated_text)
+                if gen_timing_ctx.duration > 0:
+                    benchmark_results["token_generation_rate"] = (
+                        cpp_result.total_tokens_generated / gen_timing_ctx.duration
+                    )
 
             print(f"Final KV cache position (n_past): {cpp_result.final_n_past}")
 
