@@ -107,6 +107,12 @@ def main():
         default=None,
         help="Path to load a media embedding from a file, ignoring the --image argument for encoding.",
     )
+    parser.add_argument(
+        "--temp",
+        type=float,
+        default=TEMP,
+        help="Temperature for sampling.",
+    )
     args = parser.parse_args()
 
     try:
