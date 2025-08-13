@@ -166,9 +166,27 @@ def main():
                 benchmark_results["image_processing_time"] = image_load_duration
 
             # Prepare and evaluate multimodal input
+            print("Tokenizing multimodal input...")
+            chunks = rm.tokenize_prompt(ctx_mtmd, args.prompt, bitmap)
+
+            # Find and encode image chunk
+            image_chunk = None
+            for i in range(gbl.mtmd_input_chunks_size(chunks)):
+                chunk = gbl.mtmd_input_chunks_get(chunks, i)
+                if gbl.mtmd_input_chunk_get_type(chunk) in [
+                    gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
+                    gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
+                ]:
+                    image_chunk = chunk
+                    break  # Assuming one media chunk for now
+
+            if image_chunk:
+                print("Encoding media chunk...")
+                rm.encode_image_chunk(ctx_mtmd, image_chunk)
+
             print("Evaluating multimodal input...")
-            n_past, prompt_eval_duration = rm.process_prompt(
-                ctx, ctx_mtmd, args.prompt, bitmap, N_BATCH
+            n_past, prompt_eval_duration = rm.eval_chunks(
+                ctx, ctx_mtmd, chunks, N_BATCH
             )
             if args.benchmark:
                 benchmark_results["prompt_processing_time"] = prompt_eval_duration
