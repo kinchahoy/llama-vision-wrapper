@@ -62,13 +62,17 @@ def main():
         help="Multimodal projector file name in the repository.",
     )
     parser.add_argument(
-        "--image", type=str, default="debug.jpg", help="Path to the input image."
+        "--image",
+        nargs="+",
+        type=str,
+        default=["debug.jpg"],
+        help="Path to one or more input images.",
     )
     parser.add_argument(
         "--prompt",
         type=str,
-        default="USER: Describe this image.\n<__image__>\nASSISTANT:",
-        help="The prompt for the model.",
+        default="USER: Describe this image.\n<__media__>\nASSISTANT:",
+        help="The prompt for the model. Use <__media__> for each image.",
     )
     parser.add_argument(
         "--n-gpu-layers",
@@ -174,45 +178,66 @@ def main():
                     time.time() - start_model_load
                 )
 
-            # Load image
-            print("Loading image...")
-            bitmap, image_load_duration = rm.load_image(ctx_mtmd, args.image)
-            print(
-                f"Image loaded: {gbl.mtmd_bitmap_get_nx(bitmap)}x{gbl.mtmd_bitmap_get_ny(bitmap)}"
-            )
+            # Load images
+            print("Loading images...")
+            bitmaps = []
+            total_image_load_duration = 0
+            for image_path in args.image:
+                bitmap, image_load_duration = rm.load_image(ctx_mtmd, image_path)
+                print(
+                    f"Image loaded: {image_path} ({gbl.mtmd_bitmap_get_nx(bitmap)}x{gbl.mtmd_bitmap_get_ny(bitmap)})"
+                )
+                bitmaps.append(bitmap)
+                total_image_load_duration += image_load_duration
+
             if args.benchmark:
-                benchmark_results["image_processing_time"] = image_load_duration
+                benchmark_results["image_processing_time"] = total_image_load_duration
 
             # Prepare and evaluate multimodal input
             print("Tokenizing multimodal input...")
-            chunks = rm.tokenize_prompt(ctx_mtmd, args.prompt, bitmap)
+            chunks = rm.tokenize_prompt(ctx_mtmd, args.prompt, bitmaps)
 
-            # Find and encode image chunk
-            image_chunk = None
-            for i in range(gbl.mtmd_input_chunks_size(chunks)):
-                chunk = gbl.mtmd_input_chunks_get(chunks, i)
-                if gbl.mtmd_input_chunk_get_type(chunk) in [
-                    gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
-                    gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
-                ]:
-                    image_chunk = chunk
-                    break  # Assuming one media chunk for now
-
-            if image_chunk:
-                if args.load_embedding:
-                    print(f"Loading media embedding from {args.load_embedding}...")
-                    rm.load_encoded_chunk(
-                        ctx_mtmd, model, image_chunk, args.load_embedding
+            # Find and encode image chunk(s)
+            if len(args.image) > 1:
+                if args.load_embedding or args.save_embedding:
+                    print(
+                        "Warning: --load-embedding and --save-embedding are not supported with multiple images. Ignoring."
                     )
-                else:
-                    print("Encoding media chunk...")
-                    rm.encode_image_chunk(ctx_mtmd, image_chunk)
+                for i in range(gbl.mtmd_input_chunks_size(chunks)):
+                    chunk = gbl.mtmd_input_chunks_get(chunks, i)
+                    if gbl.mtmd_input_chunk_get_type(chunk) in [
+                        gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
+                        gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
+                    ]:
+                        print("Encoding media chunk...")
+                        rm.encode_image_chunk(ctx_mtmd, chunk)
+            else:
+                # Original logic for single image with embedding I/O
+                image_chunk = None
+                for i in range(gbl.mtmd_input_chunks_size(chunks)):
+                    chunk = gbl.mtmd_input_chunks_get(chunks, i)
+                    if gbl.mtmd_input_chunk_get_type(chunk) in [
+                        gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
+                        gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
+                    ]:
+                        image_chunk = chunk
+                        break  # Assuming one media chunk for now
 
-                if args.save_embedding:
-                    print(f"Saving media embedding to {args.save_embedding}...")
-                    rm.save_encoded_chunk(
-                        ctx_mtmd, model, image_chunk, args.save_embedding
-                    )
+                if image_chunk:
+                    if args.load_embedding:
+                        print(f"Loading media embedding from {args.load_embedding}...")
+                        rm.load_encoded_chunk(
+                            ctx_mtmd, model, image_chunk, args.load_embedding
+                        )
+                    else:
+                        print("Encoding media chunk...")
+                        rm.encode_image_chunk(ctx_mtmd, image_chunk)
+
+                    if args.save_embedding:
+                        print(f"Saving media embedding to {args.save_embedding}...")
+                        rm.save_encoded_chunk(
+                            ctx_mtmd, model, image_chunk, args.save_embedding
+                        )
 
             print("Evaluating multimodal input...")
             n_past = 0
