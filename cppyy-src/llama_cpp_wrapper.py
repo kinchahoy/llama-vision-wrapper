@@ -275,7 +275,7 @@ class ResourceManager:
                 raise RuntimeError(f"Failed to load image {image_path}")
         return bitmap, timing_ctx.duration
 
-    def process_prompt(self, ctx, ctx_mtmd, prompt, bitmap, n_batch):
+    def tokenize_prompt(self, ctx_mtmd, prompt, bitmap):
         # Keep prompt string alive
         prompt_cstr = prompt.encode("utf-8")
 
@@ -301,27 +301,89 @@ class ResourceManager:
                 bitmaps_ptr_vec.size(),
             ) != 0:
                 raise RuntimeError("Failed mtmd_tokenize")
+        return chunks
 
+    def encode_image_chunk(self, ctx_mtmd, chunk):
+        if gbl.mtmd_input_chunk_get_type(chunk) not in [
+            gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
+            gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
+        ]:
+            raise ValueError("Chunk is not an image or audio chunk")
+
+        with timed_operation("Media encoding"):
+            if gbl.mtmd_encode_chunk(ctx_mtmd, chunk) != 0:
+                raise RuntimeError("Failed to encode media chunk")
+
+    def eval_chunks(self, ctx, ctx_mtmd, chunks, n_batch):
         n_past = 0
         seq_id = gbl.llama_seq_id(0)
         prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
-        n_past_out_array = gbl.std.array[gbl.llama_pos, 1]()
-        n_past_out_array[0] = gbl.llama_pos(n_past)
 
         with timed_operation("Prompt evaluation", tokens=prompt_tokens) as timing_ctx:
-            if gbl.mtmd_helper_eval_chunks(
-                ctx_mtmd,
-                ctx,
-                chunks,
-                n_past,
-                seq_id,
-                n_batch,
-                True,
-                n_past_out_array.data(),
-            ) != 0:
-                raise RuntimeError("Failed mtmd_helper_eval_chunks")
+            n_chunks = gbl.mtmd_input_chunks_size(chunks)
+            for i in range(n_chunks):
+                chunk = gbl.mtmd_input_chunks_get(chunks, i)
+                chunk_type = gbl.mtmd_input_chunk_get_type(chunk)
 
-        n_past = int(n_past_out_array[0])
+                if chunk_type == gbl.MTMD_INPUT_CHUNK_TYPE_TEXT:
+                    n_tokens_out = gbl.std.vector["size_t"](1)
+                    tokens = gbl.mtmd_input_chunk_get_tokens_text(
+                        chunk, n_tokens_out.data()
+                    )
+                    n_tokens = n_tokens_out[0]
+
+                    text_batch = gbl.llama_batch_init(n_batch, 0, 1)
+
+                    token_idx = 0
+                    while token_idx < n_tokens:
+                        text_batch.n_tokens = 0
+                        while token_idx < n_tokens and text_batch.n_tokens < n_batch:
+                            j = text_batch.n_tokens
+                            text_batch.token[j] = tokens[token_idx]
+                            text_batch.pos[j] = n_past
+                            text_batch.n_seq_id[j] = 1
+                            text_batch.seq_id[j][0] = seq_id
+                            text_batch.logits[j] = False
+                            text_batch.n_tokens += 1
+                            n_past += 1
+                            token_idx += 1
+
+                        is_last_token_in_chunk = token_idx == n_tokens
+                        is_last_chunk = i == n_chunks - 1
+                        if is_last_chunk and is_last_token_in_chunk:
+                            text_batch.logits[text_batch.n_tokens - 1] = True
+
+                        if gbl.llama_decode(ctx, text_batch) != 0:
+                            gbl.llama_batch_free(text_batch)
+                            raise RuntimeError("Failed to decode text")
+
+                    gbl.llama_batch_free(text_batch)
+
+                elif chunk_type in [
+                    gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
+                    gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
+                ]:
+                    embd = gbl.mtmd_get_output_embd(ctx_mtmd)
+
+                    new_n_past_out_array = gbl.std.array[gbl.llama_pos, 1]()
+                    new_n_past_out_array[0] = gbl.llama_pos(n_past)
+
+                    if gbl.mtmd_helper_decode_image_chunk(
+                        ctx_mtmd,
+                        ctx,
+                        chunk,
+                        embd,
+                        n_past,
+                        seq_id,
+                        n_batch,
+                        new_n_past_out_array.data(),
+                    ) != 0:
+                        raise RuntimeError("Failed to decode media chunk")
+
+                    n_past = int(new_n_past_out_array[0])
+                else:
+                    raise RuntimeError(f"Unsupported chunk type: {chunk_type}")
+
         return n_past, timing_ctx.duration
 
     def generate(self, sampler, ctx, model, n_past, n_ctx, max_new_tokens):
