@@ -156,6 +156,7 @@ class ResourceManager:
         self.verbose = verbose
         self.resources = {}
         self.timings = []
+        self.loaded_embedding = None
 
     def log(self, msg):
         if self.verbose:
@@ -325,12 +326,24 @@ class ResourceManager:
             ny = gbl.mtmd_image_tokens_get_ny(image_tokens)
             use_mrope_pos = gbl.mtmd_decode_use_mrope(ctx_mtmd)
 
-            embedding_vec = ctx_mtmd.image_embd_v
+            if self.loaded_embedding:
+                embedding_ptr = self.loaded_embedding.data()
+                embedding_size = self.loaded_embedding.size()
+            else:
+                embedding_ptr = gbl.mtmd_get_output_embd(ctx_mtmd)
+                n_tokens = gbl.mtmd_image_tokens_get_n_tokens(image_tokens)
+                n_embd = ctx_mtmd.n_embd_text
+                embedding_size = n_tokens * n_embd
+
+            if not embedding_ptr:
+                raise RuntimeError("Failed to get embedding pointer")
+
+            embedding_floats = cppyy.bind_object(embedding_ptr, embedding_size)
 
             with open(file_path, "wb") as f:
                 header = struct.pack("=III", nx, ny, int(use_mrope_pos))
                 f.write(header)
-                f.write(memoryview(embedding_vec))
+                f.write(struct.pack(f"={embedding_size}f", *embedding_floats))
 
     def load_encoded_chunk(self, ctx_mtmd, chunk, file_path):
         with timed_operation("Loading media embedding"):
@@ -371,9 +384,11 @@ class ResourceManager:
                         f"Embedding file has wrong size. Expected {embedding_size * 4}, got {len(embedding_bytes)}"
                     )
 
-                ctx_mtmd.image_embd_v.resize(embedding_size)
+                self.loaded_embedding = gbl.std.vector["float"](embedding_size)
                 cppyy.cpp.memcpy(
-                    ctx_mtmd.image_embd_v.data(), embedding_bytes, len(embedding_bytes)
+                    self.loaded_embedding.data(),
+                    embedding_bytes,
+                    len(embedding_bytes),
                 )
 
     def eval_text_chunk(
@@ -412,7 +427,10 @@ class ResourceManager:
         return n_past
 
     def decode_image_chunk(self, ctx, ctx_mtmd, chunk, n_past, n_batch):
-        embd = gbl.mtmd_get_output_embd(ctx_mtmd)
+        if self.loaded_embedding:
+            embd = self.loaded_embedding.data()
+        else:
+            embd = gbl.mtmd_get_output_embd(ctx_mtmd)
         seq_id = gbl.llama_seq_id(0)
 
         new_n_past_out_array = gbl.std.array[gbl.llama_pos, 1]()
