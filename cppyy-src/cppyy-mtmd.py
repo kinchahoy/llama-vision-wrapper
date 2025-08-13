@@ -71,8 +71,8 @@ def main():
     parser.add_argument(
         "--prompt",
         type=str,
-        default="USER: Describe this image.\n<__image__>\nASSISTANT:",
-        help="The prompt for the model. Use <__image__> for each image.",
+        default="USER: Describe this image.\n<__media__>\nASSISTANT:",
+        help="The prompt for the model. Use <__media__> for each image.",
     )
     parser.add_argument(
         "--n-gpu-layers",
@@ -107,9 +107,10 @@ def main():
     )
     parser.add_argument(
         "--load-embedding",
+        nargs="+",
         type=str,
         default=None,
-        help="Path to load a media embedding from a file, ignoring the --image argument for encoding.",
+        help="Path to one or more media embeddings to load from file, ignoring the --image argument for encoding.",
     )
     parser.add_argument(
         "--temp",
@@ -119,9 +120,15 @@ def main():
     )
     args = parser.parse_args()
 
-    if len(args.image) > 1 and (args.load_embedding or args.save_embedding):
+    num_media_placeholders = args.prompt.count("<__media__>")
+    if args.load_embedding and len(args.load_embedding) != num_media_placeholders:
+        sys.exit(
+            f"Error: The number of embeddings to load ({len(args.load_embedding)}) does not match the number of media placeholders in the prompt ({num_media_placeholders})."
+        )
+
+    if len(args.image) > 1 and args.save_embedding:
         print(
-            "Warning: --load-embedding and --save-embedding are not supported with multiple images. Ignoring."
+            "Warning: --save-embedding is not supported with multiple images. Ignoring."
         )
 
     try:
@@ -209,6 +216,7 @@ def main():
                 "Prompt evaluation", tokens=prompt_tokens
             ) as timing_ctx:
                 n_chunks = gbl.mtmd_input_chunks_size(chunks)
+                media_chunk_idx = 0
                 for i in range(n_chunks):
                     chunk = gbl.mtmd_input_chunks_get(chunks, i)
                     chunk_type = gbl.mtmd_input_chunk_get_type(chunk)
@@ -222,13 +230,14 @@ def main():
                         gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
                         gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
                     ]:
-                        # Handle embedding I/O (only for single image)
-                        if len(args.image) == 1 and args.load_embedding:
+                        # Handle embedding I/O
+                        if args.load_embedding:
+                            embedding_path = args.load_embedding[media_chunk_idx]
                             print(
-                                f"Loading media embedding from {args.load_embedding}..."
+                                f"Loading media embedding from {embedding_path}..."
                             )
                             rm.load_encoded_chunk(
-                                ctx_mtmd, model, chunk, args.load_embedding
+                                ctx_mtmd, model, chunk, embedding_path
                             )
                         else:
                             print("Encoding media chunk...")
@@ -245,6 +254,7 @@ def main():
                             rm.save_encoded_chunk(
                                 ctx_mtmd, model, chunk, args.save_embedding
                             )
+                        media_chunk_idx += 1
                     else:
                         raise RuntimeError(f"Unsupported chunk type: {chunk_type}")
 
