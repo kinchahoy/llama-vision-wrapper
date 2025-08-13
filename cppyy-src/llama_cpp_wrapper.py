@@ -4,6 +4,7 @@ for model loading, context management, and multimodal operations.
 """
 import cppyy
 import os
+import struct
 import sys
 import time
 from dataclasses import dataclass
@@ -313,6 +314,57 @@ class ResourceManager:
         with timed_operation("Media encoding"):
             if gbl.mtmd_encode_chunk(ctx_mtmd, chunk) != 0:
                 raise RuntimeError("Failed to encode media chunk")
+
+    def save_encoded_chunk(self, ctx_mtmd, chunk, file_path):
+        with timed_operation("Saving media embedding"):
+            image_tokens = gbl.mtmd_input_chunk_get_tokens_image(chunk)
+            if not image_tokens:
+                raise ValueError("Chunk does not contain image tokens")
+
+            nx = gbl.mtmd_image_tokens_get_nx(image_tokens)
+            ny = gbl.mtmd_image_tokens_get_ny(image_tokens)
+            use_mrope_pos = image_tokens.use_mrope_pos
+
+            embedding_vec = ctx_mtmd.image_embd_v
+
+            with open(file_path, "wb") as f:
+                header = struct.pack("=III", nx, ny, int(use_mrope_pos))
+                f.write(header)
+                f.write(memoryview(embedding_vec))
+
+    def load_encoded_chunk(self, ctx_mtmd, chunk, file_path):
+        with timed_operation("Loading media embedding"):
+            image_tokens = gbl.mtmd_input_chunk_get_tokens_image(chunk)
+            if not image_tokens:
+                raise ValueError("Chunk does not contain image tokens")
+
+            with open(file_path, "rb") as f:
+                header_size = struct.calcsize("=III")
+                header = f.read(header_size)
+                if len(header) != header_size:
+                    raise IOError("Invalid embedding file header")
+
+                nx, ny, use_mrope_pos_int = struct.unpack("=III", header)
+                use_mrope_pos = bool(use_mrope_pos_int)
+
+                image_tokens.nx = nx
+                image_tokens.ny = ny
+                image_tokens.use_mrope_pos = use_mrope_pos
+
+                n_tokens = gbl.mtmd_image_tokens_get_n_tokens(image_tokens)
+                n_embd = ctx_mtmd.n_embd_text
+                embedding_size = n_tokens * n_embd
+
+                embedding_bytes = f.read()
+                if len(embedding_bytes) != embedding_size * 4:
+                    raise IOError(
+                        f"Embedding file has wrong size. Expected {embedding_size * 4}, got {len(embedding_bytes)}"
+                    )
+
+                ctx_mtmd.image_embd_v.resize(embedding_size)
+                cppyy.cpp.memcpy(
+                    ctx_mtmd.image_embd_v.data(), embedding_bytes, len(embedding_bytes)
+                )
 
     def eval_chunks(self, ctx, ctx_mtmd, chunks, n_batch):
         n_past = 0
