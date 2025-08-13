@@ -209,11 +209,33 @@ def main():
                     )
 
             print("Evaluating multimodal input...")
-            n_past, prompt_eval_duration = rm.eval_chunks(
-                ctx, ctx_mtmd, chunks, N_BATCH
-            )
+            n_past = 0
+            prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
+            with timed_operation(
+                "Prompt evaluation", tokens=prompt_tokens
+            ) as timing_ctx:
+                n_chunks = gbl.mtmd_input_chunks_size(chunks)
+                for i in range(n_chunks):
+                    chunk = gbl.mtmd_input_chunks_get(chunks, i)
+                    chunk_type = gbl.mtmd_input_chunk_get_type(chunk)
+                    is_last_chunk = i == n_chunks - 1
+
+                    if chunk_type == gbl.MTMD_INPUT_CHUNK_TYPE_TEXT:
+                        n_past = rm.eval_text_chunk(
+                            ctx, chunk, n_past, N_BATCH, is_last_chunk
+                        )
+                    elif chunk_type in [
+                        gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
+                        gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
+                    ]:
+                        n_past = rm.decode_image_chunk(
+                            ctx, ctx_mtmd, chunk, n_past, N_BATCH
+                        )
+                    else:
+                        raise RuntimeError(f"Unsupported chunk type: {chunk_type}")
+
             if args.benchmark:
-                benchmark_results["prompt_processing_time"] = prompt_eval_duration
+                benchmark_results["prompt_processing_time"] = timing_ctx.duration
 
             print(f"KV cache position (n_past): {n_past}")
 
