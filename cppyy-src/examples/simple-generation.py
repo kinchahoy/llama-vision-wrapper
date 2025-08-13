@@ -104,7 +104,7 @@ def main():
                 args.verbose_cpp,
             )
             sampler = rm.create_sampler(
-                model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
+                model, args.temp, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
             )
 
             # Load image

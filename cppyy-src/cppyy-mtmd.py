@@ -136,7 +136,7 @@ def main():
                 "n_threads": args.n_threads,
                 "n_gpu_layers": args.n_gpu_layers,
                 "max_new_tokens": MAX_NEW_TOKENS,
-                "temp": TEMP,
+                "temp": args.temp,
                 "top_k": TOP_K,
                 "top_p": TOP_P,
                 "repeat_penalty": REPEAT_PENALTY,
@@ -161,7 +161,7 @@ def main():
                 args.verbose_cpp,
             )
             sampler = rm.create_sampler(
-                model, TEMP, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
+                model, args.temp, TOP_K, TOP_P, REPEAT_PENALTY, gbl.llama_n_ctx(ctx)
             )
             if args.benchmark:
                 benchmark_results["model_loading_time"] = (
