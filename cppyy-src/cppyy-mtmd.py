@@ -71,8 +71,8 @@ def main():
     parser.add_argument(
         "--prompt",
         type=str,
-        default="USER: Describe this image.\n<__media__>\nASSISTANT:",
-        help="The prompt for the model. Use <__media__> for each image.",
+        default="USER: Describe this image.\n<__image__>\nASSISTANT:",
+        help="The prompt for the model. Use <__image__> for each image.",
     )
     parser.add_argument(
         "--n-gpu-layers",
