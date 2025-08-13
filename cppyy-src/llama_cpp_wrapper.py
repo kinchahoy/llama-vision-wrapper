@@ -323,7 +323,7 @@ class ResourceManager:
 
             nx = gbl.mtmd_image_tokens_get_nx(image_tokens)
             ny = gbl.mtmd_image_tokens_get_ny(image_tokens)
-            use_mrope_pos = image_tokens.use_mrope_pos
+            use_mrope_pos = gbl.mtmd_decode_use_mrope(ctx_mtmd)
 
             embedding_vec = ctx_mtmd.image_embd_v
 
@@ -345,11 +345,21 @@ class ResourceManager:
                     raise IOError("Invalid embedding file header")
 
                 nx, ny, use_mrope_pos_int = struct.unpack("=III", header)
-                use_mrope_pos = bool(use_mrope_pos_int)
+                use_mrope_pos_from_file = bool(use_mrope_pos_int)
+
+                # Verify that the loaded embedding is compatible with the current model context
+                use_mrope_pos_from_ctx = gbl.mtmd_decode_use_mrope(ctx_mtmd)
+                if use_mrope_pos_from_file != use_mrope_pos_from_ctx:
+                    raise RuntimeError(
+                        f"M-RoPE mismatch: embedding file expects use_mrope_pos={use_mrope_pos_from_file}, "
+                        f"but model context is configured with use_mrope_pos={use_mrope_pos_from_ctx}."
+                    )
 
                 image_tokens.nx = nx
                 image_tokens.ny = ny
-                image_tokens.use_mrope_pos = use_mrope_pos
+                # The `use_mrope_pos` flag is part of the C++ struct and not directly settable.
+                # It's initialized during tokenization based on the context, so we just need
+                # to ensure consistency, which we did above.
 
                 n_tokens = gbl.mtmd_image_tokens_get_n_tokens(image_tokens)
                 n_embd = ctx_mtmd.n_embd_text
