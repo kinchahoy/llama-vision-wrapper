@@ -119,6 +119,11 @@ def main():
     )
     args = parser.parse_args()
 
+    if len(args.image) > 1 and (args.load_embedding or args.save_embedding):
+        print(
+            "Warning: --load-embedding and --save-embedding are not supported with multiple images. Ignoring."
+        )
+
     try:
         print("--- Initializing ---")
         print("Threads set to :", args.n_threads)
@@ -197,48 +202,6 @@ def main():
             print("Tokenizing multimodal input...")
             chunks = rm.tokenize_prompt(ctx_mtmd, args.prompt, bitmaps)
 
-            # Find and encode image chunk(s)
-            if len(args.image) > 1:
-                if args.load_embedding or args.save_embedding:
-                    print(
-                        "Warning: --load-embedding and --save-embedding are not supported with multiple images. Ignoring."
-                    )
-                for i in range(gbl.mtmd_input_chunks_size(chunks)):
-                    chunk = gbl.mtmd_input_chunks_get(chunks, i)
-                    if gbl.mtmd_input_chunk_get_type(chunk) in [
-                        gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
-                        gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
-                    ]:
-                        print("Encoding media chunk...")
-                        rm.encode_image_chunk(ctx_mtmd, chunk)
-            else:
-                # Original logic for single image with embedding I/O
-                image_chunk = None
-                for i in range(gbl.mtmd_input_chunks_size(chunks)):
-                    chunk = gbl.mtmd_input_chunks_get(chunks, i)
-                    if gbl.mtmd_input_chunk_get_type(chunk) in [
-                        gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
-                        gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
-                    ]:
-                        image_chunk = chunk
-                        break  # Assuming one media chunk for now
-
-                if image_chunk:
-                    if args.load_embedding:
-                        print(f"Loading media embedding from {args.load_embedding}...")
-                        rm.load_encoded_chunk(
-                            ctx_mtmd, model, image_chunk, args.load_embedding
-                        )
-                    else:
-                        print("Encoding media chunk...")
-                        rm.encode_image_chunk(ctx_mtmd, image_chunk)
-
-                    if args.save_embedding:
-                        print(f"Saving media embedding to {args.save_embedding}...")
-                        rm.save_encoded_chunk(
-                            ctx_mtmd, model, image_chunk, args.save_embedding
-                        )
-
             print("Evaluating multimodal input...")
             n_past = 0
             prompt_tokens = gbl.mtmd_helper_get_n_tokens(chunks)
@@ -259,9 +222,29 @@ def main():
                         gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
                         gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
                     ]:
+                        # Handle embedding I/O (only for single image)
+                        if len(args.image) == 1 and args.load_embedding:
+                            print(
+                                f"Loading media embedding from {args.load_embedding}..."
+                            )
+                            rm.load_encoded_chunk(
+                                ctx_mtmd, model, chunk, args.load_embedding
+                            )
+                        else:
+                            print("Encoding media chunk...")
+                            rm.encode_image_chunk(ctx_mtmd, chunk)
+
                         n_past = rm.decode_image_chunk(
                             ctx, ctx_mtmd, chunk, n_past, N_BATCH
                         )
+
+                        if len(args.image) == 1 and args.save_embedding:
+                            print(
+                                f"Saving media embedding to {args.save_embedding}..."
+                            )
+                            rm.save_encoded_chunk(
+                                ctx_mtmd, model, chunk, args.save_embedding
+                            )
                     else:
                         raise RuntimeError(f"Unsupported chunk type: {chunk_type}")
 

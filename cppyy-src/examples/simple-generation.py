@@ -129,16 +129,6 @@ def main():
             print("Tokenizing multimodal input...")
             chunks = rm.tokenize_prompt(ctx_mtmd, args.prompt, bitmaps)
 
-            # Find and encode media chunks
-            for i in range(gbl.mtmd_input_chunks_size(chunks)):
-                chunk = gbl.mtmd_input_chunks_get(chunks, i)
-                if gbl.mtmd_input_chunk_get_type(chunk) in [
-                    gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
-                    gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
-                ]:
-                    print("Encoding media chunk...")
-                    rm.encode_image_chunk(ctx_mtmd, chunk)
-
             print("Evaluating multimodal input...")
             n_past = 0
             n_chunks = gbl.mtmd_input_chunks_size(chunks)
@@ -155,6 +145,8 @@ def main():
                     gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
                     gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
                 ]:
+                    print("Encoding media chunk...")
+                    rm.encode_image_chunk(ctx_mtmd, chunk)
                     n_past = rm.decode_image_chunk(
                         ctx, ctx_mtmd, chunk, n_past, N_BATCH
                     )
