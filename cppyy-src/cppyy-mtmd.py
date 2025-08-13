@@ -95,6 +95,18 @@ def main():
         action="store_true",
         help="Enable benchmarking and save results to benchmark.json.",
     )
+    parser.add_argument(
+        "--save-embedding",
+        type=str,
+        default=None,
+        help="Path to save the media embedding to a file.",
+    )
+    parser.add_argument(
+        "--load-embedding",
+        type=str,
+        default=None,
+        help="Path to load a media embedding from a file, ignoring the --image argument for encoding.",
+    )
     args = parser.parse_args()
 
     try:
@@ -181,8 +193,20 @@ def main():
                     break  # Assuming one media chunk for now
 
             if image_chunk:
-                print("Encoding media chunk...")
-                rm.encode_image_chunk(ctx_mtmd, image_chunk)
+                if args.load_embedding:
+                    print(f"Loading media embedding from {args.load_embedding}...")
+                    rm.load_encoded_chunk(
+                        ctx_mtmd, image_chunk, args.load_embedding
+                    )
+                else:
+                    print("Encoding media chunk...")
+                    rm.encode_image_chunk(ctx_mtmd, image_chunk)
+
+                if args.save_embedding:
+                    print(f"Saving media embedding to {args.save_embedding}...")
+                    rm.save_encoded_chunk(
+                        ctx_mtmd, image_chunk, args.save_embedding
+                    )
 
             print("Evaluating multimodal input...")
             n_past, prompt_eval_duration = rm.eval_chunks(
