@@ -277,7 +277,7 @@ class ResourceManager:
                 raise RuntimeError(f"Failed to load image {image_path}")
         return bitmap, timing_ctx.duration
 
-    def tokenize_prompt(self, ctx_mtmd, prompt, bitmap):
+    def tokenize_prompt(self, ctx_mtmd, prompt, bitmaps):
         # Keep prompt string alive
         prompt_cstr = prompt.encode("utf-8")
 
@@ -287,7 +287,12 @@ class ResourceManager:
         input_text.parse_special = True
 
         bitmaps_ptr_vec = gbl.std.vector["const mtmd_bitmap*"]()
-        bitmaps_ptr_vec.push_back(bitmap)
+        # Handle both single bitmap and list of bitmaps
+        if not isinstance(bitmaps, list):
+            bitmaps = [bitmaps]
+        for bitmap in bitmaps:
+            bitmaps_ptr_vec.push_back(bitmap)
+
         chunks = gbl.mtmd_input_chunks_init()
         if not chunks:
             raise RuntimeError(
