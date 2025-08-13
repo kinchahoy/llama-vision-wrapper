@@ -77,6 +77,12 @@ def main():
         action="store_true",
         help="Enable verbose logging from the C++ backend.",
     )
+    parser.add_argument(
+        "--temp",
+        type=float,
+        default=TEMP,
+        help="Temperature for sampling.",
+    )
     args = parser.parse_args()
 
     try:
