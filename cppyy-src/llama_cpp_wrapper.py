@@ -316,7 +316,7 @@ class ResourceManager:
             if gbl.mtmd_encode_chunk(ctx_mtmd, chunk) != 0:
                 raise RuntimeError("Failed to encode media chunk")
 
-    def save_encoded_chunk(self, ctx_mtmd, chunk, file_path):
+    def save_encoded_chunk(self, ctx_mtmd, model, chunk, file_path):
         with timed_operation("Saving media embedding"):
             image_tokens = gbl.mtmd_input_chunk_get_tokens_image(chunk)
             if not image_tokens:
@@ -332,7 +332,7 @@ class ResourceManager:
             else:
                 embedding_ptr = gbl.mtmd_get_output_embd(ctx_mtmd)
                 n_tokens = gbl.mtmd_image_tokens_get_n_tokens(image_tokens)
-                n_embd = ctx_mtmd.n_embd_text
+                n_embd = gbl.llama_model_n_embd(model)
                 embedding_size = n_tokens * n_embd
 
             if not embedding_ptr:
@@ -345,7 +345,7 @@ class ResourceManager:
                 f.write(header)
                 f.write(struct.pack(f"={embedding_size}f", *embedding_floats))
 
-    def load_encoded_chunk(self, ctx_mtmd, chunk, file_path):
+    def load_encoded_chunk(self, ctx_mtmd, model, chunk, file_path):
         with timed_operation("Loading media embedding"):
             image_tokens = gbl.mtmd_input_chunk_get_tokens_image(chunk)
             if not image_tokens:
@@ -375,7 +375,7 @@ class ResourceManager:
                 # to ensure consistency, which we did above.
 
                 n_tokens = gbl.mtmd_image_tokens_get_n_tokens(image_tokens)
-                n_embd = ctx_mtmd.n_embd_text
+                n_embd = gbl.llama_model_n_embd(model)
                 embedding_size = n_tokens * n_embd
 
                 embedding_bytes = f.read()
