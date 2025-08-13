@@ -17,6 +17,29 @@ struct GenerationResult {
     // Add other potential outputs like timing, stop reason, etc. if desired
 };
 
+// Define a structure to hold results from loading a media embedding
+struct MediaLoadResult {
+    bool success;
+    int nx;
+    int ny;
+    bool use_mrope_pos;
+};
+
+// Helper functions for saving and loading media embeddings
+bool save_media_embedding(
+    const std::string& file_path,
+    int nx,
+    int ny,
+    bool use_mrope_pos,
+    size_t n_embd,
+    const float* embd_ptr
+);
+
+MediaLoadResult load_media_embedding(
+    const std::string& file_path,
+    std::vector<float>& embd_vec
+);
+
 // The core generation function, now accepting a callback
 GenerationResult generate_tokens_cpp(
     common_sampler * sampler,        // Pointer to the initialized sampler
