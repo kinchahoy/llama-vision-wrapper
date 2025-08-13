@@ -80,3 +80,96 @@ GenerationResult generate_tokens_cpp(
     llama_batch_free(batch);
     return result;
 }
+
+// --- Media Embedding I/O Helpers ---
+
+// Simple header for the embedding file
+struct embedding_file_header {
+    uint32_t nx;
+    uint32_t ny;
+    uint32_t use_mrope_pos;
+};
+
+bool save_media_embedding(
+    const std::string& file_path,
+    int nx,
+    int ny,
+    bool use_mrope_pos,
+    size_t n_embd,
+    const float* embd_ptr)
+{
+    FILE* f = fopen(file_path.c_str(), "wb");
+    if (!f) {
+        fprintf(stderr, "Error: Could not open %s for writing.\n", file_path.c_str());
+        return false;
+    }
+
+    embedding_file_header header = {
+        (uint32_t)nx,
+        (uint32_t)ny,
+        (uint32_t)use_mrope_pos
+    };
+
+    if (fwrite(&header, sizeof(header), 1, f) != 1) {
+        fprintf(stderr, "Error: Failed to write header to %s.\n", file_path.c_str());
+        fclose(f);
+        return false;
+    }
+
+    if (fwrite(embd_ptr, sizeof(float), n_embd, f) != n_embd) {
+        fprintf(stderr, "Error: Failed to write embedding data to %s.\n", file_path.c_str());
+        fclose(f);
+        return false;
+    }
+
+    fclose(f);
+    return true;
+}
+
+MediaLoadResult load_media_embedding(
+    const std::string& file_path,
+    std::vector<float>& embd_vec)
+{
+    MediaLoadResult result = {false, 0, 0, false};
+    FILE* f = fopen(file_path.c_str(), "rb");
+    if (!f) {
+        fprintf(stderr, "Error: Could not open %s for reading.\n", file_path.c_str());
+        return result;
+    }
+
+    embedding_file_header header;
+    if (fread(&header, sizeof(header), 1, f) != 1) {
+        fprintf(stderr, "Error: Failed to read header from %s.\n", file_path.c_str());
+        fclose(f);
+        return result;
+    }
+
+    result.nx = header.nx;
+    result.ny = header.ny;
+    result.use_mrope_pos = (bool)header.use_mrope_pos;
+
+    // Get file size to determine embedding size
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    long data_size = file_size - sizeof(header);
+    fseek(f, sizeof(header), SEEK_SET);
+
+    if (data_size < 0 || data_size % sizeof(float) != 0) {
+        fprintf(stderr, "Error: Invalid data size in %s.\n", file_path.c_str());
+        fclose(f);
+        return result;
+    }
+
+    size_t n_embd = data_size / sizeof(float);
+    embd_vec.resize(n_embd);
+
+    if (fread(embd_vec.data(), sizeof(float), n_embd, f) != n_embd) {
+        fprintf(stderr, "Error: Failed to read embedding data from %s.\n", file_path.c_str());
+        fclose(f);
+        return result;
+    }
+
+    fclose(f);
+    result.success = true;
+    return result;
+}

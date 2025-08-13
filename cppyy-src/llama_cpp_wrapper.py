@@ -338,12 +338,10 @@ class ResourceManager:
             if not embedding_ptr:
                 raise RuntimeError("Failed to get embedding pointer")
 
-            embedding_floats = cppyy.bind_object(embedding_ptr, embedding_size)
-
-            with open(file_path, "wb") as f:
-                header = struct.pack("=III", nx, ny, int(use_mrope_pos))
-                f.write(header)
-                f.write(struct.pack(f"={embedding_size}f", *embedding_floats))
+            if not gbl.save_media_embedding(
+                file_path, nx, ny, use_mrope_pos, embedding_size, embedding_ptr
+            ):
+                raise RuntimeError(f"Failed to save embedding to {file_path}")
 
     def load_encoded_chunk(self, ctx_mtmd, model, chunk, file_path):
         with timed_operation("Loading media embedding"):
@@ -351,44 +349,33 @@ class ResourceManager:
             if not image_tokens:
                 raise ValueError("Chunk does not contain image tokens")
 
-            with open(file_path, "rb") as f:
-                header_size = struct.calcsize("=III")
-                header = f.read(header_size)
-                if len(header) != header_size:
-                    raise IOError("Invalid embedding file header")
+            self.loaded_embedding = gbl.std.vector["float"]()
+            load_result = gbl.load_media_embedding(
+                file_path, self.loaded_embedding
+            )
 
-                nx, ny, use_mrope_pos_int = struct.unpack("=III", header)
-                use_mrope_pos_from_file = bool(use_mrope_pos_int)
+            if not load_result.success:
+                raise RuntimeError(f"Failed to load embedding from {file_path}")
 
-                # Verify that the loaded embedding is compatible with the current model context
-                use_mrope_pos_from_ctx = gbl.mtmd_decode_use_mrope(ctx_mtmd)
-                if use_mrope_pos_from_file != use_mrope_pos_from_ctx:
-                    raise RuntimeError(
-                        f"M-RoPE mismatch: embedding file expects use_mrope_pos={use_mrope_pos_from_file}, "
-                        f"but model context is configured with use_mrope_pos={use_mrope_pos_from_ctx}."
-                    )
+            # Verify that the loaded embedding is compatible with the current model context
+            use_mrope_pos_from_ctx = gbl.mtmd_decode_use_mrope(ctx_mtmd)
+            if load_result.use_mrope_pos != use_mrope_pos_from_ctx:
+                raise RuntimeError(
+                    f"M-RoPE mismatch: embedding file expects use_mrope_pos={load_result.use_mrope_pos}, "
+                    f"but model context is configured with use_mrope_pos={use_mrope_pos_from_ctx}."
+                )
 
-                image_tokens.nx = nx
-                image_tokens.ny = ny
-                # The `use_mrope_pos` flag is part of the C++ struct and not directly settable.
-                # It's initialized during tokenization based on the context, so we just need
-                # to ensure consistency, which we did above.
+            image_tokens.nx = load_result.nx
+            image_tokens.ny = load_result.ny
 
-                n_tokens = gbl.mtmd_image_tokens_get_n_tokens(image_tokens)
-                n_embd = gbl.llama_model_n_embd(model)
-                embedding_size = n_tokens * n_embd
+            # Verify embedding size after loading
+            n_tokens = gbl.mtmd_image_tokens_get_n_tokens(image_tokens)
+            n_embd = gbl.llama_model_n_embd(model)
+            expected_size = n_tokens * n_embd
 
-                embedding_bytes = f.read()
-                if len(embedding_bytes) != embedding_size * 4:
-                    raise IOError(
-                        f"Embedding file has wrong size. Expected {embedding_size * 4}, got {len(embedding_bytes)}"
-                    )
-
-                self.loaded_embedding = gbl.std.vector["float"](embedding_size)
-                cppyy.cpp.memcpy(
-                    self.loaded_embedding.data(),
-                    embedding_bytes,
-                    len(embedding_bytes),
+            if self.loaded_embedding.size() != expected_size:
+                raise IOError(
+                    f"Embedding file has wrong size. Expected {expected_size} floats, got {self.loaded_embedding.size()}"
                 )
 
     def eval_text_chunk(
