@@ -196,7 +196,7 @@ def main():
                 if args.load_embedding:
                     print(f"Loading media embedding from {args.load_embedding}...")
                     rm.load_encoded_chunk(
-                        ctx_mtmd, image_chunk, args.load_embedding
+                        ctx_mtmd, model, image_chunk, args.load_embedding
                     )
                 else:
                     print("Encoding media chunk...")
@@ -205,7 +205,7 @@ def main():
                 if args.save_embedding:
                     print(f"Saving media embedding to {args.save_embedding}...")
                     rm.save_encoded_chunk(
-                        ctx_mtmd, image_chunk, args.save_embedding
+                        ctx_mtmd, model, image_chunk, args.save_embedding
                     )
 
             print("Evaluating multimodal input...")
