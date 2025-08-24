@@ -257,7 +257,8 @@ class Battle3DViewer(ShowBase):
     def _update_task(self, task):
         """Main update loop."""
         if self.playing:
-            dt = task.getDt()
+            # Clamp dt to avoid large jumps after pausing
+            dt = min(task.getDt(), 1.0 / 30.0)
             frame_advance = 10 * self.playback_speed * dt
             self.current_frame += frame_advance
             if self.current_frame >= len(self.timeline) - 1:
@@ -268,9 +269,21 @@ class Battle3DViewer(ShowBase):
         self.timeline_slider["value"] = self.current_frame
 
         current_state = self._get_current_state()
+
+        # Update selected bot with data from the current frame
+        if self.selected_bot:
+            bot_id = self.selected_bot["id"]
+            found_bot = None
+            for bot in current_state.get("bots", []):
+                if bot["id"] == bot_id:
+                    found_bot = bot
+                    break
+            self.selected_bot = found_bot
+
         self._update_bots(current_state)
         self._update_projectiles(current_state)
         self._update_ui(current_state)
+        self._update_fov_display()
         return task.cont
 
     def _get_current_state(self) -> Dict:
@@ -391,25 +404,30 @@ class Battle3DViewer(ShowBase):
         self._update_fov_display()
 
     def _update_fov_display(self):
-        """Create or destroy the FOV indicator."""
-        if self.fov_nodepath:
-            self.fov_nodepath.removeNode()
-            self.fov_nodepath = None
+        """Update the FOV indicator's visibility and position."""
+        should_show = self.show_fov and self.selected_bot
 
-        if self.show_fov and self.selected_bot:
+        if should_show:
+            if not self.fov_nodepath:
+                # Create it if it doesn't exist
+                fov_range = 15.0
+                fov_angle_deg = 120
+                fov_geom_node = self._create_fov_geom(fov_angle_deg, fov_range)
+                self.fov_nodepath = self.render.attachNewNode(fov_geom_node)
+                self.fov_nodepath.setTransparency(1)
+
+            # Update position, orientation, and color
             bot = self.selected_bot
-            fov_range = 15.0
-            fov_angle_deg = 120
-
-            fov_geom_node = self._create_fov_geom(fov_angle_deg, fov_range)
-            self.fov_nodepath = self.render.attachNewNode(fov_geom_node)
             self.fov_nodepath.setPos(
                 bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.1
             )
             self.fov_nodepath.setH(90 - bot["theta"])
-            self.fov_nodepath.setTransparency(1)
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_nodepath.setColor(color)
+        elif self.fov_nodepath:
+            # It exists but shouldn't be shown, so remove it
+            self.fov_nodepath.removeNode()
+            self.fov_nodepath = None
 
     def _create_fov_geom(self, fov_angle_deg, fov_range, num_segments=20):
         """Create a Geom for a 2D FOV fan."""
