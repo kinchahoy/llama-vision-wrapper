@@ -79,6 +79,9 @@ class Battle3DViewer(ShowBase):
         # Start the main update loop
         self.taskMgr.add(self._update_task, "update_battle_task")
 
+        # Defer filter setup to the next frame to ensure the display region is ready.
+        self.taskMgr.doMethodLater(0, self._setup_filters, "setup_filters_task")
+
     def _setup_scene(self):
         """Set up the 3D scene, camera, and lighting."""
         self.setBackgroundColor(0.1, 0.1, 0.1, 1)
@@ -90,14 +93,6 @@ class Battle3DViewer(ShowBase):
         self.cam.lookAt(0, 0, 0)
         # Tighten camera frustum for better SSAO and depth precision
         self.cam.node().getLens().setNearFar(10, 100)
-
-        # We must have at least one frame rendered before setting up the filters.
-        self.graphicsEngine.renderFrame()
-
-        # Post-processing effects for realism
-        self.filters = CommonFilters(self.win, self.cam)
-        self.filters.setAmbientOcclusion(num_samples=16, radius=0.3, amount=2.0)
-        self.filters.setBloom(size="medium", mintrigger=0.6, intensity=0.7)
 
         # Lighting with shadows
         dlight = DirectionalLight("sun")
@@ -245,6 +240,14 @@ class Battle3DViewer(ShowBase):
         self.pickerRay = CollisionRay()
         self.pickerNode.addSolid(self.pickerRay)
         self.picker.addCollider(self.pickerNP, self.pq)
+
+    def _setup_filters(self, task):
+        """Set up post-processing filters. Called one frame after init."""
+        # Post-processing effects for realism
+        self.filters = CommonFilters(self.win, self.cam)
+        self.filters.setAmbientOcclusion(num_samples=16, radius=0.3, amount=2.0)
+        self.filters.setBloom(size="medium", mintrigger=0.6, intensity=0.7)
+        return task.done
 
     def _handle_mouse_click(self):
         """Handle mouse clicks for bot selection."""
