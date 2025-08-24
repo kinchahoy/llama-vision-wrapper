@@ -170,6 +170,9 @@ class Battle3DViewer:
     def _create_text_object(
         self, text, position, font_size=14, color="#FFF", anchor="top-left"
     ):
+        # Accept (x, y) or (x, y, z); always use z=0 for UI if not provided
+        if isinstance(position, (tuple, list)) and len(position) == 2:
+            position = (position[0], position[1], 0)
         text_obj = gfx.Text(
             text=text,
             font_size=font_size,
