@@ -516,8 +516,8 @@ class BattleViewer:
             wall_surface.fill(wall_color)
             pygame.draw.rect(wall_surface, self.WHITE, wall_surface.get_rect(), 1)
 
-            # Pygame rotates counter-clockwise, so we negate the angle
-            rotated_surface = pygame.transform.rotate(wall_surface, -angle_deg)
+            # Pygame rotates counter-clockwise, same as our angle definition
+            rotated_surface = pygame.transform.rotate(wall_surface, angle_deg)
             new_rect = rotated_surface.get_rect()
 
             # Convert center to screen coordinates
