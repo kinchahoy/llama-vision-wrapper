@@ -146,8 +146,8 @@ class Battle3DViewer:
         floor_geom = gfx.plane_geometry(self.arena_width, self.arena_height)
         floor_mat = gfx.MeshStandardMaterial(
             color=(0.28, 0.28, 0.33),
-            roughness=0.08,
-            metalness=0.6,
+            roughness=0.3,
+            metalness=0.8,
             emissive=(0.1, 0.1, 0.12),
             emissive_intensity=0.6,
         )
@@ -625,7 +625,9 @@ class Battle3DViewer:
                 # Create bot body
                 bot_geom = gfx.sphere_geometry(0.4)
                 color = (0, 0.5, 1) if bot["team"] == 0 else (1, 0.3, 0.3)
-                bot_mat = gfx.MeshStandardMaterial(color=color, roughness=0.15, metalness=0.6)
+                bot_mat = gfx.MeshStandardMaterial(
+                    color=color, roughness=0.15, metalness=0.6
+                )
                 bot_body = gfx.Mesh(bot_geom, bot_mat)
                 bot_body.bot_id = bot_id  # For picking
                 self.scene.add(bot_body)
@@ -719,7 +721,7 @@ class Battle3DViewer:
                 proj_geom = gfx.sphere_geometry(0.1)
                 color = (0.2, 1, 1) if proj.get("team") == 0 else (1, 0.5, 1)
                 proj_mat = gfx.MeshStandardMaterial(
-                    color=color, emissive=color, emissive_intensity=0.8
+                    color=color, emissive="#FFFFFF", emissive_intensity=1
                 )
                 proj_model = gfx.Mesh(proj_geom, proj_mat)
                 self.projectile_objects[proj_id] = proj_model
