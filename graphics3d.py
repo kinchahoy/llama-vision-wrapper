@@ -167,9 +167,14 @@ class Battle3DViewer(ShowBase):
         for i, wall_def in enumerate(walls_data):
             center_x, center_y, width, height, angle_deg = wall_def
 
+            # Ensure minimum wall thickness for visibility
+            min_thickness = 0.3  # 30cm minimum thickness
+            wall_width = max(width, min_thickness)
+            wall_depth = max(height, min_thickness)
+
             # Create a procedural box for the wall
-            # Note: width and height are the wall's 2D dimensions in the XY plane
-            wall_node = self._create_wall_geometry(width, height, wall_height)
+            # Note: wall_width and wall_depth are the wall's 2D dimensions in the XY plane
+            wall_node = self._create_wall_geometry(wall_width, wall_depth, wall_height)
             wall_node.reparentTo(self.render)
 
             # Position the wall - battle sim uses (x,y) but Panda3D uses (x,y,z)
