@@ -8,6 +8,7 @@ import json
 import sys
 from typing import Dict, List, Tuple, Optional
 
+import simplepbr
 from direct.showbase.ShowBase import ShowBase
 from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText
 from panda3d.core import (
@@ -34,6 +35,7 @@ class Battle3DViewer(ShowBase):
     def __init__(self, battle_data: Dict):
         """Initialize the Panda3D viewer."""
         ShowBase.__init__(self)
+        simplepbr.init()
 
         self.battle_data = battle_data
         self.timeline = battle_data["timeline"]
