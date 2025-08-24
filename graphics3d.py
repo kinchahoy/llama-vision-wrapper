@@ -119,7 +119,8 @@ class Battle3DViewer(ShowBase):
         walls_data = [
             ((width * 0.2, height * 0.7), (width * 0.2 + 10, height * 0.7)),
             ((width * 0.4, height * 0.3), (width * 0.4, height * 0.3 + 8)),
-            ((width * 0.6, height * 0.2), (width * 0.6 + 9, height * 0.2)),
+            # Corrected wall that was extending beyond arena bounds with default 20x20 size
+            ((width * 0.5, height * 0.2), (width * 0.5 + 9, height * 0.2)),
             ((width * 0.8, height * 0.6), (width * 0.8, height * 0.6 + 6)),
         ]
 
@@ -127,13 +128,6 @@ class Battle3DViewer(ShowBase):
             # Convert to centered coordinates
             start_x, start_y = start[0] - width / 2, start[1] - height / 2
             end_x, end_y = end[0] - width / 2, end[1] - height / 2
-
-            # Use LineSegs to draw a thick line for the wall
-            lines = LineSegs()
-            lines.setThickness(5)
-            lines.setColor(0.6, 0.6, 0.6, 1)
-            lines.moveTo(start_x, start_y, 0)
-            lines.drawTo(end_x, end_y, 0)
 
             # Create a simple mesh for the wall's height
             cm = CardMaker(f"wall_{start}_{end}")
@@ -143,6 +137,9 @@ class Battle3DViewer(ShowBase):
             wall_node.setColor(0.5, 0.5, 0.5, 1)
             wall_node.setPos(start_x, start_y, 0)
             wall_node.lookAt(end_x, end_y, 0)
+            # The card is on its local XY plane. After lookAt, it's a slanted plane.
+            # Rotate it around its new local X-axis to make it a vertical wall.
+            wall_node.setP(wall_node.getP() - 90)
 
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
