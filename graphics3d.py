@@ -40,7 +40,7 @@ class Battle3DViewer(ShowBase):
     def __init__(self, battle_data: Dict):
         """Initialize the Panda3D viewer."""
         ShowBase.__init__(self)
-        simplepbr.init(
+        self.pbr_pipeline = simplepbr.init(
             msaa_samples=4,
             enable_shadows=True,
             use_normal_maps=True,
@@ -48,14 +48,14 @@ class Battle3DViewer(ShowBase):
         )
 
         # Configure post-processing effects on the simplepbr pipeline
-        self.render.pbr_pipeline.settings.enable_ssao = True
-        self.render.pbr_pipeline.settings.ssao_samples = 16
-        self.render.pbr_pipeline.settings.ssao_radius = 0.3
-        self.render.pbr_pipeline.settings.ssao_amount = 2.0
-        self.render.pbr_pipeline.settings.enable_bloom = True
-        self.render.pbr_pipeline.settings.bloom_intensity = 0.7
-        self.render.pbr_pipeline.settings.bloom_mintrigger = 0.6
-        self.render.pbr_pipeline.settings.bloom_size = "medium"
+        self.pbr_pipeline.settings.enable_ssao = True
+        self.pbr_pipeline.settings.ssao_samples = 16
+        self.pbr_pipeline.settings.ssao_radius = 0.3
+        self.pbr_pipeline.settings.ssao_amount = 2.0
+        self.pbr_pipeline.settings.enable_bloom = True
+        self.pbr_pipeline.settings.bloom_intensity = 0.7
+        self.pbr_pipeline.settings.bloom_mintrigger = 0.6
+        self.pbr_pipeline.settings.bloom_size = "medium"
 
         self.battle_data = battle_data
         self.timeline = battle_data["timeline"]
