@@ -301,10 +301,10 @@ class Battle3DViewer(ShowBase):
                 self.bot_nodepaths[bot_id] = bot_model
 
                 # Heading indicator
-                heading_indicator = self.loader.loadModel("models/misc/arrow")
+                heading_indicator = self.loader.loadModel("models/misc/box")
                 heading_indicator.reparentTo(bot_model)
-                heading_indicator.setPos(0, -0.7, 0)
-                heading_indicator.setScale(0.5)
+                heading_indicator.setPos(0, 0.7, 0)
+                heading_indicator.setScale(0.1, 0.5, 0.1)
 
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
