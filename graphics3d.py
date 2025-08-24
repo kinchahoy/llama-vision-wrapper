@@ -45,6 +45,12 @@ from panda3d.core import (
     AntialiasAttrib,
 )
 
+# Import visibility system to use same logic as 2D viewer
+try:
+    from python_llm import PythonLLMController
+except ImportError:
+    PythonLLMController = None
+
 
 def _init_hq_rendering(app):
     """Try complexpbr first; fall back to simplepbr if needed."""
@@ -152,10 +158,44 @@ class Battle3DViewer(ShowBase):
         self.show_fov = False
         self.selected_bot = None
 
+        # Initialize visibility system (same as 2D viewer)
+        if PythonLLMController is not None:
+            self.llm_controller = PythonLLMController()
+        else:
+            self.llm_controller = None
+
         # Panda3D object management
         self.bot_nodepaths = {}
         self.projectile_nodepaths = []
         self.fov_nodepath = None
+        self.bot_healthbars = {}
+        self.bot_id_labels = {}
+
+        # Signal descriptions for UI
+        self.signal_descriptions = {
+            "none": "No specific status",
+            "ready": "Ready for action",
+            "low_hp": "Health critical (<30 HP)",
+            "reloading": "Weapon cooling down",
+            "attacking": "Engaging enemy target",
+            "firing": "Currently shooting",
+            "flanking": "Moving to flank enemy",
+            "retreating": "Falling back from combat",
+            "advancing": "Moving forward to engage",
+            "cover_fire": "Providing suppressive fire",
+            "need_backup": "Requesting immediate assistance",
+            "enemy_spotted": "Enemy contact established",
+            "holding_position": "Maintaining current location",
+            "moving_to_cover": "Relocating for protection",
+            "watching_flank": "Covering team's side/rear",
+            "regrouping": "Moving to rally point",
+            "follow_me": "Request team to follow",
+            "wait": "Hold current position",
+            "go_go_go": "Execute coordinated advance",
+            "spread_out": "Increase team dispersion",
+            "focus_fire": "Concentrate fire on target",
+            "disengage": "Break contact and withdraw",
+        }
 
         # Setup
         self._setup_scene()
@@ -416,6 +456,13 @@ class Battle3DViewer(ShowBase):
             scale=0.05,
             align=TextNode.ALeft,
         )
+        self.events_text = OnscreenText(
+            parent=self.a2dBottomRight,
+            text="",
+            pos=(-0.05, 0.1),
+            scale=0.05,
+            align=TextNode.ARight,
+        )
 
     def _setup_controls(self):
         """Set up keyboard controls."""
@@ -579,6 +626,206 @@ class Battle3DViewer(ShowBase):
 
         return interp_state
 
+    def _get_visible_objects_for_bot(self, selected_bot, current_state):
+        """Get visible objects for a bot using the same system as bot programs."""
+        if self.llm_controller is None:
+            return self._get_visible_objects_fallback(selected_bot, current_state)
+
+        # Create a mock arena compatible with the LLM visibility API
+        from battle_sim import Arena
+
+        class MockArena:
+            def __init__(self, viewer, current_state):
+                self.SENSE_RANGE = 15.0
+                self.FOV_ANGLE = math.radians(120)
+                self.BOT_RADIUS = 0.5
+                self.bot_data = {}
+                self.bot_bodies = {}
+                self.projectile_data = {}
+                self.projectile_bodies = {}
+                self.wall_bodies = []
+
+                for bot in current_state.get("bots", []):
+                    if bot["alive"]:
+                        bot_id = bot["id"]
+
+                        class MockBotData:
+                            def __init__(self, bot_info):
+                                self.team = bot_info["team"]
+                                self.hp = bot_info["hp"]
+                                self.signal = bot_info.get("signal", "none")
+
+                        class MockBotBody:
+                            def __init__(self, bot_info):
+                                self.position = (bot_info["x"], bot_info["y"])
+                                self.angle = math.radians(bot_info["theta"])
+                                self.velocity = (
+                                    bot_info.get("vx", 0),
+                                    bot_info.get("vy", 0),
+                                )
+
+                        self.bot_data[bot_id] = MockBotData(bot)
+                        self.bot_bodies[bot_id] = MockBotBody(bot)
+
+                for proj in current_state.get("projectiles", []):
+                    proj_id = len(self.projectile_data)
+
+                    class MockProjData:
+                        def __init__(self, proj_info):
+                            self.team = proj_info.get("team", 0)
+                            self.ttl = proj_info.get("ttl", 1.0)
+
+                    class MockProjBody:
+                        def __init__(self, proj_info):
+                            self.position = (proj_info["x"], proj_info["y"])
+                            self.velocity = (
+                                proj_info.get("vx", 0),
+                                proj_info.get("vy", 0),
+                            )
+
+                    self.projectile_data[proj_id] = MockProjData(proj)
+                    self.projectile_bodies[proj_id] = MockProjBody(proj)
+
+                class MockWallShape:
+                    def __init__(self, vertices):
+                        self._vertices = vertices
+
+                    def get_vertices(self):
+                        return self._vertices
+
+                walls_data = viewer.metadata.get("walls", [])
+                for wall_def in walls_data:
+                    cx, cy, w, h, angle_deg = wall_def
+                    angle_rad = math.radians(angle_deg)
+                    c, s = math.cos(angle_rad), math.sin(angle_rad)
+                    hw, hh = w / 2, h / 2
+                    corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+                    rotated_corners = [
+                        (p[0] * c - p[1] * s, p[0] * s + p[1] * c) for p in corners
+                    ]
+                    abs_corners = [(p[0] + cx, p[1] + cy) for p in rotated_corners]
+                    wall_shape = MockWallShape(abs_corners)
+                    self.wall_bodies.append((None, wall_shape))
+
+            def _is_bot_alive(self, bot_id):
+                return bot_id in self.bot_data
+
+        mock_arena = MockArena(self, current_state)
+        bot_id = selected_bot["id"]
+
+        try:
+            visible_objects = self.llm_controller.generate_visible_objects(
+                mock_arena, bot_id
+            )
+            return visible_objects
+        except Exception as e:
+            print(f"Warning: Visibility system failed, using fallback: {e}")
+            return self._get_visible_objects_fallback(selected_bot, current_state)
+
+    def _get_visible_objects_fallback(self, selected_bot, current_state):
+        """Fallback visibility system using simple distance checks."""
+        visible_objects = []
+        max_range = 15.0
+
+        for bot in current_state.get("bots", []):
+            if bot["id"] == selected_bot["id"] or not bot["alive"]:
+                continue
+            dx = bot["x"] - selected_bot["x"]
+            dy = bot["y"] - selected_bot["y"]
+            distance = math.sqrt(dx * dx + dy * dy)
+            if distance <= max_range:
+                bearing = math.degrees(math.atan2(dy, dx))
+                if bearing < 0:
+                    bearing += 360
+                bot_type = "friend" if bot["team"] == selected_bot["team"] else "enemy"
+                visible_objects.append(
+                    {
+                        "type": bot_type,
+                        "x": bot["x"],
+                        "y": bot["y"],
+                        "distance": distance,
+                        "angle": bearing,
+                        "hp": bot["hp"],
+                        "team": f"team_{bot['team']}",
+                        "id": bot["id"],
+                        "velocity_x": bot.get("vx", 0),
+                        "velocity_y": bot.get("vy", 0),
+                        "signal": bot.get("signal", "none"),
+                    }
+                )
+
+        for proj in current_state.get("projectiles", []):
+            if proj.get("team") == selected_bot["team"]:
+                continue
+            dx = proj["x"] - selected_bot["x"]
+            dy = proj["y"] - selected_bot["y"]
+            distance = math.sqrt(dx * dx + dy * dy)
+            if distance <= max_range:
+                bearing = math.degrees(math.atan2(dy, dx))
+                if bearing < 0:
+                    bearing += 360
+                visible_objects.append(
+                    {
+                        "type": "projectile",
+                        "x": proj["x"],
+                        "y": proj["y"],
+                        "distance": distance,
+                        "angle": bearing,
+                        "velocity_x": proj.get("vx", 0),
+                        "velocity_y": proj.get("vy", 0),
+                        "ttl": proj.get("ttl", 1.0),
+                        "team": f"team_{proj.get('team', 0)}",
+                    }
+                )
+
+        return visible_objects
+
+    def _get_visible_bots(self, selected_bot, current_state):
+        """Return list of (bot_data, distance, angle) for visible bots."""
+        visible_objects = self._get_visible_objects_for_bot(selected_bot, current_state)
+        visible_bots = []
+        for obj in visible_objects:
+            if obj["type"] in ["enemy", "friend"]:
+                bot_data = None
+                for bot in current_state.get("bots", []):
+                    if bot["id"] == obj.get("id"):
+                        bot_data = bot
+                        break
+                if bot_data:
+                    visible_bots.append((bot_data, obj["distance"], obj["angle"]))
+        visible_bots.sort(key=lambda x: x[1])
+        return visible_bots
+
+    def _get_nearby_projectiles(self, selected_bot, current_state):
+        """Return list of (proj_data, distance, angle) for nearby projectiles."""
+        visible_objects = self._get_visible_objects_for_bot(selected_bot, current_state)
+        nearby = []
+        for obj in visible_objects:
+            if obj["type"] == "projectile":
+                proj_data = {
+                    "x": obj["x"],
+                    "y": obj["y"],
+                    "velocity_x": obj.get("velocity_x", 0),
+                    "velocity_y": obj.get("velocity_y", 0),
+                    "team": obj.get("team", "unknown"),
+                    "ttl": obj.get("ttl", 0),
+                }
+                nearby.append((proj_data, obj["distance"], obj["angle"]))
+        nearby.sort(key=lambda x: x[1])
+        return nearby
+
+    def _get_visible_walls(self, selected_bot, current_state=None):
+        """Return list of (wall_obj, distance, angle) for visible walls."""
+        if current_state is None:
+            current_state = self.timeline[int(self.current_frame)]
+        visible_objects = self._get_visible_objects_for_bot(selected_bot, current_state)
+        walls = []
+        for obj in visible_objects:
+            if obj["type"] == "wall":
+                walls.append((obj, obj["distance"], obj["angle"]))
+        walls.sort(key=lambda x: x[1])
+        return walls
+
     def _update_bots(self, state: Dict):
         """Update bot models in the scene."""
         current_bot_ids = {bot["id"] for bot in state.get("bots", []) if bot["alive"]}
@@ -588,6 +835,15 @@ class Battle3DViewer(ShowBase):
             if bot_id not in current_bot_ids:
                 self.bot_nodepaths[bot_id].removeNode()
                 del self.bot_nodepaths[bot_id]
+                # Remove health bars and labels if present
+                if bot_id in self.bot_healthbars:
+                    hb_bg, hb_fill = self.bot_healthbars[bot_id]
+                    hb_bg.removeNode()
+                    hb_fill.removeNode()
+                    del self.bot_healthbars[bot_id]
+                if bot_id in self.bot_id_labels:
+                    self.bot_id_labels[bot_id].removeNode()
+                    del self.bot_id_labels[bot_id]
 
         # Update or create bots
         for bot in state.get("bots", []):
@@ -620,6 +876,37 @@ class Battle3DViewer(ShowBase):
                 heading_indicator.reparentTo(bot_model)
                 heading_indicator.setColor(1, 1, 1, 1)  # White indicator
 
+                # Health bar (background + fill)
+                bg_maker = CardMaker("hb_bg")
+                bg_maker.setFrame(-0.3, 0.3, 0.0, 0.06)
+                hb_bg = NodePath(bg_maker.generate())
+                hb_bg.reparentTo(bot_model)
+                hb_bg.setPos(0, 0, 0.9)
+                hb_bg.setTwoSided(True)
+                hb_bg.setColor(0.2, 0.2, 0.2, 1.0)
+
+                fill_maker = CardMaker("hb_fill")
+                fill_maker.setFrame(0.0, 0.6, 0.0, 0.06)
+                hb_fill = NodePath(fill_maker.generate())
+                hb_fill.reparentTo(bot_model)
+                hb_fill.setPos(-0.3, 0, 0.9)
+                hb_fill.setTwoSided(True)
+                self.bot_healthbars[bot_id] = (hb_bg, hb_fill)
+
+                # Bot ID label
+                text_node = TextNode(f"bot_id_{bot_id}")
+                text_node.setText(str(bot_id))
+                text_node.setAlign(TextNode.ACenter)
+                label_np = bot_model.attachNewNode(text_node)
+                label_np.setScale(0.4)
+                label_np.setPos(0, 0, 1.0)
+                label_np.setColor(1, 1, 1, 1)
+                try:
+                    label_np.setBillboardPointEye()
+                except Exception:
+                    pass
+                self.bot_id_labels[bot_id] = label_np
+
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
             # Convert from battle sim angle to Panda3D heading
@@ -631,6 +918,41 @@ class Battle3DViewer(ShowBase):
             # Color by team
             color = (0, 0.5, 1, 1) if bot["team"] == 0 else (1, 0.3, 0.3, 1)
             np.setColor(color)
+
+            # Update health bar fill and color
+            if bot_id in self.bot_healthbars:
+                hb_bg, hb_fill = self.bot_healthbars[bot_id]
+            else:
+                # Create on the fly if missing
+                bg_maker = CardMaker("hb_bg")
+                bg_maker.setFrame(-0.3, 0.3, 0.0, 0.06)
+                hb_bg = NodePath(bg_maker.generate())
+                hb_bg.reparentTo(np)
+                hb_bg.setPos(0, 0, 0.9)
+                hb_bg.setTwoSided(True)
+                hb_bg.setColor(0.2, 0.2, 0.2, 1.0)
+
+                fill_maker = CardMaker("hb_fill")
+                fill_maker.setFrame(0.0, 0.6, 0.0, 0.06)
+                hb_fill = NodePath(fill_maker.generate())
+                hb_fill.reparentTo(np)
+                hb_fill.setPos(-0.3, 0, 0.9)
+                hb_fill.setTwoSided(True)
+                self.bot_healthbars[bot_id] = (hb_bg, hb_fill)
+
+            hp_ratio = max(0.0, min(1.0, bot["hp"] / 100.0))
+            if hp_ratio > 0.6:
+                hp_color = (0, 1, 0, 1)  # Green
+            elif hp_ratio > 0.3:
+                hp_color = (1, 1, 0, 1)  # Yellow
+            else:
+                hp_color = (1, 0, 0, 1)  # Red
+            hb_fill.setColor(hp_color)
+            hb_fill.setScale(hp_ratio, 1, 1)
+
+            # Update ID label color for contrast
+            if bot_id in self.bot_id_labels:
+                self.bot_id_labels[bot_id].setColor(1, 1, 1, 1)
 
     def _update_projectiles(self, state: Dict):
         """Update projectile models in the scene."""
@@ -660,24 +982,89 @@ class Battle3DViewer(ShowBase):
 
     def _update_ui(self, state: Dict):
         """Update the text in the UI panels."""
-        # General info
+        # General info + metadata + summary
         time_info = f"Time: {state.get('time', 0):.1f}s"
         frame_info = f"Frame: {int(self.current_frame)}/{len(self.timeline) - 1}"
         speed_info = f"Speed: {self.playback_speed:.1f}x"
-        self.info_text.setText(f"{time_info}\n{frame_info}\n{speed_info}")
 
-        # Selected bot info
+        meta = self.metadata or {}
+        winner = meta.get("winner", "unknown")
+        reason = meta.get("reason", "unknown")
+
+        summary = self.battle_data.get("summary", {})
+        mvp = summary.get("mvp", {}) or {}
+        intensity = summary.get("battle_intensity", 0)
+        accuracy = summary.get("overall_accuracy", 0)
+
+        info_lines = [
+            time_info,
+            frame_info,
+            speed_info,
+            f"Winner: {winner} ({reason})",
+        ]
+        if mvp.get("bot_id") is not None:
+            info_lines.append(
+                f"MVP: Bot {mvp.get('bot_id')} (Team {mvp.get('team')}) - {mvp.get('score', 0):.1f} pts"
+            )
+        info_lines.append(f"Intensity: {float(intensity):.1f} shots/sec")
+        info_lines.append(f"Overall Accuracy: {float(accuracy):.1%}")
+        self.info_text.setText("\n".join(info_lines))
+
+        # Selected bot info with more details
         if self.selected_bot:
             bot = self.selected_bot
+            heading = bot.get("theta", 0.0)
+            speed = math.sqrt(bot.get("vx", 0) ** 2 + bot.get("vy", 0) ** 2)
+            signal = bot.get("signal", "none")
+            signal_desc = self.signal_descriptions.get(signal, "Unknown signal")
+
+            # Function info from summary (supports int or str keys)
+            bot_functions = summary.get("bot_functions", {}) or {}
+            bot_func_data = bot_functions.get(bot["id"]) or bot_functions.get(
+                str(bot["id"])
+            ) or {}
+            personality = bot_func_data.get("personality", "unknown")
+            version = bot_func_data.get("version", "N/A")
+
+            # Visible objects summary
+            visible_bots = self._get_visible_bots(bot, state)
+            friends_count = len([b for b, _, _ in visible_bots if b["team"] == bot["team"]])
+            enemies_count = len(visible_bots) - friends_count
+            nearby_projectiles = self._get_nearby_projectiles(bot, state)
+            visible_walls = self._get_visible_walls(bot, state)
+
             info = [
                 f"Bot {bot['id']} (Team {bot['team']})",
+                f"Function: {personality}_combat_v{version}",
                 f"HP: {bot['hp']}",
                 f"Pos: ({bot['x']:.1f}, {bot['y']:.1f})",
-                f"Signal: {bot.get('signal', 'none')}",
+                f"Heading: {heading:.0f}°  Speed: {speed:.1f} m/s",
+                f"Signal: {signal}",
+                f"{signal_desc}",
+                f"Tactical: {friends_count}F, {enemies_count}E, {len(nearby_projectiles)}P, {len(visible_walls)}W",
             ]
             self.bot_info_text.setText("\n".join(info))
         else:
             self.bot_info_text.setText("Click on a bot to select it")
+
+        # Recent events (last 5)
+        events = state.get("events", [])
+        if events:
+            lines = ["Recent Events:"]
+            for event in events[-5:]:
+                et = event.get("type", "unknown")
+                if et == "shot":
+                    text = f"Bot {event['bot_id']} fired"
+                elif et == "hit":
+                    text = f"Bot {event['projectile_shooter']} hit Bot {event['target']}"
+                elif et == "death":
+                    text = f"Bot {event['bot_id']} destroyed"
+                else:
+                    text = f"{et}: {event}"
+                lines.append(text)
+            self.events_text.setText("\n".join(lines))
+        else:
+            self.events_text.setText("")
 
     def _on_slider_move(self):
         """Handle timeline slider movement."""
