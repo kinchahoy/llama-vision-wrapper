@@ -127,19 +127,27 @@ class Battle3DViewer(ShowBase):
         floor.reparentTo(self.render)
         floor.setScale(self.arena_width, self.arena_height, 1)
         floor.setPos(0, 0, 0)
-        # PBR materials look best with a texture. We'll just set a color.
-        floor.setColor(0.3, 0.3, 0.3, 1)
+        # PBR materials for a reflective floor
+        floor.set_shader_input("metallic", 1.0)
+        floor.set_shader_input("roughness", 0.1)
+        floor.setColor(0.2, 0.2, 0.25, 1)  # Dark, slightly blue tint
 
         self._create_walls()
 
     def _create_walls(self):
-        """Create interior walls matching the 2D version."""
+        """Create interior and perimeter walls with PBR materials."""
         width = self.arena_width
         height = self.arena_height
         wall_height = 1.5
 
-        # Interior walls data
+        # Wall data (perimeter and interior)
         walls_data = [
+            # Perimeter walls
+            ((0, 0), (width, 0)),  # Bottom
+            ((width, 0), (width, height)),  # Right
+            ((width, height), (0, height)),  # Top
+            ((0, height), (0, 0)),  # Left
+            # Interior walls
             ((width * 0.2, height * 0.7), (width * 0.2 + 10, height * 0.7)),
             ((width * 0.4, height * 0.3), (width * 0.4, height * 0.3 + 8)),
             # Corrected wall that was extending beyond arena bounds with default 20x20 size
@@ -157,7 +165,10 @@ class Battle3DViewer(ShowBase):
             wall_length = math.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
             cm.setFrame(0, wall_length, 0, wall_height)
             wall_node = self.render.attachNewNode(cm.generate())
-            wall_node.setColor(0.5, 0.5, 0.5, 1)
+            wall_node.set_shader_auto()  # Enable PBR for this node
+            wall_node.set_shader_input("metallic", 0.2)
+            wall_node.set_shader_input("roughness", 0.5)
+            wall_node.setColor(0.6, 0.6, 0.6, 1)
             wall_node.setPos(start_x, start_y, 0)
             wall_node.lookAt(end_x, end_y, 0)
             # The card is on its local XY plane. After lookAt, it's a slanted plane.
@@ -480,6 +491,10 @@ class Battle3DViewer(ShowBase):
         """Toggle play/pause state."""
         self.playing = not self.playing
         self.play_pause_btn["text"] = "Pause" if self.playing else "Play"
+        if self.playing:
+            self.playback_speed = 5.0
+        else:
+            self.playback_speed = 1.0  # Reset to normal speed when paused
 
     def _step_frame(self, direction: int):
         """Step forward or backward one frame."""
