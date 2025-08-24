@@ -1150,9 +1150,9 @@ class Battle3DViewer(ShowBase):
             np.setColor(color)
             # Make projectiles glow with PBR emission and pulsate
             pulse = (
-                math.sin(self.taskMgr.globalClock.getFrameTime() * 8) + 1
+                math.sin(self.taskMgr.globalClock.getFrameTime() * 12) + 1
             ) / 2  # Varies 0..1
-            brightness = 1.5 + pulse * 1.0  # Varies 1.5..2.5 for bright projectiles
+            brightness = 2.0 + pulse * 2.0  # Varies 2.0..4.0 for very bright projectiles
             emission_color = (
                 color[0] * brightness,
                 color[1] * brightness,
