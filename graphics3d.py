@@ -162,7 +162,9 @@ class Battle3DViewer(ShowBase):
             # Create a simple mesh for the wall's height
             cm = CardMaker(f"wall_{start}_{end}")
             wall_length = math.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
-            cm.setFrame(0, wall_length, 0, wall_height)
+            # The card's "Y" dimension should be its length, to align with lookAt.
+            # The card's "X" dimension will be its height, after we rotate it.
+            cm.setFrame(0, wall_height, 0, wall_length)
             wall_node = self.render.attachNewNode(cm.generate())
             wall_node.set_shader_auto()  # Enable PBR for this node
             wall_node.set_shader_input("metallic", 0.2)
