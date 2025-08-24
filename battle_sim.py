@@ -621,7 +621,11 @@ class Arena:
         ]
 
         self.wall_bodies = []
+        print("Creating arena walls:")
         for center_x, center_y, w, h, angle_deg in self.walls:
+            print(
+                f"  Creating wall: center=({center_x:.1f}, {center_y:.1f}), size=({w:.1f}, {h:.1f}), angle={angle_deg}°"
+            )
             wall_body = pymunk.Body(body_type=pymunk.Body.STATIC)
             wall_body.position = center_x, center_y
             wall_body.angle = math.radians(angle_deg)
