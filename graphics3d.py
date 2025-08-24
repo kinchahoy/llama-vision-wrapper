@@ -45,16 +45,17 @@ class Battle3DViewer(ShowBase):
             enable_shadows=True,
             use_normal_maps=True,
             use_occlusion_maps=True,
-            # Add post-processing effects previously handled by CommonFilters
-            enable_ssao=True,
-            ssao_samples=16,
-            ssao_radius=0.3,
-            ssao_amount=2.0,
-            enable_bloom=True,
-            bloom_intensity=0.7,
-            bloom_mintrigger=0.6,
-            bloom_size="medium",
         )
+
+        # Configure post-processing effects on the simplepbr pipeline
+        self.render.pbr_pipeline.settings.enable_ssao = True
+        self.render.pbr_pipeline.settings.ssao_samples = 16
+        self.render.pbr_pipeline.settings.ssao_radius = 0.3
+        self.render.pbr_pipeline.settings.ssao_amount = 2.0
+        self.render.pbr_pipeline.settings.enable_bloom = True
+        self.render.pbr_pipeline.settings.bloom_intensity = 0.7
+        self.render.pbr_pipeline.settings.bloom_mintrigger = 0.6
+        self.render.pbr_pipeline.settings.bloom_size = "medium"
 
         self.battle_data = battle_data
         self.timeline = battle_data["timeline"]
