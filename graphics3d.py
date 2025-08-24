@@ -201,7 +201,7 @@ class Battle3DViewer(ShowBase):
         )
         floor = self.render.attachNewNode(cm.generate())
         floor.setPos(0, 0, 0)  # Floor at ground level (z=0)
-        # CardMaker already generates geometry in the XY plane (Z up), no rotation needed.
+        floor.setP(-90)  # Rotate card to lie flat in the XY plane
 
         # Apply PBR materials - make floor highly reflective
         floor.set_shader_input(
