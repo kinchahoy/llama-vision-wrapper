@@ -144,18 +144,22 @@ class Battle3DViewer(ShowBase):
             center_x, center_y, width, height, angle_deg = wall_def
 
             # Create a procedural box for the wall
+            # Note: width and height are the wall's 2D dimensions in the XY plane
             wall_node = self._create_wall_geometry(width, height, wall_height)
             wall_node.reparentTo(self.render)
 
-            # Position the wall - battle sim coordinates are already centered at (0,0)
+            # Position the wall - battle sim uses (x,y) but Panda3D uses (x,y,z)
+            # Battle sim: +X = East, +Y = North
+            # Panda3D: +X = East, +Y = North, +Z = Up
             # Z-pos is half height to sit on the floor
             wall_node.setPos(center_x, center_y, wall_height / 2)
             
-            # Rotation conversion: 
-            # Battle sim: 0° = +X axis (East), angles increase counter-clockwise
-            # Panda3D: 0° heading = +Y axis (North), angles increase clockwise
-            # So: panda3d_heading = 90 - battle_sim_angle
-            wall_node.setHpr(90 - angle_deg, 0, 0)
+            # Rotation conversion:
+            # Battle sim: 0° = along +X axis (horizontal), 90° = along +Y axis (vertical)
+            # Panda3D: 0° heading = facing +Y axis
+            # For walls: angle_deg tells us the wall's orientation, not heading
+            # A 0° wall runs horizontally (along X), a 90° wall runs vertically (along Y)
+            wall_node.setHpr(angle_deg, 0, 0)
 
             # Apply PBR materials after positioning
             wall_node.set_shader_auto()
@@ -491,7 +495,8 @@ class Battle3DViewer(ShowBase):
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
             # Convert from battle sim angle to Panda3D heading
-            # Battle sim: 0° = +X axis (East), Panda3D: 0° = +Y axis (North)
+            # Battle sim: 0° = facing +X axis (East), Panda3D: 0° heading = facing +Y axis (North)
+            # So: panda3d_heading = 90 - battle_sim_angle
             np.setH(90 - bot["theta"])
             np.setScale(0.4)
 
@@ -594,7 +599,8 @@ class Battle3DViewer(ShowBase):
             bot = self.selected_bot
             self.fov_nodepath.setPos(bot["x"], bot["y"], 0.1)
             # Convert from battle sim angle to Panda3D heading
-            # Battle sim: 0° = +X axis (East), Panda3D: 0° = +Y axis (North)
+            # Battle sim: 0° = facing +X axis (East), Panda3D: 0° heading = facing +Y axis (North)
+            # So: panda3d_heading = 90 - battle_sim_angle
             self.fov_nodepath.setH(90 - bot["theta"])
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_nodepath.setColor(color)
