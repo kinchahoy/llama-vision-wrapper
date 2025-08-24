@@ -236,7 +236,7 @@ class Battle3DViewer:
     def _handle_mouse_click(self, event):
         x = event["x"] if isinstance(event, dict) else getattr(event, "x", 0)
         y = event["y"] if isinstance(event, dict) else getattr(event, "y", 0)
-        pick_info = self.renderer.get_pick_info((x, y), self.camera, self.scene)
+        pick_info = self.renderer.get_pick_info((x, y))
         if (
             pick_info
             and "world_object" in pick_info
@@ -547,8 +547,9 @@ class Battle3DViewer:
         # Remove dead bots
         for bot_id in list(self.bot_objects.keys()):
             if bot_id not in current_bot_ids:
-                for obj in self.bot_objects[bot_id].values():
-                    self.scene.remove(obj)
+                bot_body = self.bot_objects[bot_id].get("body")
+                if bot_body is not None and bot_body in self.scene.children:
+                    self.scene.remove(bot_body)
                 del self.bot_objects[bot_id]
 
         # Update or create bots
@@ -643,7 +644,9 @@ class Battle3DViewer:
         # Remove old projectiles
         for proj_id in list(self.projectile_objects.keys()):
             if proj_id not in current_proj_ids:
-                self.scene.remove(self.projectile_objects[proj_id])
+                obj = self.projectile_objects[proj_id]
+                if obj in self.scene.children:
+                    self.scene.remove(obj)
                 del self.projectile_objects[proj_id]
 
         # Update/create projectiles
