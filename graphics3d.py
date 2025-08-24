@@ -389,6 +389,97 @@ class Battle3DViewer(ShowBase):
         geom_node.addGeom(geom)
         return NodePath(geom_node)
 
+    def _create_procedural_sphere(self, radius=1.0, num_segments=16, num_rings=8):
+        """Create a procedural sphere geometry."""
+        vformat = GeomVertexFormat.getV3n3()
+        vdata = GeomVertexData("sphere", vformat, Geom.UHStatic)
+        vertex = GeomVertexWriter(vdata, "vertex")
+        normal = GeomVertexWriter(vdata, "normal")
+
+        # Create vertices
+        for i in range(num_rings + 1):
+            phi = math.pi * i / num_rings
+            for j in range(num_segments + 1):
+                theta = 2 * math.pi * j / num_segments
+                x = radius * math.sin(phi) * math.cos(theta)
+                y = radius * math.sin(phi) * math.sin(theta)
+                z = radius * math.cos(phi)
+
+                n = Vec3(x, y, z)
+                if n.length() > 0:
+                    n.normalize()
+
+                vertex.addData3f(x, y, z)
+                normal.addData3f(n)
+
+        # Create triangles
+        tris = GeomTriangles(Geom.UHStatic)
+        for i in range(num_rings):
+            for j in range(num_segments):
+                v1 = i * (num_segments + 1) + j
+                v2 = v1 + num_segments + 1
+                v3 = v1 + 1
+                v4 = v2 + 1
+
+                tris.addVertices(v1, v2, v3)
+                tris.addVertices(v3, v2, v4)
+
+        geom = Geom(vdata)
+        geom.addPrimitive(tris)
+
+        node = GeomNode("procedural_sphere")
+        node.addGeom(geom)
+        return NodePath(node)
+
+    def _create_procedural_cone(self, radius=1.0, height=1.0, num_segments=12):
+        """Create a procedural cone geometry pointing along the +Y axis."""
+        vformat = GeomVertexFormat.getV3n3()
+        vdata = GeomVertexData("cone", vformat, Geom.UHStatic)
+        vertex = GeomVertexWriter(vdata, "vertex")
+        normal = GeomVertexWriter(vdata, "normal")
+
+        tris = GeomTriangles(Geom.UHStatic)
+
+        # Create side faces
+        for i in range(num_segments):
+            angle1 = (i / num_segments) * 2 * math.pi
+            angle2 = ((i + 1) / num_segments) * 2 * math.pi
+
+            v_tip = Vec3(0, height, 0)
+            v_base1 = Vec3(radius * math.cos(angle1), 0, radius * math.sin(angle1))
+            v_base2 = Vec3(radius * math.cos(angle2), 0, radius * math.sin(angle2))
+
+            n = (v_base2 - v_tip).cross(v_base1 - v_tip)
+            if n.length() > 0:
+                n.normalize()
+
+            for v in [v_tip, v_base1, v_base2]:
+                vertex.addData3f(v)
+                normal.addData3f(n)
+            tris.addConsecutiveVertices(vertex.getWriteRow() - 3, 3)
+
+        # Create base faces
+        n_base = Vec3(0, -1, 0)
+        for i in range(num_segments):
+            angle1 = (i / num_segments) * 2 * math.pi
+            angle2 = ((i + 1) / num_segments) * 2 * math.pi
+
+            v_center = Vec3(0, 0, 0)
+            v_outer1 = Vec3(radius * math.cos(angle1), 0, radius * math.sin(angle1))
+            v_outer2 = Vec3(radius * math.cos(angle2), 0, radius * math.sin(angle2))
+
+            for v in [v_center, v_outer2, v_outer1]:
+                vertex.addData3f(v)
+                normal.addData3f(n_base)
+            tris.addConsecutiveVertices(vertex.getWriteRow() - 3, 3)
+
+        geom = Geom(vdata)
+        geom.addPrimitive(tris)
+
+        node = GeomNode("procedural_cone")
+        node.addGeom(geom)
+        return NodePath(node)
+
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
         # UI Panel
@@ -873,13 +964,8 @@ class Battle3DViewer(ShowBase):
             pos = LPoint3f(bot["x"], bot["y"], 0.5)
 
             if bot_id not in self.bot_nodepaths:
-                # Try to load smiley model, fallback to procedural sphere
-                bot_model = self.loader.loadModel("smiley")
-                if not bot_model:
-                    # Create a procedural sphere as fallback
-                    cm = CardMaker("bot_sphere")
-                    cm.setFrame(-0.5, 0.5, -0.5, 0.5)
-                    bot_model = NodePath(cm.generate())
+                # Create a procedural sphere for the bot
+                bot_model = self._create_procedural_sphere(radius=0.5)
 
                 # No setShaderAuto for simplepbr - let simplepbr handle shading
                 bot_model.reparentTo(self.render)
@@ -927,16 +1013,9 @@ class Battle3DViewer(ShowBase):
                 self.bot_id_labels[bot_id] = label_np
 
                 # Velocity indicator cone
-                vel_cone = self.loader.loadModel("misc/cone")
-                if not vel_cone:
-                    # Fallback to a simple line if cone model is not available
-                    ls = LineSegs()
-                    ls.moveTo(0, 0, 0)
-                    ls.drawTo(0, 1, 0)
-                    ls.setThickness(4)
-                    vel_cone = NodePath(ls.create())
+                vel_cone = self._create_procedural_cone(radius=1.0, height=1.0)
                 vel_cone.reparentTo(bot_model)
-                vel_cone.setScale(0.2, 0.4, 0.2)
+                vel_cone.setScale(0.2, 0.4, 0.2) # Adjust size: radius=0.2, height=0.4
                 vel_cone.setPos(0, 0.6, 0)
                 vel_cone.setColor(1, 1, 0, 0.8) # Yellow, slightly transparent
                 self.bot_velocity_cones[bot_id] = vel_cone
@@ -1015,13 +1094,10 @@ class Battle3DViewer(ShowBase):
 
         for proj in state.get("projectiles", []):
             pos = LPoint3f(proj["x"], proj["y"], 0.5)
-            # Try to load smiley model, fallback to procedural sphere
-            proj_model = self.loader.loadModel("smiley")
-            if not proj_model:
-                # Create a procedural sphere as fallback
-                cm = CardMaker("proj_sphere")
-                cm.setFrame(-0.5, 0.5, -0.5, 0.5)
-                proj_model = NodePath(cm.generate())
+            # Create a procedural sphere for the projectile
+            proj_model = self._create_procedural_sphere(
+                radius=0.5, num_segments=8, num_rings=4
+            )
 
             # No setShaderAuto for simplepbr - let simplepbr handle shading
             proj_model.reparentTo(self.render)
