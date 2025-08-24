@@ -17,10 +17,8 @@ from wgpu.gui.auto import WgpuCanvas, run
 # Import visibility system to use same logic as 2D viewer
 try:
     from python_llm import PythonLLMController
-    from battle_sim.arena import Arena
 except ImportError:
     PythonLLMController = None
-    Arena = None
 
 
 class Battle3DViewer:
@@ -49,9 +47,6 @@ class Battle3DViewer:
         # UI state
         self.show_fov = False
         self.selected_bot = None
-        self.selected_bot_info: Optional[Dict] = (
-            None  # Store more details about selected bot
-        )
 
         # Initialize visibility system (same as 2D viewer)
         if PythonLLMController is not None:
@@ -222,7 +217,6 @@ class Battle3DViewer:
             for bot in current_state.get("bots", []):
                 if bot["id"] == bot_id:
                     self.selected_bot = bot
-                    self.selected_bot_info = self._get_detailed_bot_info(bot_id)
                     self.playing = False
                     self._update_fov_display()
                     break
@@ -232,245 +226,289 @@ class Battle3DViewer:
         if not self.timeline:
             return {}
 
-        frame_idx = self.current_frame
-        if frame_idx < 0:
-            return self.timeline[0]
-        if frame_idx >= len(self.timeline) - 1:
-            return self.timeline[-1]
+        frame_idx_float = self.current_frame
+        frame_idx = int(frame_idx_float)
+        interp = frame_idx_float - frame_idx
 
-        frame_before = int(frame_idx)
-        frame_after = frame_before + 1
-        alpha = frame_idx - frame_before
+        # Clamp frame indices
+        frame_idx = max(0, min(len(self.timeline) - 1, frame_idx))
+        next_frame_idx = min(frame_idx + 1, len(self.timeline) - 1)
 
-        state_before = self.timeline[frame_before]
-        state_after = self.timeline[frame_after]
+        state1 = self.timeline[frame_idx]
+        if frame_idx == next_frame_idx:
+            return state1  # No interpolation at the end of the timeline
 
-        interpolated_state = {
-            "time": state_before.get("time", 0) * (1 - alpha)
-            + state_after.get("time", 0) * alpha,
-            "bots": [],
-            "projectiles": [],
-            "events": state_before.get("events", [])
-            + state_after.get("events", []),  # Simplified event handling
-        }
+        state2 = self.timeline[next_frame_idx]
 
-        # Interpolate bot positions and orientations
-        for bot_before in state_before.get("bots", []):
-            bot_id = bot_before["id"]
-            bot_after = next(
-                (b for b in state_after.get("bots", []) if b["id"] == bot_id), None
-            )
+        # Create a new state, starting with data from the first frame
+        interp_state = state1.copy()
 
-            if bot_after:
+        # Interpolate time
+        time1 = state1.get("time", 0)
+        time2 = state2.get("time", 0)
+        interp_state["time"] = time1 + (time2 - time1) * interp
+
+        # Interpolate bots
+        bots1 = {bot["id"]: bot for bot in state1.get("bots", [])}
+        bots2 = {bot["id"]: bot for bot in state2.get("bots", [])}
+        interp_bots = []
+
+        for bot_id, bot1 in bots1.items():
+            if bot_id in bots2:
+                bot2 = bots2[bot_id]
+                # Always interpolate if bot exists in both frames.
+                # The `alive` flag from state1 is carried over. The bot will be
+                # removed on the next discrete frame if it's dead in that frame.
+                interp_bot = bot1.copy()
+
                 # Interpolate position
-                pos_before = (bot_before["x"], bot_before["y"])
-                pos_after = (bot_after["x"], bot_after["y"])
-                interpolated_pos = (
-                    pos_before[0] * (1 - alpha) + pos_after[0] * alpha,
-                    pos_before[1] * (1 - alpha) + pos_after[1] * alpha,
-                )
+                interp_bot["x"] = bot1["x"] + (bot2["x"] - bot1["x"]) * interp
+                interp_bot["y"] = bot1["y"] + (bot2["y"] - bot1["y"]) * interp
 
-                # Interpolate theta (angle) - handle wrapping correctly
-                theta_before = bot_before.get("theta", 0.0)
-                theta_after = bot_after.get("theta", 0.0)
-                delta_theta = (
-                    theta_after - theta_before + 180
-                ) % 360 - 180  # Handle angle wrapping
-                interpolated_theta = theta_before + delta_theta * alpha
-                interpolated_theta = (interpolated_theta + 360) % 360  # Ensure positive
+                # Interpolate angle (heading), handling wraparound from 0-360 degrees
+                theta1 = bot1["theta"]
+                theta2 = bot2["theta"]
+                d_theta = theta2 - theta1
+                if d_theta > 180:
+                    d_theta -= 360
+                elif d_theta < -180:
+                    d_theta += 360
+                interp_bot["theta"] = theta1 + d_theta * interp
 
-                interpolated_state["bots"].append(
-                    {
-                        "id": bot_id,
-                        "team": bot_before["team"],
-                        "x": interpolated_pos[0],
-                        "y": interpolated_pos[1],
-                        "theta": interpolated_theta,
-                        "hp": bot_before.get("hp", 100) * (1 - alpha)
-                        + bot_after.get("hp", 100) * alpha,  # Interpolate health
-                        "alive": bot_before.get("alive", True)
-                        or bot_after.get("alive", True),  # Simplified alive
-                        "signal": bot_before.get(
-                            "signal", "none"
-                        ),  # No interpolation for signals for now
-                    }
-                )
+                interp_bots.append(interp_bot)
             else:
-                # If bot exists in before but not after, use before state (could be a death)
-                interpolated_state["bots"].append(bot_before)
+                # Bot not in next frame, just use its last known state
+                interp_bots.append(bot1)
 
-        # Interpolate projectiles
-        for proj_before in state_before.get("projectiles", []):
-            proj_id = proj_before["id"]
-            proj_after = next(
-                (p for p in state_after.get("projectiles", []) if p["id"] == proj_id),
-                None,
+        interp_state["bots"] = interp_bots
+
+        # Interpolate projectiles using velocities for smoother constant-speed motion.
+        projectiles1 = {p["id"]: p for p in state1.get("projectiles", []) if "id" in p}
+        projectiles2 = {p["id"]: p for p in state2.get("projectiles", []) if "id" in p}
+        interp_projectiles = []
+
+        dt = max(0.0, time2 - time1)
+        for proj_id, proj1 in projectiles1.items():
+            if proj_id in projectiles2:
+                interp_proj = proj1.copy()
+                if dt > 0:
+                    t = interp * dt
+                    vx = proj1.get("vx", 0.0)
+                    vy = proj1.get("vy", 0.0)
+                    interp_proj["x"] = proj1["x"] + vx * t
+                    interp_proj["y"] = proj1["y"] + vy * t
+                else:
+                    # Fallback to position lerp if no time delta
+                    proj2 = projectiles2[proj_id]
+                    interp_proj["x"] = proj1["x"] + (proj2["x"] - proj1["x"]) * interp
+                    interp_proj["y"] = proj1["y"] + (proj2["y"] - proj1["y"]) * interp
+                interp_projectiles.append(interp_proj)
+            # If a projectile from state1 is not in state2, it has been removed
+            # (e.g., hit a wall or expired), so we don't add it to the interpolated state.
+
+        interp_state["projectiles"] = interp_projectiles
+
+        return interp_state
+
+    def _get_visible_objects_for_bot(self, selected_bot, current_state):
+        """Get visible objects for a bot using the same system as bot programs."""
+        if self.llm_controller is None:
+            return self._get_visible_objects_fallback(selected_bot, current_state)
+
+        # Create a mock arena compatible with the LLM visibility API
+        from battle_sim import Arena
+
+        class MockArena:
+            def __init__(self, viewer, current_state):
+                self.SENSE_RANGE = 15.0
+                self.FOV_ANGLE = math.radians(120)
+                self.BOT_RADIUS = 0.5
+                self.bot_data = {}
+                self.bot_bodies = {}
+                self.projectile_data = {}
+                self.projectile_bodies = {}
+                self.wall_bodies = []
+
+                for bot in current_state.get("bots", []):
+                    if bot["alive"]:
+                        bot_id = bot["id"]
+
+                        class MockBotData:
+                            def __init__(self, bot_info):
+                                self.team = bot_info["team"]
+                                self.hp = bot_info["hp"]
+                                self.signal = bot_info.get("signal", "none")
+
+                        class MockBotBody:
+                            def __init__(self, bot_info):
+                                self.position = (bot_info["x"], bot_info["y"])
+                                self.angle = math.radians(bot_info["theta"])
+                                self.velocity = (
+                                    bot_info.get("vx", 0),
+                                    bot_info.get("vy", 0),
+                                )
+
+                        self.bot_data[bot_id] = MockBotData(bot)
+                        self.bot_bodies[bot_id] = MockBotBody(bot)
+
+                for proj in current_state.get("projectiles", []):
+                    proj_id = len(self.projectile_data)
+
+                    class MockProjData:
+                        def __init__(self, proj_info):
+                            self.team = proj_info.get("team", 0)
+                            self.ttl = proj_info.get("ttl", 1.0)
+
+                    class MockProjBody:
+                        def __init__(self, proj_info):
+                            self.position = (proj_info["x"], proj_info["y"])
+                            self.velocity = (
+                                proj_info.get("vx", 0),
+                                proj_info.get("vy", 0),
+                            )
+
+                    self.projectile_data[proj_id] = MockProjData(proj)
+                    self.projectile_bodies[proj_id] = MockProjBody(proj)
+
+                class MockWallShape:
+                    def __init__(self, vertices):
+                        self._vertices = vertices
+
+                    def get_vertices(self):
+                        return self._vertices
+
+                walls_data = viewer.metadata.get("walls", [])
+                for wall_def in walls_data:
+                    cx, cy, w, h, angle_deg = wall_def
+                    angle_rad = math.radians(angle_deg)
+                    c, s = math.cos(angle_rad), math.sin(angle_rad)
+                    hw, hh = w / 2, h / 2
+                    corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+                    rotated_corners = [
+                        (p[0] * c - p[1] * s, p[0] * s + p[1] * c) for p in corners
+                    ]
+                    abs_corners = [(p[0] + cx, p[1] + cy) for p in rotated_corners]
+                    wall_shape = MockWallShape(abs_corners)
+                    self.wall_bodies.append((None, wall_shape))
+
+            def _is_bot_alive(self, bot_id):
+                return bot_id in self.bot_data
+
+        mock_arena = MockArena(self, current_state)
+        bot_id = selected_bot["id"]
+
+        try:
+            visible_objects = self.llm_controller.generate_visible_objects(
+                mock_arena, bot_id
             )
+            return visible_objects
+        except Exception as e:
+            print(f"Warning: Visibility system failed, using fallback: {e}")
+            return self._get_visible_objects_fallback(selected_bot, current_state)
 
-            if proj_after:
-                pos_before = (proj_before["x"], proj_before["y"])
-                pos_after = (proj_after["x"], proj_after["y"])
-                interpolated_pos = (
-                    pos_before[0] * (1 - alpha) + pos_after[0] * alpha,
-                    pos_before[1] * (1 - alpha) + pos_after[1] * alpha,
-                )
-                interpolated_state["projectiles"].append(
+    def _get_visible_objects_fallback(self, selected_bot, current_state):
+        """Fallback visibility system using simple distance checks."""
+        visible_objects = []
+        max_range = 15.0
+
+        for bot in current_state.get("bots", []):
+            if bot["id"] == selected_bot["id"] or not bot["alive"]:
+                continue
+            dx = bot["x"] - selected_bot["x"]
+            dy = bot["y"] - selected_bot["y"]
+            distance = math.sqrt(dx * dx + dy * dy)
+            if distance <= max_range:
+                bearing = math.degrees(math.atan2(dy, dx))
+                if bearing < 0:
+                    bearing += 360
+                bot_type = "friend" if bot["team"] == selected_bot["team"] else "enemy"
+                visible_objects.append(
                     {
-                        "id": proj_id,
-                        "x": interpolated_pos[0],
-                        "y": interpolated_pos[1],
-                        "team": proj_before.get("team", 0),
+                        "type": bot_type,
+                        "x": bot["x"],
+                        "y": bot["y"],
+                        "distance": distance,
+                        "angle": bearing,
+                        "hp": bot["hp"],
+                        "team": f"team_{bot['team']}",
+                        "id": bot["id"],
+                        "velocity_x": bot.get("vx", 0),
+                        "velocity_y": bot.get("vy", 0),
+                        "signal": bot.get("signal", "none"),
                     }
                 )
-            else:
-                interpolated_state["projectiles"].append(proj_before)
 
-        return interpolated_state
-
-    def _get_detailed_bot_info(self, bot_id: int) -> Optional[Dict]:
-        """Retrieves detailed information about a specific bot,
-        including visibility data."""
-        current_state = self._get_current_state()
-        bot = next(
-            (b for b in current_state.get("bots", []) if b["id"] == bot_id), None
-        )
-        if not bot:
-            return None
-
-        bot_x, bot_y = bot["x"], bot["y"]
-        arena_size = self.metadata.get("arena_size", [20, 20])
-        arena = Arena(arena_size[0], arena_size[1], self.metadata.get("walls", []))
-
-        visible_objects = self._get_visible_objects_for_bot(
-            bot_x, bot_y, bot.get("theta", 0.0), bot["team"], current_state, arena
-        )
-        return {
-            "bot": bot,
-            "visible_objects": visible_objects,
-        }
-
-    def _get_visible_objects_for_bot(
-        self,
-        x: float,
-        y: float,
-        theta: float,
-        team: int,
-        state: Dict,
-        arena: Arena,
-    ) -> Dict:
-        """
-        Determine which bots, projectiles, and walls are visible to a given bot.
-        """
-
-        visible_bots = self._get_visible_bots(x, y, theta, team, state, arena)
-        visible_projectiles = self._get_nearby_projectiles(x, y, theta, state, arena)
-        visible_walls = self._get_visible_walls(x, y, theta, arena)
-        return {
-            "bots": visible_bots,
-            "projectiles": visible_projectiles,
-            "walls": visible_walls,
-        }
-
-    def _get_visible_bots(
-        self,
-        x: float,
-        y: float,
-        theta: float,
-        team: int,
-        state: Dict,
-        arena: Arena,
-    ) -> List[Dict]:
-        """
-        Determine which bots are visible to a given bot.
-        """
-        visible_bots = []
-        for bot in state.get("bots", []):
-            if bot["team"] == team or not bot["alive"]:
+        for proj in current_state.get("projectiles", []):
+            if proj.get("team") == selected_bot["team"]:
                 continue
-            if self._is_in_fov(x, y, theta, bot["x"], bot["y"], arena):
-                visible_bots.append(bot)
+            dx = proj["x"] - selected_bot["x"]
+            dy = proj["y"] - selected_bot["y"]
+            distance = math.sqrt(dx * dx + dy * dy)
+            if distance <= max_range:
+                bearing = math.degrees(math.atan2(dy, dx))
+                if bearing < 0:
+                    bearing += 360
+                visible_objects.append(
+                    {
+                        "type": "projectile",
+                        "x": proj["x"],
+                        "y": proj["y"],
+                        "distance": distance,
+                        "angle": bearing,
+                        "velocity_x": proj.get("vx", 0),
+                        "velocity_y": proj.get("vy", 0),
+                        "ttl": proj.get("ttl", 1.0),
+                        "team": f"team_{proj.get('team', 0)}",
+                    }
+                )
+
+        return visible_objects
+
+    def _get_visible_bots(self, selected_bot, current_state):
+        """Return list of (bot_data, distance, angle) for visible bots."""
+        visible_objects = self._get_visible_objects_for_bot(selected_bot, current_state)
+        visible_bots = []
+        for obj in visible_objects:
+            if obj["type"] in ["enemy", "friend"]:
+                bot_data = None
+                for bot in current_state.get("bots", []):
+                    if bot["id"] == obj.get("id"):
+                        bot_data = bot
+                        break
+                if bot_data:
+                    visible_bots.append((bot_data, obj["distance"], obj["angle"]))
+        visible_bots.sort(key=lambda x: x[1])
         return visible_bots
 
-    def _get_nearby_projectiles(
-        self,
-        x: float,
-        y: float,
-        theta: float,
-        state: Dict,
-        arena: Arena,
-    ) -> List[Dict]:
-        """
-        Determine which projectiles are nearby a given bot.
-        """
-        nearby_projectiles = []
-        for projectile in state.get("projectiles", []):
-            if self._is_in_range(x, y, projectile["x"], projectile["y"], 5.0):
-                nearby_projectiles.append(projectile)
-        return nearby_projectiles
+    def _get_nearby_projectiles(self, selected_bot, current_state):
+        """Return list of (proj_data, distance, angle) for nearby projectiles."""
+        visible_objects = self._get_visible_objects_for_bot(selected_bot, current_state)
+        nearby = []
+        for obj in visible_objects:
+            if obj["type"] == "projectile":
+                proj_data = {
+                    "x": obj["x"],
+                    "y": obj["y"],
+                    "velocity_x": obj.get("velocity_x", 0),
+                    "velocity_y": obj.get("velocity_y", 0),
+                    "team": obj.get("team", "unknown"),
+                    "ttl": obj.get("ttl", 0),
+                }
+                nearby.append((proj_data, obj["distance"], obj["angle"]))
+        nearby.sort(key=lambda x: x[1])
+        return nearby
 
-    def _get_visible_walls(
-        self,
-        x: float,
-        y: float,
-        theta: float,
-        arena: Arena,
-    ) -> List[Tuple[float, float, float, float]]:
-        """
-        Determine which walls are visible to a given bot.
-        """
-        visible_walls = []
-        for wall in arena.walls:
-            if self._is_in_fov(x, y, theta, wall[0], wall[1], arena):
-                visible_walls.append(wall)
-        return visible_walls
-
-    def _is_in_fov(
-        self,
-        x: float,
-        y: float,
-        theta: float,
-        target_x: float,
-        target_y: float,
-        arena: Arena,
-        fov_angle: float = 120.0,
-        max_range: float = 15.0,
-    ) -> bool:
-        """
-        Check if a target is within the field of view (FOV) of a bot.
-        """
-        dx = target_x - x
-        dy = target_y - y
-        distance = math.sqrt(dx * dx + dy * dy)
-
-        if distance > max_range:
-            return False
-
-        # Convert theta to radians and normalize to 0-360
-        theta_rad = math.radians(theta)
-        theta_norm = (theta + 360) % 360
-
-        # Calculate angle to target in radians
-        angle_to_target_rad = math.atan2(dy, dx)
-        angle_to_target_deg = math.degrees(angle_to_target_rad)
-        angle_to_target_norm = (angle_to_target_deg + 360) % 360
-
-        # Calculate FOV bounds
-        fov_half_angle = fov_angle / 2
-        fov_min = (theta_norm - fov_half_angle + 360) % 360
-        fov_max = (theta_norm + fov_half_angle) % 360
-
-        # Check if target is within FOV, handling angle wrapping
-        if fov_min < fov_max:
-            return fov_min <= angle_to_target_norm <= fov_max
-        else:
-            return angle_to_target_norm >= fov_min or angle_to_target_norm <= fov_max
-
-    def _is_in_range(
-        self, x1: float, y1: float, x2: float, y2: float, max_range: float
-    ) -> bool:
-        """Check if a point (x2, y2) is within a certain range of (x1, y1)."""
-        distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-        return distance <= max_range
+    def _get_visible_walls(self, selected_bot, current_state=None):
+        """Return list of (wall_obj, distance, angle) for visible walls."""
+        if current_state is None:
+            current_state = self.timeline[int(self.current_frame)]
+        visible_objects = self._get_visible_objects_for_bot(selected_bot, current_state)
+        walls = []
+        for obj in visible_objects:
+            if obj["type"] == "wall":
+                walls.append((obj, obj["distance"], obj["angle"]))
+        walls.sort(key=lambda x: x[1])
+        return walls
 
     def _update_bots(self, state: Dict):
         """Update bot models in the scene."""
@@ -594,59 +632,107 @@ class Battle3DViewer:
 
     def _update_ui(self, state: Dict):
         """Update the text in the UI panels."""
-        # General info
+        # General info + metadata + summary
         time_info = f"Time: {state.get('time', 0):.1f}s"
         frame_info = f"Frame: {int(self.current_frame)}/{len(self.timeline) - 1}"
         speed_info = f"Speed: {self.playback_speed:.1f}x"
-        winner_info = f"Winner: {self.metadata.get('winner', 'N/A')}"
-        self.info_text.geometry.set_text(
-            f"{time_info}\n{frame_info}\n{speed_info}\n{winner_info}"
-        )
 
-        # Selected bot info
-        bot_info_lines = []
-        if self.selected_bot_info:
-            bot = self.selected_bot_info["bot"]
-            visible_objects = self.selected_bot_info["visible_objects"]
+        meta = self.metadata or {}
+        winner = meta.get("winner", "unknown")
+        reason = meta.get("reason", "unknown")
 
-            bot_info_lines.append(f"Bot {bot['id']} (Team {bot['team']})")
-            bot_info_lines.append(f"HP: {bot['hp']:.0f}")
-            bot_info_lines.append(f"Pos: ({bot['x']:.1f}, {bot['y']:.1f})")
-            bot_info_lines.append(f"Heading: {bot.get('theta', 0.0):.0f}°")
-            bot_info_lines.append(
-                f"Signal: {self.signal_descriptions.get(bot.get('signal', 'none'), 'Unknown')}"
+        summary = self.battle_data.get("summary", {})
+        mvp = summary.get("mvp", {}) or {}
+        intensity = summary.get("battle_intensity", 0)
+        accuracy = summary.get("overall_accuracy", 0)
+
+        info_lines = [
+            time_info,
+            frame_info,
+            speed_info,
+            f"Winner: {winner} ({reason})",
+        ]
+        if mvp.get("bot_id") is not None:
+            info_lines.append(
+                f"MVP: Bot {mvp.get('bot_id')} (Team {mvp.get('team')}) - {mvp.get('score', 0):.1f} pts"
             )
+        info_lines.append(f"Intensity: {float(intensity):.1f} shots/sec")
+        info_lines.append(f"Overall Accuracy: {float(accuracy):.1%}")
+        self.info_text.geometry.set_text("\n".join(info_lines))
 
-            # Visible bots
-            visible_bots = visible_objects["bots"]
+        # Selected bot info with more details
+        if self.selected_bot:
+            bot = self.selected_bot
+            heading = bot.get("theta", 0.0)
+            speed = math.sqrt(bot.get("vx", 0) ** 2 + bot.get("vy", 0) ** 2)
+            signal = bot.get("signal", "none")
+            signal_desc = self.signal_descriptions.get(signal, "Unknown signal")
+
+            # Function info from summary (supports int or str keys)
+            bot_functions = summary.get("bot_functions", {}) or {}
+            bot_func_data = (
+                bot_functions.get(bot["id"]) or bot_functions.get(str(bot["id"])) or {}
+            )
+            personality = bot_func_data.get("personality", "unknown")
+            version = bot_func_data.get("version", "N/A")
+
+            # Visible objects summary
+            visible_bots = self._get_visible_bots(bot, state)
+            friends_count = len(
+                [b for b, _, _ in visible_bots if b["team"] == bot["team"]]
+            )
+            enemies_count = len(visible_bots) - friends_count
+            nearby_projectiles = self._get_nearby_projectiles(bot, state)
+            visible_walls = self._get_visible_walls(bot, state)
+
+            info = [
+                f"Bot {bot['id']} (Team {bot['team']})",
+                f"Function: {personality}_combat_v{version}",
+                f"HP: {bot['hp']}",
+                f"Pos: ({bot['x']:.1f}, {bot['y']:.1f})",
+                f"Heading: {heading:.0f}°  Speed: {speed:.1f} m/s",
+                f"Signal: {signal}",
+                f"{signal_desc}",
+                f"Tactical: {friends_count}F, {enemies_count}E, {len(nearby_projectiles)}P, {len(visible_walls)}W",
+            ]
+            self.bot_info_text.geometry.set_text("\n".join(info))
+
+            # Detailed tactical info
+            tactical_lines = ["--- Tactical Situation ---"]
             if visible_bots:
-                bot_info_lines.append("Visible Bots:")
-                for vb in visible_bots:
-                    bot_info_lines.append(
-                        f"  - Bot {vb['id']} (Team {vb['team']}, HP: {vb['hp']:.0f})"
-                    )
+                tactical_lines.append("Units:")
+                for vis_bot, distance, bearing in visible_bots:
+                    if vis_bot["team"] == bot["team"]:
+                        unit_type = "F"
+                        signal = vis_bot.get("signal", "none")
+                        signal_part = f" [{signal}]" if signal != "none" else ""
+                        vis_text = f"  {unit_type}{vis_bot['id']}: {distance:.1f}m @ {bearing:.0f}°{signal_part}"
+                    else:
+                        unit_type = "E"
+                        vis_text = f"  {unit_type}{vis_bot['id']}: {distance:.1f}m @ {bearing:.0f}°"
+                    tactical_lines.append(vis_text)
 
-            # Nearby projectiles
-            nearby_projectiles = visible_objects["projectiles"]
             if nearby_projectiles:
-                bot_info_lines.append("Nearby Projectiles:")
-                for proj in nearby_projectiles:
-                    bot_info_lines.append(
-                        f"  - Team {proj.get('team', 'Unknown')} at ({proj['x']:.1f}, {proj['y']:.1f})"
-                    )
+                tactical_lines.append("Projectiles:")
+                for proj, distance, bearing in nearby_projectiles:
+                    proj_text = f"  P: {distance:.1f}m @ {bearing:.0f}°"
+                    tactical_lines.append(proj_text)
 
-            # Visible walls
-            visible_walls = visible_objects["walls"]
             if visible_walls:
-                bot_info_lines.append("Visible Walls:")
-                for wall in visible_walls:
-                    bot_info_lines.append(f"  - Wall at ({wall[0]:.1f}, {wall[1]:.1f})")
+                tactical_lines.append("Walls:")
+                for wall, distance, bearing in visible_walls:
+                    wall_text = f"  W: {distance:.1f}m @ {bearing:.0f}°"
+                    tactical_lines.append(wall_text)
+
+            if len(tactical_lines) > 1:
+                self.tactical_info_text.geometry.set_text("\n".join(tactical_lines))
+            else:
+                self.tactical_info_text.geometry.set_text("")
         else:
-            bot_info_lines.append("Click on a bot to select it")
+            self.bot_info_text.geometry.set_text("Click on a bot to select it")
+            self.tactical_info_text.geometry.set_text("")
 
-        self.bot_info_text.geometry.set_text("\n".join(bot_info_lines))
-
-        # Events
+        # Recent events (last 5)
         events = state.get("events", [])
         if events:
             lines = ["Recent Events:"]
@@ -774,8 +860,6 @@ class Battle3DViewer:
                 (b for b in current_state.get("bots", []) if b["id"] == bot_id), None
             )
             self.selected_bot = found_bot
-            if self.selected_bot:
-                self.selected_bot_info = self._get_detailed_bot_info(bot_id)
 
         self._update_bots(current_state)
         self._update_projectiles(current_state)

@@ -224,8 +224,21 @@ def _generate_python_battle_summary(
     return python_summary
 
 
-def run_interactive_viewer(battle_file: str, use_3d: bool = False):
+def run_interactive_viewer(
+    battle_file: str, use_3d: bool = False, use_pygfx: bool = False
+):
     """Launch interactive viewer with a saved Python battle JSON file."""
+    if use_pygfx:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "graphics3d_pygfx", "graphics-3d-pygfx.py"
+        )
+        graphics3d_pygfx = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(graphics3d_pygfx)
+        graphics3d_pygfx.run_3d_viewer(battle_file)
+        return
+
     if use_3d:
         import importlib.util
 
@@ -283,15 +296,19 @@ def main():
         # Handle viewer command
         if len(sys.argv) > 2:
             battle_file = sys.argv[2]
-            use_3d = len(sys.argv) > 3 and sys.argv[3] == "--3d"
-            run_interactive_viewer(battle_file, use_3d)
+            use_3d = "--3d" in sys.argv
+            use_pygfx = "--pygfx" in sys.argv
+            run_interactive_viewer(battle_file, use_3d, use_pygfx)
         else:
             print(
-                "Usage: uv run python run_python_battle.py viewer <battle_file.json> [--3d]"
+                "Usage: uv run python run_python_battle.py viewer <battle_file.json> [--3d | --pygfx]"
             )
             print("Examples:")
             print("  uv run python run_python_battle.py viewer battle_output.json")
             print("  uv run python run_python_battle.py viewer battle_output.json --3d")
+            print(
+                "  uv run python run_python_battle.py viewer battle_output.json --pygfx"
+            )
         return
 
     import argparse
@@ -317,17 +334,26 @@ def main():
     parser.add_argument("--bots-per-side", type=int, default=2, help="Bots per team")
     parser.add_argument("--output", type=str, help="Output JSON file")
     parser.add_argument("--quiet", action="store_true", help="Minimal output")
-    parser.add_argument("--3d", action="store_true", help="Use 3D viewer instead of 2D")
+    parser.add_argument(
+        "--3d", action="store_true", help="Use Panda3D viewer instead of 2D"
+    )
+    parser.add_argument(
+        "--pygfx", action="store_true", help="Use pygfx 3D viewer instead of 2D"
+    )
 
     args = parser.parse_args()
 
     if args.command == "viewer":
         if args.battle_file:
-            run_interactive_viewer(args.battle_file, getattr(args, "3d", False))
+            run_interactive_viewer(
+                args.battle_file,
+                getattr(args, "3d", False),
+                getattr(args, "pygfx", False),
+            )
         else:
             print("Error: viewer command requires a battle JSON file")
             print(
-                "Usage: uv run python run_python_battle.py viewer <battle_file.json> [--3d]"
+                "Usage: uv run python run_python_battle.py viewer <battle_file.json> [--3d | --pygfx]"
             )
         return
 
@@ -368,7 +394,8 @@ def main():
         print(f"Average function time: {summary['avg_function_time_ms']:.2f}ms")
         print(f"\nTo view this battle:")
         print(f"  2D: uv run python run_python_battle.py viewer {output_file}")
-        print(f"  3D: uv run python run_python_battle.py viewer {output_file} --3d")
+        print(f"  3D (Panda3D): uv run python run_python_battle.py viewer {output_file} --3d")
+        print(f"  3D (pygfx): uv run python run_python_battle.py viewer {output_file} --pygfx")
 
 
 if __name__ == "__main__":
