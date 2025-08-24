@@ -26,6 +26,11 @@ from panda3d.core import (
     CollisionNode,
     GeomNode,
     BitMask32,
+    Geom,
+    GeomVertexData,
+    GeomVertexFormat,
+    GeomVertexWriter,
+    GeomTriangles,
 )
 
 
@@ -310,7 +315,7 @@ class Battle3DViewer(ShowBase):
 
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
-            np.setH(bot["theta"] - 90)  # Adjust for model orientation
+            np.setH(90 - bot["theta"])  # Convert math angle to Panda3D heading
             np.setScale(0.4)
 
             # Color by team
@@ -396,17 +401,53 @@ class Battle3DViewer(ShowBase):
             fov_range = 15.0
             fov_angle_deg = 120
 
-            cm = CardMaker("fov")
-            cm.setFrame(0, 1, -0.5, 0.5)
-            self.fov_nodepath = self.render.attachNewNode(cm.generate())
+            fov_geom_node = self._create_fov_geom(fov_angle_deg, fov_range)
+            self.fov_nodepath = self.render.attachNewNode(fov_geom_node)
             self.fov_nodepath.setPos(
                 bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.1
             )
-            self.fov_nodepath.setScale(fov_range)
-            self.fov_nodepath.setH(bot["theta"] - 90)
+            self.fov_nodepath.setH(90 - bot["theta"])
             self.fov_nodepath.setTransparency(1)
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_nodepath.setColor(color)
+
+    def _create_fov_geom(self, fov_angle_deg, fov_range, num_segments=20):
+        """Create a Geom for a 2D FOV fan."""
+        fov_angle_rad = math.radians(fov_angle_deg)
+
+        vdata = GeomVertexData("fov_vertices", GeomVertexFormat.getV3(), Geom.UHStatic)
+        vdata.setNumRows(num_segments + 2)
+
+        vertex = GeomVertexWriter(vdata, "vertex")
+
+        # Center vertex (at the bot's location)
+        vertex.addData3f(0, 0, 0)
+
+        # Arc vertices
+        angle_step = fov_angle_rad / num_segments
+        # Start angle relative to forward direction (Y axis)
+        start_angle = -fov_angle_rad / 2
+
+        for i in range(num_segments + 1):
+            angle = start_angle + i * angle_step
+            # Y is forward, X is right
+            x = fov_range * math.sin(angle)
+            y = fov_range * math.cos(angle)
+            vertex.addData3f(x, y, 0)
+
+        # Create triangles for the fan
+        tris = GeomTriangles(Geom.UHStatic)
+        for i in range(num_segments):
+            # Triangle from center to two adjacent arc points
+            tris.addVertices(0, i + 1, i + 2)
+
+        geom = Geom(vdata)
+        geom.addPrimitive(tris)
+
+        node = GeomNode("fov_geom_node")
+        node.addGeom(geom)
+
+        return node
 
 
 def run_3d_viewer(battle_file: str):
