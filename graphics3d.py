@@ -1016,7 +1016,7 @@ class Battle3DViewer(ShowBase):
                 vel_cone = self._create_procedural_cone(radius=1.0, height=1.0)
                 vel_cone.reparentTo(bot_model)
                 vel_cone.setScale(0.2, 0.4, 0.2) # Adjust size: radius=0.2, height=0.4
-                vel_cone.setPos(0, 0.6, 0)
+                vel_cone.setPos(0, 1.0, 0) # Move cone in front of heading indicator
                 vel_cone.setColor(1, 1, 0, 0.8) # Yellow, slightly transparent
                 self.bot_velocity_cones[bot_id] = vel_cone
 
