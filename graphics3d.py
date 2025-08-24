@@ -6,6 +6,15 @@ Interactive 3D visualization of battle simulations with glorious 3D rendering.
 import math
 import json
 from typing import Dict, List, Tuple, Optional
+
+# Attempt to fix rendering issues on some platforms by specifying GL backend and version
+try:
+    from panda3d.core import loadPrcFileData
+    loadPrcFileData('', 'gl-backend pandagl')
+    loadPrcFileData('', 'gl-version 3 2')
+except ImportError:
+    print("Warning: Could not import from panda3d.core to set GL version.")
+
 from ursina import *
 from ursina import Vec2, Vec3
 
@@ -85,80 +94,68 @@ class Battle3DViewer:
         # Dark sky for better contrast
         Sky(color=color.dark_gray)
 
-        # Camera setup to show full arena with proper zoom
-        # Position camera high enough to see the entire arena
-        arena_diagonal = math.sqrt(self.arena_width**2 + self.arena_height**2)
-        camera_height = arena_diagonal * 1.2  # Height to see full arena
-        camera.position = Vec3(0, camera_height, -arena_diagonal * 0.3)
-        camera.rotation_x = 70  # Slight angle for better 3D perspective
-        camera.rotation_y = 0
-        camera.rotation_z = 0
-        camera.fov = 50  # Wider field of view to see entire arena
+        # Use a viewport for the 3D scene (bottom-left 80%)
+        camera.viewport = (0, 0, 0.8, 0.8)
 
-        # Remove ground reference as we'll see the arena floor directly
+        # Camera setup for an isometric-style view
+        arena_diagonal = math.sqrt(self.arena_width**2 + self.arena_height**2)
+        camera_height = arena_diagonal * 1.1
+        camera.position = Vec3(0, camera_height, -arena_diagonal * 0.4)
+        camera.rotation = (65, 0, 0) # Isometric-like angle
+        camera.fov = 40
 
     def _setup_ui(self):
-        """Set up UI elements matching graphics.py layout."""
-        # Timeline scrubber (bottom of screen)
-        self.timeline_panel = Entity(
-            parent=camera.ui,
-            model="cube",
-            color=color.dark_gray,
-            scale=(0.8, 0.03, 1),
-            position=(0, -0.47, 0),
-        )
-
+        """Set up UI elements in the top and right panels, outside the 3D viewport."""
+        # --- Top Panel (Timeline) ---
+        top_panel_bg = Entity(parent=camera.ui, model='quad', color=color.dark_gray, scale=(1, 0.2), position=(0, 0.45))
+        
         self.timeline_progress = Entity(
-            parent=camera.ui,
-            model="cube",
+            parent=top_panel_bg,
+            model="quad",
             color=color.blue,
-            scale=(0.01, 0.025, 1),
-            position=(-0.4, -0.47, -0.1),
+            scale=(1, 0.2),
+            origin=(-0.5, 0),
+            position=(-0.5, 0, -1),
         )
-
-        # Timeline position indicator
         self.timeline_indicator = Entity(
-            parent=camera.ui,
-            model="cube",
+            parent=top_panel_bg,
+            model="quad",
             color=color.white,
-            scale=(0.005, 0.04, 1),
-            position=(-0.4, -0.47, -0.15),
+            scale=(0.005, 1),
+            position=(0, 0, -2),
         )
+        
+        # --- Right Panel (Info) ---
+        right_panel_bg = Entity(parent=camera.ui, model='quad', color=color.dark_gray, scale=(0.2, 1), position=(0.45, 0))
 
-        # Control info text (bottom)
-        self.control_text = Text(
-            "Controls: SPACE=Play/Pause, ←→=Step, R=Reset, +/-=Speed, F=FOV, Q=Quit, Click bots to select",
-            parent=camera.ui,
-            position=(-0.85, -0.4),
-            scale=0.6,
-            color=color.white,
-        )
-
-        # Battle info text (right side, outside 3D area)
+        # Battle info text
         self.info_text = Text(
             "", 
-            parent=camera.ui, 
-            position=(0.4, 0.4), 
-            scale=0.7, 
+            parent=right_panel_bg,
+            origin=(-0.5, 0.5),
+            position=(-0.45, 0.45),
+            scale=3, # Scale relative to parent
             color=color.white
         )
 
-        # Selected bot info panel (left side, overlaid on 3D)
-        self.bot_info_panel = Entity(
-            parent=camera.ui,
-            model="quad",
-            color=color.rgba(20, 20, 20, 200),
-            scale=(0.4, 0.6),
-            position=(-0.7, 0.1),
-            visible=False,
-        )
+        # Selected bot info text
         self.bot_info_text = Text(
-            "",
-            parent=self.bot_info_panel,
+            "Click on a bot to select it",
+            parent=right_panel_bg,
             origin=(-0.5, 0.5),
-            position=(-0.45, 0.45),
-            scale=1.2, # scale is relative to parent, so needs to be adjusted
+            position=(-0.45, -0.05),
+            scale=2.5,
             color=color.white,
+        )
+
+        # Control info text
+        self.control_text = Text(
+            "Controls:\nSPACE: Play/Pause\n←→: Step Frame\nR: Reset\n+/-: Speed\nF: Toggle FOV\nQ: Quit",
+            parent=right_panel_bg,
+            origin=(-0.5, -0.5),
+            position=(-0.45, -0.2),
+            scale=2.5,
+            color=color.light_gray,
         )
 
     def input(self, key):
@@ -191,14 +188,6 @@ class Battle3DViewer:
 
     def _create_arena(self):
         """Create the arena floor and boundaries."""
-        # Add a test bot for debugging rendering
-        Entity(
-            model="sphere",
-            color=color.lime, # Bright green to be very visible
-            scale=1,
-            position=(-self.arena_width / 2 + 1, 1, self.arena_height / 2 - 1)
-        )
-
         # Arena floor
         self.arena_floor = Entity(
             model="cube",
@@ -309,30 +298,27 @@ class Battle3DViewer:
     def _handle_mouse_input(self):
         """Handle mouse input for timeline scrubbing."""
         # This is called on mouse down and on motion while dragging
-        norm_x = (mouse.x + 1) / 2  # Convert from [-1,1] to [0,1]
-        norm_y = (mouse.y + 1) / 2  # Convert from [-1,1] to [0,1]
-
-        # Check if clicking on timeline (bottom area)
-        if norm_y < 0.15:  # Bottom 15% of screen
-            if 0.1 < norm_x < 0.9:  # Timeline area
-                self.dragging_scrubber = True
-                # Calculate target frame
-                progress = (norm_x - 0.1) / 0.8  # Normalize to timeline area
-                target_frame = int(progress * (len(self.timeline) - 1))
-                self.current_frame = max(0, min(len(self.timeline) - 1, target_frame))
-                self.playing = False
+        # Check if clicking on timeline (top 20% of screen)
+        if mouse.position.y > 0.35: # Corresponds to the top panel area
+            self.dragging_scrubber = True
+            progress = mouse.position.x + 0.5
+            target_frame = int(progress * (len(self.timeline) - 1))
+            self.current_frame = max(0, min(len(self.timeline) - 1, target_frame))
+            self.playing = False
 
     def _handle_bot_selection(self):
-        """Handle bot selection with mouse clicks."""
-        if not self.dragging_scrubber and mouse.hovered_entity and hasattr(mouse.hovered_entity, 'bot_id'):
-            # Find bot data from current state
-            current_state = self._get_current_state()
-            for bot in current_state.get("bots", []):
-                if bot["id"] == mouse.hovered_entity.bot_id and bot["alive"]:
-                    self.selected_bot = bot
-                    self.playing = False
-                    self._update_fov_display()
-                    break
+        """Handle bot selection with mouse clicks inside the 3D viewport."""
+        # Check if click is inside the viewport area (not on UI panels)
+        if not self.dragging_scrubber and mouse.position.x < 0.35 and mouse.position.y < 0.35:
+            if mouse.hovered_entity and hasattr(mouse.hovered_entity, 'bot_id'):
+                # Find bot data from current state
+                current_state = self._get_current_state()
+                for bot in current_state.get("bots", []):
+                    if bot["id"] == mouse.hovered_entity.bot_id and bot["alive"]:
+                        self.selected_bot = bot
+                        self.playing = False
+                        self._update_fov_display()
+                        break
 
     def _update_camera(self, current_state: Dict):
         """Keep camera in bird's eye view position."""
@@ -535,34 +521,30 @@ class Battle3DViewer:
                 self.projectile_entities.append(trail_entity)
 
     def _update_ui(self, state: Dict):
-        """Update UI elements."""
+        """Update UI elements in the top and right panels."""
         # Update timeline progress
         if len(self.timeline) > 1:
             progress = self.current_frame / (len(self.timeline) - 1)
-            self.timeline_progress.x = -0.4 + (0.8 * progress)
+            self.timeline_progress.scale_x = progress
+            self.timeline_indicator.x = progress - 0.5
 
-        # Update info text
+        # Update general info text
         info_lines = [
-            f"Time: {state.get('time', 0):.1f}s",
-            f"Frame: {int(self.current_frame)}/{len(self.timeline) - 1}",
-            f"Speed: {self.playback_speed:.1f}x",
-            f"Camera: {self.camera_mode}",
+            f"<bold>Time:</bold> {state.get('time', 0):.1f}s",
+            f"<bold>Frame:</bold> {int(self.current_frame)}/{len(self.timeline) - 1}",
+            f"<bold>Speed:</bold> {self.playback_speed:.1f}x",
         ]
-
         if self.metadata:
-            winner = self.metadata.get("winner", "unknown")
+            winner = self.metadata.get("winner", "unknown").replace("_", " ").title()
             reason = self.metadata.get("reason", "unknown")
-            info_lines.append(f"Winner: {winner} ({reason})")
-
+            info_lines.append(f"\n<bold>Winner:</bold> {winner}\n({reason})")
         self.info_text.text = "\n".join(info_lines)
 
         # Update selected bot info
         if self.selected_bot:
-            self.bot_info_panel.visible = True
             self._update_selected_bot_info(state)
         else:
-            self.bot_info_panel.visible = False
-            self.bot_info_text.text = ""
+            self.bot_info_text.text = "Click on a bot to select it"
 
     def _update_selected_bot_info(self, state: Dict):
         """Update comprehensive bot info panel."""
