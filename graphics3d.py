@@ -3,12 +3,21 @@ Panda3D Battle Viewer
 Interactive 3D visualization of battle simulations using the Panda3D engine.
 """
 
+from panda3d.core import loadPrcFileData
+# Force OpenGL core profile (mac wants this), and linear workflow.
+loadPrcFileData('', 'load-display pandagl')
+loadPrcFileData('', 'gl-version 3 2')          # macOS core profile unlocks modern GLSL
+loadPrcFileData('', 'framebuffer-srgb true')   # linear/sRGB correct output
+loadPrcFileData('', 'textures-power-2 none')
+loadPrcFileData('', 'sync-video true')
+loadPrcFileData('', 'gl-debug true')
+loadPrcFileData('', 'notify-level-glgsg info')
+
 import math
 import json
 import sys
 from typing import Dict, List, Tuple, Optional
 
-import simplepbr
 from direct.showbase.ShowBase import ShowBase
 from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText
 from panda3d.core import (
@@ -31,7 +40,80 @@ from panda3d.core import (
     GeomVertexFormat,
     GeomVertexWriter,
     GeomTriangles,
+    Vec3,
+    AntialiasAttrib,
 )
+
+
+def _init_hq_rendering(app):
+    """
+    Try complexpbr (SSR/SSAO/Bloom/AA). If it fails (e.g., unsupported GLSL),
+    fall back to simplepbr + CommonFilters.
+    """
+    # Quality knobs (tweak freely)
+    SHADOW_MAP_SIZE = 4096
+    BLOOM_INTENSITY = 0.25
+    SSAO_SAMPLES = 24
+    SPECULAR_BOOST = 1.0    # can push to ~2–10 for shinier specular in complexpbr
+
+    try:
+        # --- Primary: complexpbr path ---
+        import complexpbr
+        # Apply IBL/PBR scene shader
+        complexpbr.apply_shader(app.render)        # sets up dynamic env reflections, PBR, etc.
+        complexpbr.screenspace_init()              # enables SSAO, SSR, AA, HSV; also provides bloom controls
+
+        # Optional: tune screenspace effects on the screen quad
+        screen_quad = app.screen_quad
+        screen_quad.set_shader_input('ssao_samples', SSAO_SAMPLES)
+        screen_quad.set_shader_input('bloom_intensity', BLOOM_INTENSITY)
+        app.render.set_shader_input('specular_factor', SPECULAR_BOOST)
+
+        # Shadows: define a sun with high-res shadow map
+        sun = DirectionalLight("sun")
+        sun.setShadowCaster(True, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE)
+        sun.getLens().setFilmSize(120, 120)
+        sun.getLens().setNearFar(0.5, 500)
+        sun_np = app.render.attachNewNode(sun)
+        sun_np.setHpr(45, -55, 0)
+        app.render.setLight(sun_np)
+
+        # Clean canvas: multisample at node level (complexpbr has its own AA as well)
+        app.render.setAntialias(AntialiasAttrib.MMultisample)
+
+        app._pbr_pipeline = "complexpbr"
+        print("[HQ] complexpbr active (SSR/SSAO/Bloom/AA).")
+
+    except Exception as e:
+        print("[HQ] complexpbr failed, falling back to simplepbr. Error:", e)
+        # --- Fallback: simplepbr + CommonFilters ---
+        # Keep simplepbr focused on PBR/IBL/shadows:
+        import simplepbr
+        pbr = simplepbr.init(use_330=True, enable_shadows=True,
+                             use_normal_maps=True, use_occlusion_maps=True,
+                             use_emission_maps=True)
+
+        # Light & shadows
+        sun = DirectionalLight("sun")
+        sun.setShadowCaster(True, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE)
+        sun.getLens().setFilmSize(120, 120)
+        sun.getLens().setNearFar(0.5, 500)
+        sun_np = app.render.attachNewNode(sun)
+        sun_np.setHpr(45, -55, 0)
+        app.render.setLight(sun_np)
+        pbr.shadow_bias = 0.003  # tweak if acne/peter-panning
+
+        # PostFX via CommonFilters (Bloom/SSAO/MSAA)
+        from direct.filter.CommonFilters import CommonFilters
+        filters = CommonFilters(app.win, app.cam)
+        app.render.setAntialias(AntialiasAttrib.MMultisample)
+        filters.setMSAA(8)  # prefer MSAA here, not via window config
+        filters.setAmbientOcclusion(numsamples=SSAO_SAMPLES, radius=0.3, amount=1.0)
+        filters.setBloom(intensity=0.7, size="medium", mintrigger=0.6)
+
+        app._pbr_pipeline = "simplepbr"
+        app._filters = filters
+        print("[HQ] simplepbr + CommonFilters active.")
 
 
 class Battle3DViewer(ShowBase):
@@ -40,34 +122,9 @@ class Battle3DViewer(ShowBase):
     def __init__(self, battle_data: Dict):
         """Initialize the Panda3D viewer."""
         ShowBase.__init__(self)
-        self.pbr_pipeline = simplepbr.init(
-            msaa_samples=4,
-            enable_shadows=True,
-            use_normal_maps=True,
-            use_occlusion_maps=True,
-            # use_330=True,  # Enable modern OpenGL features for better reflections
-            use_hardware_skinning=True,
-            use_emission_maps=True,
-        )
 
-        # Configure post-processing effects on the simplepbr pipeline
-        self.pbr_pipeline.enable_ssao = True
-        self.pbr_pipeline.ssao_samples = 16
-        self.pbr_pipeline.ssao_radius = 0.3
-        self.pbr_pipeline.ssao_amount = 2.0
-        self.pbr_pipeline.enable_bloom = True
-        self.pbr_pipeline.bloom_intensity = 0.7
-        self.pbr_pipeline.bloom_mintrigger = 0.6
-        self.pbr_pipeline.bloom_size = "medium"
-
-        # Try different reflection approaches
-        if hasattr(self.pbr_pipeline, "enable_ssr"):
-            self.pbr_pipeline.enable_ssr = True
-            self.pbr_pipeline.ssr_roughness_cutoff = 0.8
-
-        # Enable environment mapping for reflections
-        if hasattr(self.pbr_pipeline, "enable_ibl"):
-            self.pbr_pipeline.enable_ibl = True
+        # >>> NEW: high-quality rendering init
+        _init_hq_rendering(self)
 
         self.battle_data = battle_data
         self.timeline = battle_data["timeline"]
@@ -112,33 +169,18 @@ class Battle3DViewer(ShowBase):
         # Tighten camera frustum for better SSAO and depth precision
         self.cam.node().getLens().setNearFar(10, 100)
 
-        # Lighting with shadows - brighter directional light
-        dlight = DirectionalLight("sun")
-        dlight.setColor((1.2, 1.2, 1.0, 1))  # Bright warm white light
-        dlight.set_shadow_caster(True, 4096, 4096)
-        dlnp = self.render.attachNewNode(dlight)
-        dlnp.setHpr(45, -45, 0)  # Better angle for reflections
-        self.render.setLight(dlnp)
-
-        # Add brighter ambient light to fill in shadows and enable reflections
+        # Add ambient light for fill lighting (the main sun is created in _init_hq_rendering)
         alight = AmbientLight("ambient")
-        alight.setColor((0.4, 0.4, 0.45, 1))  # Much brighter ambient
+        alight.setColor((0.3, 0.3, 0.35, 1))  # Moderate ambient
         alnp = self.render.attachNewNode(alight)
         self.render.setLight(alnp)
 
         # Add a second directional light from opposite side for better illumination
         dlight2 = DirectionalLight("fill_light")
-        dlight2.setColor((0.6, 0.6, 0.7, 1))  # Cooler fill light
+        dlight2.setColor((0.4, 0.4, 0.5, 1))  # Cooler fill light
         dl2np = self.render.attachNewNode(dlight2)
         dl2np.setHpr(-135, -30, 0)  # Opposite side
         self.render.setLight(dl2np)
-
-        # Tune shadow camera for crisp shadows
-        lens = dlight.getLens()
-        # Fit the film size to the arena. A tighter film size gives crisper shadows.
-        lens.setFilmSize(self.arena_width * 1.2, self.arena_height * 1.2)
-        # Tighten the near/far planes to include only the battle area.
-        lens.setNearFar(1, 60)
 
         # Arena floor (procedurally generated)
         cm = CardMaker("floor")
