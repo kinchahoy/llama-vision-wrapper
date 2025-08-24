@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pygfx as gfx
+import pygfx.text as gfx_text
 import pylinalg as la
 from wgpu.gui.auto import WgpuCanvas, run
 
@@ -170,8 +171,8 @@ class Battle3DViewer:
     def _create_text_object(
         self, text, position, font_size=14, color="#FFF", anchor="top-left"
     ):
-        text_geom = gfx.TextGeometry(text, font_size=font_size, anchor=anchor)
-        text_mat = gfx.TextMaterial(color=color)
+        text_geom = gfx_text.TextGeometry(text, font_size=font_size, anchor=anchor)
+        text_mat = gfx_text.TextMaterial(color=color)
         text_obj = gfx.Text(text_geom, text_mat)
         text_obj.local.position = position
         return text_obj
@@ -566,8 +567,8 @@ class Battle3DViewer:
 
                 # Bot ID label
                 id_text = gfx.Text(
-                    gfx.TextGeometry(str(bot_id), font_size=10, anchor="center"),
-                    gfx.TextMaterial(color="#FFF"),
+                    gfx_text.TextGeometry(str(bot_id), font_size=10, anchor="center"),
+                    gfx_text.TextMaterial(color="#FFF"),
                 )
                 id_text.local.position = (0, 0, 1.0)
                 bot_body.add(id_text)
