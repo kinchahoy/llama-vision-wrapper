@@ -48,14 +48,14 @@ class Battle3DViewer(ShowBase):
         )
 
         # Configure post-processing effects on the simplepbr pipeline
-        self.pbr_pipeline.settings.enable_ssao = True
-        self.pbr_pipeline.settings.ssao_samples = 16
-        self.pbr_pipeline.settings.ssao_radius = 0.3
-        self.pbr_pipeline.settings.ssao_amount = 2.0
-        self.pbr_pipeline.settings.enable_bloom = True
-        self.pbr_pipeline.settings.bloom_intensity = 0.7
-        self.pbr_pipeline.settings.bloom_mintrigger = 0.6
-        self.pbr_pipeline.settings.bloom_size = "medium"
+        self.pbr_pipeline.enable_ssao = True
+        self.pbr_pipeline.ssao_samples = 16
+        self.pbr_pipeline.ssao_radius = 0.3
+        self.pbr_pipeline.ssao_amount = 2.0
+        self.pbr_pipeline.enable_bloom = True
+        self.pbr_pipeline.bloom_intensity = 0.7
+        self.pbr_pipeline.bloom_mintrigger = 0.6
+        self.pbr_pipeline.bloom_size = "medium"
 
         self.battle_data = battle_data
         self.timeline = battle_data["timeline"]
