@@ -40,7 +40,12 @@ class Battle3DViewer(ShowBase):
     def __init__(self, battle_data: Dict):
         """Initialize the Panda3D viewer."""
         ShowBase.__init__(self)
-        simplepbr.init()
+        simplepbr.init(
+            msaa_samples=4,
+            enable_shadows=True,
+            use_normal_maps=True,
+            use_occlusion_maps=True,
+        )
 
         self.battle_data = battle_data
         self.timeline = battle_data["timeline"]
@@ -83,28 +88,24 @@ class Battle3DViewer(ShowBase):
         self.cam.setPos(0, -arena_diagonal * 1.2, arena_diagonal * 1.1)
         self.cam.lookAt(0, 0, 0)
 
-        # Lighting
-        alight = AmbientLight("ambient")
-        alight.setColor((0.4, 0.4, 0.4, 1))
-        alnp = self.render.attachNewNode(alight)
-        self.render.setLight(alnp)
-
-        dlight = DirectionalLight("directional")
-        dlight.setColor((0.8, 0.8, 0.7, 1))
+        # Lighting with shadows
+        dlight = DirectionalLight("sun")
+        dlight.set_shadow_caster(True, 4096, 4096)
         dlnp = self.render.attachNewNode(dlight)
-        dlnp.setHpr(30, -60, 0)
+        dlnp.setHpr(60, -60, 0)
         self.render.setLight(dlnp)
 
+        # Tune shadow camera
+        lens = dlight.getLens()
+        lens.setFilmSize(self.arena_width * 1.5, self.arena_height * 1.5)
+        lens.setNearFar(1, 100)
+
         # Arena floor
-        cm = CardMaker("floor")
-        cm.setFrame(
-            -self.arena_width / 2,
-            self.arena_width / 2,
-            -self.arena_height / 2,
-            self.arena_height / 2,
-        )
-        floor = self.render.attachNewNode(cm.generate())
-        floor.setP(-90)  # Rotate to be flat on the XY plane
+        floor = self.loader.loadModel("models/plane")
+        floor.reparentTo(self.render)
+        floor.setScale(self.arena_width, self.arena_height, 1)
+        floor.setPos(0, 0, 0)
+        # PBR materials look best with a texture. We'll just set a color.
         floor.setColor(0.3, 0.3, 0.3, 1)
 
         self._create_walls()
@@ -422,6 +423,8 @@ class Battle3DViewer(ShowBase):
             proj_model.setScale(0.15)
             color = (0.2, 1, 1, 1) if proj.get("team") == 0 else (1, 0.5, 1, 1)
             proj_model.setColor(color)
+            # Make projectiles glow with PBR emission
+            proj_model.set_shader_input("emission", (*color[:3], 1.0))
             self.projectile_nodepaths.append(proj_model)
 
     def _update_ui(self, state: Dict):
