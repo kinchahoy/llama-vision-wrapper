@@ -344,9 +344,43 @@ class Battle3DViewer(ShowBase):
 
         interp_state["bots"] = interp_bots
 
-        # Projectiles are not interpolated due to lack of stable IDs.
-        # They will snap to the current frame's state.
-        interp_state["projectiles"] = state1.get("projectiles", [])
+        # Interpolate projectiles by matching them between frames based on proximity.
+        projectiles1 = state1.get("projectiles", [])
+        # Create a mutable list of candidates for matching from the next state.
+        projectiles2_candidates = list(state2.get("projectiles", []))
+        interp_projectiles = []
+
+        # Max distance a projectile can travel between frames.
+        # Assumes a max speed of ~30 m/s and a 10Hz log rate (0.1s).
+        MAX_MATCH_DISTANCE = 3.0
+
+        for proj1 in projectiles1:
+            best_match_candidate = None
+            min_dist = float("inf")
+
+            # Find the closest projectile in the next frame of the same team.
+            for i, proj2 in enumerate(projectiles2_candidates):
+                if proj1.get("team") == proj2.get("team"):
+                    dist = math.sqrt(
+                        (proj1["x"] - proj2["x"]) ** 2 + (proj1["y"] - proj2["y"]) ** 2
+                    )
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_match_candidate = (i, proj2)
+
+            # If a plausible match is found, interpolate it.
+            if best_match_candidate and min_dist < MAX_MATCH_DISTANCE:
+                match_idx, proj2 = best_match_candidate
+
+                interp_proj = proj1.copy()
+                interp_proj["x"] = proj1["x"] + (proj2["x"] - proj1["x"]) * interp
+                interp_proj["y"] = proj1["y"] + (proj2["y"] - proj1["y"]) * interp
+                interp_projectiles.append(interp_proj)
+
+                # Remove the matched projectile so it can't be used again.
+                del projectiles2_candidates[match_idx]
+
+        interp_state["projectiles"] = interp_projectiles
 
         return interp_state
 
