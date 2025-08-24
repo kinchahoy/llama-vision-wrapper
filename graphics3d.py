@@ -1,35 +1,40 @@
 """
-Ursina 3D Battle Viewer
-Interactive 3D visualization of battle simulations with glorious 3D rendering.
+Panda3D Battle Viewer
+Interactive 3D visualization of battle simulations using the Panda3D engine.
 """
 
 import math
 import json
+import sys
 from typing import Dict, List, Tuple, Optional
 
-# Attempt to fix rendering issues on some platforms by specifying GL backend and version
-try:
-    from panda3d.core import loadPrcFileData
-    loadPrcFileData('', 'gl-backend pandagl')
-    loadPrcFileData('', 'gl-version 3 2')
-except ImportError:
-    print("Warning: Could not import from panda3d.core to set GL version.")
+from direct.showbase.ShowBase import ShowBase
+from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText
+from panda3d.core import (
+    AmbientLight,
+    DirectionalLight,
+    NodePath,
+    TextNode,
+    LPoint3f,
+    LVecBase3f,
+    LineSegs,
+    CardMaker,
+    CollisionTraverser,
+    CollisionHandlerQueue,
+    CollisionRay,
+    CollisionNode,
+    GeomNode,
+    BitMask32,
+)
 
-from ursina import *
-from ursina import Vec2, Vec3
 
-# Import visibility system to use same logic as bot programs
-try:
-    from python_llm import PythonLLMController
-except ImportError:
-    PythonLLMController = None
-
-
-class Battle3DViewer:
-    """Interactive 3D viewer for battle simulations using Ursina engine."""
+class Battle3DViewer(ShowBase):
+    """Interactive 3D viewer for battle simulations using Panda3D."""
 
     def __init__(self, battle_data: Dict):
-        """Initialize 3D viewer with battle data."""
+        """Initialize the Panda3D viewer."""
+        ShowBase.__init__(self)
+
         self.battle_data = battle_data
         self.timeline = battle_data["timeline"]
         self.metadata = battle_data["metadata"]
@@ -38,605 +43,347 @@ class Battle3DViewer:
         self.current_frame = 0
         self.playing = False
         self.playback_speed = 1.0
-        self.target_fps = 60
 
-        # Arena scaling
+        # Arena dimensions
         arena_size = self.metadata.get("arena_size", [20, 20])
         self.arena_width, self.arena_height = arena_size
 
-        # UI state (matching graphics.py)
+        # UI state
         self.show_fov = False
-        self.show_trails = False
         self.selected_bot = None
-        self.dragging_scrubber = False
-        self.camera_mode = "overview"  # Keep for compatibility but always use bird's eye
 
-        # Initialize visibility system (same as bot programs use)
-        if PythonLLMController is not None:
-            self.llm_controller = PythonLLMController()
-        else:
-            self.llm_controller = None
+        # Panda3D object management
+        self.bot_nodepaths = {}
+        self.projectile_nodepaths = []
+        self.fov_nodepath = None
 
-        # Initialize Ursina with matching window size
-        self.app = Ursina()
-        window.title = "LLM Battle Sim 3D Viewer"
-        window.borderless = False
-        window.fullscreen = False
-        window.size = (1000, 700)  # Match graphics.py window size
-        window.exit_button.visible = False
-        window.fps_counter.enabled = True
-
-        # Initialize scene
+        # Setup
         self._setup_scene()
         self._setup_ui()
+        self._setup_controls()
+        self._setup_mouse_picking()
 
-        # Assign input/update handlers
-        self.app.input = self.input
-        self.app.update = self.update
-
-        # Bot and projectile entities
-        self.bot_entities = {}
-        self.projectile_entities = []
-        self.trail_entities = {}
-        self.wall_entities = []
-        self.fov_entities = []
-
-        # Create initial objects
-        self._create_arena()
-        self._create_walls()
+        # Start the main update loop
+        self.taskMgr.add(self._update_task, "update_battle_task")
 
     def _setup_scene(self):
-        """Set up the 3D scene with lighting and bird's eye camera."""
-        # Lighting optimized for top-down view
-        DirectionalLight().look_at(Vec3(0, -1, 0))  # Light from directly above
-        AmbientLight(color=color.rgba(150, 150, 150, 0.3))  # Brighter ambient light
+        """Set up the 3D scene, camera, and lighting."""
+        self.setBackgroundColor(0.1, 0.1, 0.1, 1)
+        self.disableMouse()  # Disable default camera controls
 
-        # Dark sky for better contrast
-        Sky(color=color.dark_gray)
-
-        # Use a viewport for the 3D scene (bottom-left 80%)
-        camera.viewport = (0, 0, 0.8, 0.8)
-
-        # Camera setup for an isometric-style view
+        # Set up an isometric-style camera
         arena_diagonal = math.sqrt(self.arena_width**2 + self.arena_height**2)
-        camera_height = arena_diagonal * 1.1
-        camera.position = Vec3(0, camera_height, -arena_diagonal * 0.4)
-        camera.rotation = (65, 0, 0) # Isometric-like angle
-        camera.fov = 40
+        self.cam.setPos(0, -arena_diagonal * 1.2, arena_diagonal * 1.1)
+        self.cam.lookAt(0, 0, 0)
 
-    def _setup_ui(self):
-        """Set up UI elements in the top and right panels, outside the 3D viewport."""
-        # --- Top Panel (Timeline) ---
-        top_panel_bg = Entity(parent=camera.ui, model='quad', color=color.dark_gray, scale=(1, 0.2), position=(0, 0.45))
-        
-        self.timeline_progress = Entity(
-            parent=top_panel_bg,
-            model="quad",
-            color=color.blue,
-            scale=(1, 0.2),
-            origin=(-0.5, 0),
-            position=(-0.5, 0, -1),
-        )
-        self.timeline_indicator = Entity(
-            parent=top_panel_bg,
-            model="quad",
-            color=color.white,
-            scale=(0.005, 1),
-            position=(0, 0, -2),
-        )
-        
-        # --- Right Panel (Info) ---
-        right_panel_bg = Entity(parent=camera.ui, model='quad', color=color.dark_gray, scale=(0.2, 1), position=(0.45, 0))
+        # Lighting
+        alight = AmbientLight("ambient")
+        alight.setColor((0.4, 0.4, 0.4, 1))
+        alnp = self.render.attachNewNode(alight)
+        self.render.setLight(alnp)
 
-        # Battle info text
-        self.info_text = Text(
-            "", 
-            parent=right_panel_bg,
-            origin=(-0.5, 0.5),
-            position=(-0.45, 0.45),
-            scale=3, # Scale relative to parent
-            color=color.white
-        )
+        dlight = DirectionalLight("directional")
+        dlight.setColor((0.8, 0.8, 0.7, 1))
+        dlnp = self.render.attachNewNode(dlight)
+        dlnp.setHpr(30, -60, 0)
+        self.render.setLight(dlnp)
 
-        # Selected bot info text
-        self.bot_info_text = Text(
-            "Click on a bot to select it",
-            parent=right_panel_bg,
-            origin=(-0.5, 0.5),
-            position=(-0.45, -0.05),
-            scale=2.5,
-            color=color.white,
-        )
-
-        # Control info text
-        self.control_text = Text(
-            "Controls:\nSPACE: Play/Pause\n←→: Step Frame\nR: Reset\n+/-: Speed\nF: Toggle FOV\nQ: Quit",
-            parent=right_panel_bg,
-            origin=(-0.5, -0.5),
-            position=(-0.45, -0.2),
-            scale=2.5,
-            color=color.light_gray,
-        )
-
-    def input(self, key):
-        """Handle keyboard and mouse input."""
-        if key == "space":
-            self.playing = not self.playing
-        elif key == "r":
-            self.current_frame = 0
-            self.playing = False
-        elif key == "left arrow":
-            self.current_frame = max(0, self.current_frame - 1)
-            self.playing = False
-        elif key == "right arrow":
-            self.current_frame = min(len(self.timeline) - 1, self.current_frame + 1)
-            self.playing = False
-        elif key == "plus" or key == "equal":
-            self.playback_speed = min(5.0, self.playback_speed * 1.5)
-        elif key == "minus":
-            self.playback_speed = max(0.1, self.playback_speed / 1.5)
-        elif key == "f":
-            self.show_fov = not self.show_fov
-            self._update_fov_display()
-        elif key == "q" or key == "escape":
-            application.quit()
-        elif key == "left mouse down":
-            self._handle_mouse_input()
-            self._handle_bot_selection()
-        elif key == "left mouse up":
-            self.dragging_scrubber = False
-
-    def _create_arena(self):
-        """Create the arena floor and boundaries."""
         # Arena floor
-        self.arena_floor = Entity(
-            model="cube",
-            texture="white_cube",
-            color=color.gray,
-            scale=(self.arena_width, 0.1, self.arena_height),
-            position=(0, 0, 0),
-        )
+        cm = CardMaker("floor")
+        cm.setFrame(-self.arena_width / 2, self.arena_width / 2, -self.arena_height / 2, self.arena_height / 2)
+        floor = self.render.attachNewNode(cm.generate())
+        floor.setP(-90) # Rotate to be flat on the XY plane
+        floor.setColor(0.3, 0.3, 0.3, 1)
 
-        # Arena boundaries
-        wall_height = 2
-        wall_thickness = 0.5
-
-        # North wall
-        Entity(
-            model="cube",
-            color=color.white,
-            scale=(self.arena_width + wall_thickness, wall_height, wall_thickness),
-            position=(0, wall_height / 2, self.arena_height / 2 + wall_thickness / 2),
-        )
-
-        # South wall
-        Entity(
-            model="cube",
-            color=color.white,
-            scale=(self.arena_width + wall_thickness, wall_height, wall_thickness),
-            position=(0, wall_height / 2, -self.arena_height / 2 - wall_thickness / 2),
-        )
-
-        # East wall
-        Entity(
-            model="cube",
-            color=color.white,
-            scale=(wall_thickness, wall_height, self.arena_height),
-            position=(self.arena_width / 2 + wall_thickness / 2, wall_height / 2, 0),
-        )
-
-        # West wall
-        Entity(
-            model="cube",
-            color=color.white,
-            scale=(wall_thickness, wall_height, self.arena_height),
-            position=(-self.arena_width / 2 - wall_thickness / 2, wall_height / 2, 0),
-        )
+        self._create_walls()
 
     def _create_walls(self):
         """Create interior walls matching the 2D version."""
-        wall_height = 1.5
-        wall_thickness = 0.3
-        wall_color = color.gray
-
         width = self.arena_width
         height = self.arena_height
+        wall_height = 1.5
 
-        # Interior walls (matching the ones in graphics.py)
-        walls = [
-            # Horizontal wall in upper area
-            {
-                "start": (width * 0.2, height * 0.7),
-                "end": (width * 0.2 + 10, height * 0.7),
-            },
-            # Vertical wall in middle-left
-            {
-                "start": (width * 0.4, height * 0.3),
-                "end": (width * 0.4, height * 0.3 + 8),
-            },
-            # Horizontal wall in lower-right
-            {
-                "start": (width * 0.6, height * 0.2),
-                "end": (width * 0.6 + 9, height * 0.2),
-            },
-            # Short vertical wall in upper-right
-            {
-                "start": (width * 0.8, height * 0.6),
-                "end": (width * 0.8, height * 0.6 + 6),
-            },
+        # Interior walls data
+        walls_data = [
+            ((width * 0.2, height * 0.7), (width * 0.2 + 10, height * 0.7)),
+            ((width * 0.4, height * 0.3), (width * 0.4, height * 0.3 + 8)),
+            ((width * 0.6, height * 0.2), (width * 0.6 + 9, height * 0.2)),
+            ((width * 0.8, height * 0.6), (width * 0.8, height * 0.6 + 6)),
         ]
 
-        # Convert 2D walls to 3D (Y becomes Z, flip Z coordinate system)
-        for wall in walls:
-            start_x, start_z = wall["start"]
-            end_x, end_z = wall["end"]
+        for start, end in walls_data:
+            # Convert to centered coordinates
+            start_x, start_y = start[0] - width / 2, start[1] - height / 2
+            end_x, end_y = end[0] - width / 2, end[1] - height / 2
 
-            # Convert from arena coordinates (Y up) to 3D coordinates (Z forward)
-            start_z = start_z - height / 2  # Center at origin
-            end_z = end_z - height / 2
-            start_x = start_x - width / 2
-            end_x = end_x - width / 2
+            # Use LineSegs to draw a thick line for the wall
+            lines = LineSegs()
+            lines.setThickness(5)
+            lines.setColor(0.6, 0.6, 0.6, 1)
+            lines.moveTo(start_x, start_y, 0)
+            lines.drawTo(end_x, end_y, 0)
+            
+            # Create a simple mesh for the wall's height
+            cm = CardMaker(f"wall_{start}_{end}")
+            wall_length = math.sqrt((end_x - start_x)**2 + (end_y - start_y)**2)
+            cm.setFrame(0, wall_length, 0, wall_height)
+            wall_node = self.render.attachNewNode(cm.generate())
+            wall_node.setColor(0.5, 0.5, 0.5, 1)
+            wall_node.setPos(start_x, start_y, 0)
+            wall_node.lookAt(end_x, end_y, 0)
 
-            # Calculate wall center and dimensions
-            center_x = (start_x + end_x) / 2
-            center_z = (start_z + end_z) / 2
-            wall_length = math.sqrt((end_x - start_x) ** 2 + (end_z - start_z) ** 2)
 
-            # Calculate rotation
-            wall_angle = math.atan2(end_z - start_z, end_x - start_x)
-
-            wall_entity = Entity(
-                model="cube",
-                color=wall_color,
-                scale=(wall_length, wall_height, wall_thickness),
-                position=(center_x, wall_height / 2, center_z),
-                rotation_y=math.degrees(wall_angle),
-            )
-
-            self.wall_entities.append(wall_entity)
-
-    def _handle_mouse_input(self):
-        """Handle mouse input for timeline scrubbing."""
-        # This is called on mouse down and on motion while dragging
-        # Check if clicking on timeline (top 20% of screen)
-        if mouse.position.y > 0.35: # Corresponds to the top panel area
-            self.dragging_scrubber = True
-            progress = mouse.position.x + 0.5
-            target_frame = int(progress * (len(self.timeline) - 1))
-            self.current_frame = max(0, min(len(self.timeline) - 1, target_frame))
-            self.playing = False
-
-    def _handle_bot_selection(self):
-        """Handle bot selection with mouse clicks inside the 3D viewport."""
-        # Check if click is inside the viewport area (not on UI panels)
-        if not self.dragging_scrubber and mouse.position.x < 0.35 and mouse.position.y < 0.35:
-            if mouse.hovered_entity and hasattr(mouse.hovered_entity, 'bot_id'):
-                # Find bot data from current state
-                current_state = self._get_current_state()
-                for bot in current_state.get("bots", []):
-                    if bot["id"] == mouse.hovered_entity.bot_id and bot["alive"]:
-                        self.selected_bot = bot
-                        self.playing = False
-                        self._update_fov_display()
-                        break
-
-    def _update_camera(self, current_state: Dict):
-        """Keep camera in bird's eye view position."""
-        # Always maintain bird's eye view
-        # Keep the camera at the calculated position that shows full arena
-        arena_diagonal = math.sqrt(self.arena_width**2 + self.arena_height**2)
-        camera_height = arena_diagonal * 1.2
-        camera.position = Vec3(0, camera_height, -arena_diagonal * 0.3)
-        camera.rotation_x = 70
-        camera.rotation_y = 0
-        camera.rotation_z = 0
-
-    def _update_fov_display(self):
-        """Update FOV visualization for selected bot."""
-        # Remove existing FOV entities
-        for entity in self.fov_entities:
-            if entity:
-                destroy(entity)
-        self.fov_entities.clear()
-
-        if self.show_fov and self.selected_bot:
-            self._create_fov_indicator(self.selected_bot)
-
-    def _create_fov_indicator(self, bot: Dict):
-        """Create 3D FOV indicator for a bot."""
-        bot_x = bot["x"] - self.arena_width / 2
-        bot_z = bot["y"] - self.arena_height / 2
-        bot_heading = math.radians(bot["theta"])
-
-        fov_range = 15.0
-        fov_angle = math.radians(120)
-
-        # Create FOV cone as a flat sector visible from above
-        vertices = [(0, 0, 0)]  # Center point at bot position
-
-        # Generate arc points
-        for i in range(25):  # 24 segments for smooth arc
-            angle = bot_heading - fov_angle / 2 + (fov_angle * i / 24)
-            x = math.sin(angle) * fov_range
-            z = math.cos(angle) * fov_range
-            vertices.append((x, 0.1, z))  # Slightly above ground
-
-        # Create FOV cone entity
-        team_color = color.blue if bot["team"] == 0 else color.red
-        fov_entity = Entity(
-            model=Mesh(vertices=vertices, mode="triangle_fan"),
-            color=color.rgba(*[int(c*255) for c in team_color[:3]], 80),
-            position=(bot_x, 1, bot_z),
+    def _setup_ui(self):
+        """Set up the DirectGUI elements for controls and info."""
+        # UI Panel
+        self.ui_frame = DirectFrame(
+            frameColor=(0.2, 0.2, 0.2, 0.8),
+            frameSize=(-1, 1, -1, 1),
+            pos=(0, 0, -0.85),
+            scale=0.15,
         )
-        self.fov_entities.append(fov_entity)
 
-    def _update_trail_display(self):
-        """Update projectile trail visualization."""
-        if not self.show_trails:
-            # Remove all trail entities
-            for trail_list in self.trail_entities.values():
-                for trail_entity in trail_list:
-                    destroy(trail_entity)
-            self.trail_entities.clear()
+        # Timeline Slider
+        self.timeline_slider = DirectSlider(
+            parent=self.ui_frame,
+            range=(0, len(self.timeline) - 1),
+            value=0,
+            pageSize=1,
+            command=self._on_slider_move,
+            pos=(0, 0, 0.5),
+            scale=(0.8, 1, 1),
+        )
 
-    def update(self):
-        """Main update loop, called every frame."""
-        if self.dragging_scrubber:
-            self._handle_mouse_input()
+        # Control Buttons
+        self.play_pause_btn = DirectButton(
+            parent=self.ui_frame,
+            text="Play",
+            command=self._toggle_play,
+            pos=(-0.8, 0, -0.3),
+            scale=0.4,
+        )
+        DirectButton(
+            parent=self.ui_frame, text="<", command=self._step_frame, extraArgs=[-1], pos=(-0.6, 0, -0.3), scale=0.4
+        )
+        DirectButton(
+            parent=self.ui_frame, text=">", command=self._step_frame, extraArgs=[1], pos=(-0.4, 0, -0.3), scale=0.4
+        )
+        DirectButton(
+            parent=self.ui_frame, text="Reset", command=self._reset_sim, pos=(-0.2, 0, -0.3), scale=0.4
+        )
 
-        if not self.timeline:
-            return
+        # Info Text
+        self.info_text = OnscreenText(
+            parent=self.a2dTopRight,
+            text="",
+            pos=(-0.05, -0.1),
+            scale=0.05,
+            align=TextNode.ARight,
+        )
+        self.bot_info_text = OnscreenText(
+            parent=self.a2dTopLeft,
+            text="Click on a bot to select it",
+            pos=(0.05, -0.1),
+            scale=0.05,
+            align=TextNode.ALeft,
+        )
 
-        # Update playback
+    def _setup_controls(self):
+        """Set up keyboard controls."""
+        self.accept("space", self._toggle_play)
+        self.accept("arrow_left", self._step_frame, [-1])
+        self.accept("arrow_right", self._step_frame, [1])
+        self.accept("r", self._reset_sim)
+        self.accept("f", self._toggle_fov)
+        self.accept("escape", sys.exit)
+        self.accept("q", sys.exit)
+        self.accept("mouse1", self._handle_mouse_click)
+
+    def _setup_mouse_picking(self):
+        """Set up the collision system for mouse picking."""
+        self.picker = CollisionTraverser()
+        self.pq = CollisionHandlerQueue()
+        self.pickerNode = CollisionNode("mouseRay")
+        self.pickerNP = self.cam.attachNewNode(self.pickerNode)
+        self.pickerNode.setFromCollideMask(GeomNode.getDefaultCollideMask())
+        self.pickerRay = CollisionRay()
+        self.pickerNode.addSolid(self.pickerRay)
+        self.picker.addCollider(self.pickerNP, self.pq)
+
+    def _handle_mouse_click(self):
+        """Handle mouse clicks for bot selection."""
+        if self.mouseWatcherNode.hasMouse():
+            mpos = self.mouseWatcherNode.getMouse()
+            self.pickerRay.setFromLens(self.camNode, mpos.getX(), mpos.getY())
+            self.picker.traverse(self.render)
+            if self.pq.getNumEntries() > 0:
+                self.pq.sortEntries()
+                picked_obj = self.pq.getEntry(0).getIntoNodePath()
+                if picked_obj.hasNetTag("bot_id"):
+                    bot_id = int(picked_obj.getNetTag("bot_id"))
+                    current_state = self._get_current_state()
+                    for bot in current_state.get("bots", []):
+                        if bot["id"] == bot_id:
+                            self.selected_bot = bot
+                            self.playing = False
+                            self._update_fov_display()
+                            break
+
+    def _update_task(self, task):
+        """Main update loop."""
         if self.playing:
-            frames_per_second = 10  # 10Hz logging rate
-            frame_advance = frames_per_second * self.playback_speed * time.dt
+            dt = globalClock.getDt()
+            frame_advance = 10 * self.playback_speed * dt
             self.current_frame += frame_advance
-
-            if self.current_frame >= len(self.timeline):
+            if self.current_frame >= len(self.timeline) - 1:
                 self.current_frame = len(self.timeline) - 1
-                self.playing = False
+                self._toggle_play()
 
-        # Get current state
+        # Ensure slider is updated if frame changes
+        self.timeline_slider.setValue(self.current_frame)
+
         current_state = self._get_current_state()
-
-        # Update 3D objects
         self._update_bots(current_state)
         self._update_projectiles(current_state)
-        self._update_camera(current_state)
         self._update_ui(current_state)
-
-    def run(self):
-        """Main viewer loop."""
-        self.app.run()
+        return task.cont
 
     def _get_current_state(self) -> Dict:
-        """Get current frame state."""
-        if not self.timeline:
-            return {}
-
+        """Get the state for the current frame."""
         frame_idx = int(self.current_frame)
         frame_idx = max(0, min(len(self.timeline) - 1, frame_idx))
         return self.timeline[frame_idx]
 
     def _update_bots(self, state: Dict):
-        """Update bot 3D entities."""
-        current_bots = state.get("bots", [])
+        """Update bot models in the scene."""
+        current_bot_ids = {bot["id"] for bot in state.get("bots", []) if bot["alive"]}
+        
+        # Remove dead bots
+        for bot_id in list(self.bot_nodepaths.keys()):
+            if bot_id not in current_bot_ids:
+                self.bot_nodepaths[bot_id].removeNode()
+                del self.bot_nodepaths[bot_id]
 
-        # Remove entities for dead bots
-        for bot_id in list(self.bot_entities.keys()):
-            bot_alive = any(
-                bot["id"] == bot_id and bot["alive"] for bot in current_bots
-            )
-            if not bot_alive:
-                destroy(self.bot_entities[bot_id])
-                del self.bot_entities[bot_id]
-
-        # Update or create bot entities
-        for bot in current_bots:
+        # Update or create bots
+        for bot in state.get("bots", []):
             if not bot["alive"]:
                 continue
-
+            
             bot_id = bot["id"]
+            pos = LPoint3f(bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.5)
+            
+            if bot_id not in self.bot_nodepaths:
+                bot_model = self.loader.loadModel("models/misc/sphere")
+                bot_model.reparentTo(self.render)
+                bot_model.setTag("bot_id", str(bot_id))
+                self.bot_nodepaths[bot_id] = bot_model
+                
+                # Heading indicator
+                heading_indicator = self.loader.loadModel("models/misc/arrow")
+                heading_indicator.reparentTo(bot_model)
+                heading_indicator.setPos(0, -0.7, 0)
+                heading_indicator.setScale(0.5)
 
-            # Convert coordinates (center)
-            x = bot["x"] - self.arena_width / 2
-            z = bot["y"] - self.arena_height / 2
-            y = 1.0  # Height above ground
-
-            if bot_id not in self.bot_entities:
-                # Create new bot entity
-                bot_color = color.blue if bot["team"] == 0 else color.red
-                bot_entity = Entity(
-                    model="sphere", color=bot_color, scale=0.8, position=(x, y, z)
-                )
-                bot_entity.bot_id = bot_id
-                self.bot_entities[bot_id] = bot_entity
-
-                # Add heading indicator (small cylinder)
-                heading_indicator = Entity(
-                    model="cube",
-                    color=color.white,
-                    scale=(0.1, 0.1, 1),
-                    parent=bot_entity,
-                    position=(0, 0.3, 0),
-                )
-            else:
-                # Update existing bot
-                bot_entity = self.bot_entities[bot_id]
-                bot_entity.position = (x, y, z)
-
-            # Update rotation based on heading
-            bot_entity.rotation_y = -bot[
-                "theta"
-            ]  # Negative because of coordinate system
-
-            # Update health indicator (scale based on HP)
-            health_ratio = max(0.3, bot["hp"] / 100)  # Minimum 30% size
-            bot_entity.scale = 0.8 * health_ratio
-
-            # Update color based on health
-            if bot["hp"] > 60:
-                base_color = color.blue if bot["team"] == 0 else color.red
-            elif bot["hp"] > 30:
-                base_color = color.yellow
-            else:
-                base_color = color.orange
-
-            bot_entity.color = base_color
+            np = self.bot_nodepaths[bot_id]
+            np.setPos(pos)
+            np.setH(bot["theta"] - 90) # Adjust for model orientation
+            np.setScale(0.4)
+            
+            # Color by team
+            color = (0, 0.5, 1, 1) if bot["team"] == 0 else (1, 0.3, 0.3, 1)
+            np.setColor(color)
 
     def _update_projectiles(self, state: Dict):
-        """Update projectile 3D entities."""
-        # Remove all existing projectile entities
-        for proj_entity in self.projectile_entities:
-            destroy(proj_entity)
-        self.projectile_entities.clear()
+        """Update projectile models in the scene."""
+        for p in self.projectile_nodepaths:
+            p.removeNode()
+        self.projectile_nodepaths.clear()
 
-        # Create new projectile entities
         for proj in state.get("projectiles", []):
-            # Convert coordinates
-            x = proj["x"] - self.arena_width / 2
-            z = proj["y"] - self.arena_height / 2
-            y = 1.5  # Height above ground
-
-            # Projectile color based on team
-            proj_color = color.cyan if proj.get("team") == 0 else color.magenta
-
-            proj_entity = Entity(
-                model="sphere", 
-                color=proj_color, 
-                scale=Vec3(0.3, 0.3, 0.3), 
-                position=Vec3(x, y, z)
-            )
-            self.projectile_entities.append(proj_entity)
-
-            # Add trail effect if enabled
-            if self.show_trails:
-                trail_entity = Entity(
-                    model="cube",
-                    color=color.rgba(int(proj_color.r*255), int(proj_color.g*255), int(proj_color.b*255), 100),
-                    scale=Vec3(0.1, 0.1, 2),
-                    position=Vec3(x, y, z),
-                )
-                self.projectile_entities.append(trail_entity)
+            pos = LPoint3f(proj["x"] - self.arena_width / 2, proj["y"] - self.arena_height / 2, 0.5)
+            proj_model = self.loader.loadModel("models/misc/sphere")
+            proj_model.reparentTo(self.render)
+            proj_model.setPos(pos)
+            proj_model.setScale(0.15)
+            color = (0.2, 1, 1, 1) if proj.get("team") == 0 else (1, 0.5, 1, 1)
+            proj_model.setColor(color)
+            self.projectile_nodepaths.append(proj_model)
 
     def _update_ui(self, state: Dict):
-        """Update UI elements in the top and right panels."""
-        # Update timeline progress
-        if len(self.timeline) > 1:
-            progress = self.current_frame / (len(self.timeline) - 1)
-            self.timeline_progress.scale_x = progress
-            self.timeline_indicator.x = progress - 0.5
+        """Update the text in the UI panels."""
+        # General info
+        time_info = f"Time: {state.get('time', 0):.1f}s"
+        frame_info = f"Frame: {int(self.current_frame)}/{len(self.timeline) - 1}"
+        speed_info = f"Speed: {self.playback_speed:.1f}x"
+        self.info_text.setText(f"{time_info}\n{frame_info}\n{speed_info}")
 
-        # Update general info text
-        info_lines = [
-            f"<bold>Time:</bold> {state.get('time', 0):.1f}s",
-            f"<bold>Frame:</bold> {int(self.current_frame)}/{len(self.timeline) - 1}",
-            f"<bold>Speed:</bold> {self.playback_speed:.1f}x",
-        ]
-        if self.metadata:
-            winner = self.metadata.get("winner", "unknown").replace("_", " ").title()
-            reason = self.metadata.get("reason", "unknown")
-            info_lines.append(f"\n<bold>Winner:</bold> {winner}\n({reason})")
-        self.info_text.text = "\n".join(info_lines)
-
-        # Update selected bot info
+        # Selected bot info
         if self.selected_bot:
-            self._update_selected_bot_info(state)
+            bot = self.selected_bot
+            info = [
+                f"Bot {bot['id']} (Team {bot['team']})",
+                f"HP: {bot['hp']}",
+                f"Pos: ({bot['x']:.1f}, {bot['y']:.1f})",
+                f"Signal: {bot.get('signal', 'none')}",
+            ]
+            self.bot_info_text.setText("\n".join(info))
         else:
-            self.bot_info_text.text = "Click on a bot to select it"
+            self.bot_info_text.setText("Click on a bot to select it")
 
-    def _update_selected_bot_info(self, state: Dict):
-        """Update comprehensive bot info panel."""
-        bot = self.selected_bot
-        bot_id = bot["id"]
+    def _on_slider_move(self):
+        """Handle timeline slider movement."""
+        self.current_frame = self.timeline_slider.getValue()
+        self.playing = False
+        self.play_pause_btn["text"] = "Play"
 
-        # Build comprehensive bot info text
-        info_lines = [f"<bold>Bot {bot_id} (Team {bot['team']})</bold>"]
+    def _toggle_play(self):
+        """Toggle play/pause state."""
+        self.playing = not self.playing
+        self.play_pause_btn["text"] = "Pause" if self.playing else "Play"
 
-        # Function info
-        bot_functions = self.battle_data.get("summary", {}).get("bot_functions", {})
-        bot_func_data = bot_functions.get(str(bot_id), {})
-        personality = bot_func_data.get("personality", "unknown")
-        info_lines.append(f"Personality: {personality}")
+    def _step_frame(self, direction: int):
+        """Step forward or backward one frame."""
+        self.playing = False
+        self.play_pause_btn["text"] = "Play"
+        self.current_frame += direction
+        self.current_frame = max(0, min(len(self.timeline) - 1, self.current_frame))
 
-        # State
-        info_lines.append("\n<bold>State</bold>")
-        info_lines.append(f"HP: {bot['hp']} | Signal: \"{bot.get('signal', 'none')}\"")
-        info_lines.append(f"Pos: ({bot['x']:.1f}, {bot['y']:.1f}) | H: {bot['theta']:.0f}°")
+    def _reset_sim(self):
+        """Reset simulation to the first frame."""
+        self.playing = False
+        self.play_pause_btn["text"] = "Play"
+        self.current_frame = 0
 
-        # Tactical
-        visible_bots = self._get_visible_bots(bot, state)
-        enemies = [b for b,_,_ in visible_bots if b['team'] != bot['team']]
-        info_lines.append(f"\n<bold>Tactical ({len(enemies)} enemies visible)</bold>")
-        for i, (vis_bot, dist, bear) in enumerate(visible_bots[:4]):
-            utype = "F" if vis_bot["team"] == bot["team"] else "E"
-            info_lines.append(f" {utype}{vis_bot['id']}: {dist:.1f}m @ {bear:.0f}°")
+    def _toggle_fov(self):
+        """Toggle the FOV display for the selected bot."""
+        self.show_fov = not self.show_fov
+        self._update_fov_display()
 
-        # Performance
-        summary = self.battle_data.get("summary", {})
-        bot_scores = summary.get("bot_scores", [])
-        bot_score = next((s for s in bot_scores if s["bot_id"] == bot_id), None)
+    def _update_fov_display(self):
+        """Create or destroy the FOV indicator."""
+        if self.fov_nodepath:
+            self.fov_nodepath.removeNode()
+            self.fov_nodepath = None
 
-        if bot_score:
-            info_lines.append("\n<bold>Performance</bold>")
-            info_lines.append(f"Score: {bot_score['total_score']:.1f} | K/D: {bot_score['kills']}/{bot_score['deaths']}")
-            info_lines.append(f"Accuracy: {bot_score['hit_rate']:.0%}")
+        if self.show_fov and self.selected_bot:
+            bot = self.selected_bot
+            fov_range = 15.0
+            fov_angle_deg = 120
 
-        self.bot_info_text.text = "\n".join(info_lines)
-
-    def _get_visible_bots(self, selected_bot, current_state):
-        """Get visible bots using simplified distance-based visibility."""
-        visible_bots = []
-        max_range = 15.0
-        
-        for bot in current_state.get("bots", []):
-            if bot["id"] == selected_bot["id"] or not bot["alive"]:
-                continue
-                
-            dx = bot["x"] - selected_bot["x"]
-            dy = bot["y"] - selected_bot["y"]
-            distance = math.sqrt(dx * dx + dy * dy)
-            
-            if distance <= max_range:
-                bearing = math.degrees(math.atan2(dx, dy))
-                if bearing < 0:
-                    bearing += 360
-                visible_bots.append((bot, distance, bearing))
-        
-        # Sort by distance (closest first)
-        visible_bots.sort(key=lambda x: x[1])
-        return visible_bots
-
-    def _get_nearby_projectiles(self, selected_bot, current_state):
-        """Get nearby projectiles using simplified distance-based detection."""
-        nearby_projectiles = []
-        max_range = 15.0
-        
-        for proj in current_state.get("projectiles", []):
-            dx = proj["x"] - selected_bot["x"]
-            dy = proj["y"] - selected_bot["y"]
-            distance = math.sqrt(dx * dx + dy * dy)
-            
-            if distance <= max_range:
-                bearing = math.degrees(math.atan2(dx, dy))
-                if bearing < 0:
-                    bearing += 360
-                nearby_projectiles.append((proj, distance, bearing))
-        
-        # Sort by distance (closest first)
-        nearby_projectiles.sort(key=lambda x: x[1])
-        return nearby_projectiles
-
-    def _get_visible_walls(self, selected_bot, current_state):
-        """Get visible walls (simplified - just return empty for now)."""
-        # For simplicity, return empty list - walls are static anyway
-        return []
+            cm = CardMaker("fov")
+            cm.setFrame(0, 1, -0.5, 0.5)
+            self.fov_nodepath = self.render.attachNewNode(cm.generate())
+            self.fov_nodepath.setPos(bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.1)
+            self.fov_nodepath.setScale(fov_range)
+            self.fov_nodepath.setH(bot["theta"] - 90)
+            self.fov_nodepath.setTransparency(1)
+            color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
+            self.fov_nodepath.setColor(color)
 
 
 def run_3d_viewer(battle_file: str):
     """Launch 3D viewer with a saved battle JSON file."""
-    print(f"\n=== 3D Battle Viewer: {battle_file} ===")
+    print(f"\n=== Panda3D Battle Viewer: {battle_file} ===")
 
     try:
         with open(battle_file, "r") as f:
@@ -648,26 +395,22 @@ def run_3d_viewer(battle_file: str):
         print(f"Error: Invalid JSON in '{battle_file}'")
         return
 
-    print("Launching 3D viewer...")
+    print("Launching Panda3D viewer...")
     print("Controls:")
     print("  SPACE = Play/Pause")
     print("  ←/→ = Step frame by frame")
-    print("  +/- = Adjust speed")
     print("  R = Reset to start")
     print("  F = Toggle FOV display")
     print("  Q/ESC = Quit")
     print("  Click bots to select them")
 
-    # Launch 3D viewer
-    viewer = Battle3DViewer(battle_data)
-    viewer.run()
+    app = Battle3DViewer(battle_data)
+    app.run()
 
 
 if __name__ == "__main__":
-    import sys
-
     if len(sys.argv) < 2:
-        print("Usage: python 3dgraphics.py <battle_log.json>")
+        print("Usage: python graphics3d.py <battle_log.json>")
         sys.exit(1)
 
     battle_file = sys.argv[1]
