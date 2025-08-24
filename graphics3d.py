@@ -107,6 +107,12 @@ class Battle3DViewer(ShowBase):
         dlnp.setHpr(60, -60, 0)
         self.render.setLight(dlnp)
 
+        # Add a dim ambient light to fill in shadows
+        alight = AmbientLight("ambient")
+        alight.setColor((0.2, 0.2, 0.2, 1))
+        alnp = self.render.attachNewNode(alight)
+        self.render.setLight(alnp)
+
         # Tune shadow camera for crisp shadows
         lens = dlight.getLens()
         # Fit the film size to the arena. A tighter film size gives crisper shadows.
@@ -402,6 +408,7 @@ class Battle3DViewer(ShowBase):
 
             if bot_id not in self.bot_nodepaths:
                 bot_model = self.loader.loadModel("smiley")
+                bot_model.set_shader_auto()
                 bot_model.reparentTo(self.render)
                 bot_model.setTag("bot_id", str(bot_id))
                 self.bot_nodepaths[bot_id] = bot_model
@@ -434,6 +441,7 @@ class Battle3DViewer(ShowBase):
                 proj["x"] - self.arena_width / 2, proj["y"] - self.arena_height / 2, 0.5
             )
             proj_model = self.loader.loadModel("smiley")
+            proj_model.set_shader_auto()
             proj_model.reparentTo(self.render)
             proj_model.setPos(pos)
             proj_model.setScale(0.15)
