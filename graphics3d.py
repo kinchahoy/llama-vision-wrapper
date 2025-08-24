@@ -191,6 +191,14 @@ class Battle3DViewer:
 
     def _create_arena(self):
         """Create the arena floor and boundaries."""
+        # Add a test bot for debugging rendering
+        Entity(
+            model="sphere",
+            color=color.lime, # Bright green to be very visible
+            scale=1,
+            position=(-self.arena_width / 2 + 1, 1, self.arena_height / 2 - 1)
+        )
+
         # Arena floor
         self.arena_floor = Entity(
             model="cube",
