@@ -595,10 +595,16 @@ class Battle3DViewer(ShowBase):
         self.pickerNode.addSolid(self.pickerRay)
         self.picker.addCollider(self.pickerNP, self.pq)
 
+    def _is_camera_modifier_down(self):
+        """Check if Control or Alt/Option key is held down."""
+        return self.mouseWatcherNode.is_button_down(
+            "control"
+        ) or self.mouseWatcherNode.is_button_down("alt")
+
     def _handle_mouse_click(self):
         """Handle mouse clicks for bot selection."""
-        if self.mouseWatcherNode.is_button_down("control"):
-            return  # Using control for camera controls
+        if self._is_camera_modifier_down():
+            return  # Using modifier for camera controls
 
         if self.mouseWatcherNode.hasMouse():
             mpos = self.mouseWatcherNode.getMouse()
@@ -619,7 +625,7 @@ class Battle3DViewer(ShowBase):
 
     def _handle_zoom(self, direction: float):
         """Handle mouse wheel zooming when control is held."""
-        if self.mouseWatcherNode.is_button_down("control"):
+        if self._is_camera_modifier_down():
             zoom_speed = 5.0
             # Move camera along its local Y axis (forward/backward)
             current_dist = (self.cam.getPos() - self.camera_target).length()
@@ -629,7 +635,7 @@ class Battle3DViewer(ShowBase):
 
     def _update_camera_controls(self):
         """Handle camera panning with mouse when control is held."""
-        if not self.mouseWatcherNode.is_button_down("control"):
+        if not self._is_camera_modifier_down():
             self.last_mouse_pos = None
             return
 
@@ -1408,8 +1414,8 @@ def run_3d_viewer(battle_file: str):
     print("  F = Toggle FOV display")
     print("  Q/ESC = Quit")
     print("  Click bots to select them")
-    print("  Hold CTRL + Mouse Drag to pan view")
-    print("  Hold CTRL + Mouse Wheel or +/- keys to zoom")
+    print("  Hold CTRL or ALT/Option + Mouse Drag to pan view")
+    print("  Hold CTRL or ALT/Option + Mouse Wheel or +/- keys to zoom")
 
     app = Battle3DViewer(battle_data)
     app.run()
