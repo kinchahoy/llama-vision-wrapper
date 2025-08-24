@@ -115,25 +115,11 @@ def _init_hq_rendering(app):
         app.render.setLight(sun_np)
         pbr.shadow_bias = 0.003
 
-        # Post FX via CommonFilters (MSAA/AO/Bloom) - best-effort on macOS; skip if not supported
+        # Enable MSAA only; no CommonFilters post-processing
         app.render.setAntialias(AntialiasAttrib.MMultisample)
-        try:
-            from direct.filter.CommonFilters import CommonFilters
-            app._filters = CommonFilters(app.win, app.cam)
-            # If CommonFilters couldn't initialize, disable post FX gracefully
-            if hasattr(app._filters, "ok") and not app._filters.ok:
-                print("[HQ] CommonFilters reported not ok; disabling post effects.")
-                app._filters = None
-            else:
-                app._filters.setMSAA(8)
-                app._filters.setAmbientOcclusion(numsamples=16, radius=0.30, amount=1.0)
-                app._filters.setBloom(intensity=0.25, size="medium", mintrigger=0.6)
-        except Exception as fe:
-            app._filters = None
-            print("[HQ] CommonFilters unavailable on this platform; continuing without post FX. Reason:", fe)
 
         app._pbr_pipeline = "simplepbr"
-        print("[HQ] simplepbr + CommonFilters active.")
+        print("[HQ] simplepbr active.")
 
 
 class Battle3DViewer(ShowBase):
