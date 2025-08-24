@@ -166,7 +166,7 @@ class Battle3DViewer(ShowBase):
 
         # Panda3D object management
         self.bot_nodepaths = {}
-        self.projectile_nodepaths = []
+        self.projectile_nodepaths = {}
         self.fov_nodepath = None
         self.bot_healthbars = {}
         self.bot_id_labels = {}
@@ -255,10 +255,6 @@ class Battle3DViewer(ShowBase):
             "basecolor", (0.2, 0.2, 0.25, 1.0)
         )  # Set base color via shader input
         floor.setColor(0.2, 0.2, 0.25, 1)  # Dark metallic floor
-
-        # Try to force material properties
-        floor.setRenderModeWireframe()
-        floor.clearRenderMode()  # Reset to solid
 
         self._create_walls()
 
@@ -1024,8 +1020,8 @@ class Battle3DViewer(ShowBase):
             np.setPos(pos)
             # Convert from battle sim angle to Panda3D heading
             # Battle sim: 0° = facing +X axis (East), Panda3D: 0° heading = facing +Y axis (North)
-            # So: panda3d_heading = 90 - battle_sim_angle
-            np.setH(90 - bot["theta"])
+            # So: panda3d_heading = bot_theta - 90
+            np.setH(bot["theta"] - 90)
             np.setScale(0.4)
 
             # Color by team
@@ -1088,26 +1084,36 @@ class Battle3DViewer(ShowBase):
 
     def _update_projectiles(self, state: Dict):
         """Update projectile models in the scene."""
-        for p in self.projectile_nodepaths:
-            p.removeNode()
-        self.projectile_nodepaths.clear()
+        projectiles_in_state = {
+            p["id"]: p for p in state.get("projectiles", []) if "id" in p
+        }
+        current_proj_ids = set(projectiles_in_state.keys())
 
-        for proj in state.get("projectiles", []):
+        # Remove nodepaths for projectiles that are no longer present
+        for proj_id in list(self.projectile_nodepaths.keys()):
+            if proj_id not in current_proj_ids:
+                self.projectile_nodepaths[proj_id].removeNode()
+                del self.projectile_nodepaths[proj_id]
+
+        # Update existing projectiles and create new ones
+        for proj_id, proj in projectiles_in_state.items():
             pos = LPoint3f(proj["x"], proj["y"], 0.5)
-            # Create a procedural sphere for the projectile
-            proj_model = self._create_procedural_sphere(
-                radius=0.5, num_segments=8, num_rings=4
-            )
 
-            # No setShaderAuto for simplepbr - let simplepbr handle shading
-            proj_model.reparentTo(self.render)
-            proj_model.setPos(pos)
-            proj_model.setScale(0.15)
+            if proj_id not in self.projectile_nodepaths:
+                # Create a new model for this projectile
+                proj_model = self._create_procedural_sphere(
+                    radius=0.5, num_segments=8, num_rings=4
+                )
+                proj_model.reparentTo(self.render)
+                self.projectile_nodepaths[proj_id] = proj_model
+
+            np = self.projectile_nodepaths[proj_id]
+            np.setPos(pos)
+            np.setScale(0.15)
             color = (0.2, 1, 1, 1) if proj.get("team") == 0 else (1, 0.5, 1, 1)
-            proj_model.setColor(color)
+            np.setColor(color)
             # Make projectiles glow with PBR emission
-            proj_model.set_shader_input("emission", (*color[:3], 1.0))
-            self.projectile_nodepaths.append(proj_model)
+            np.set_shader_input("emission", (*color[:3], 1.0))
 
     def _update_ui(self, state: Dict):
         """Update the text in the UI panels."""
@@ -1282,8 +1288,7 @@ class Battle3DViewer(ShowBase):
             self.fov_nodepath.setPos(bot["x"], bot["y"], 0.1)
             # Convert from battle sim angle to Panda3D heading
             # Battle sim: 0° = facing +X axis (East), Panda3D: 0° heading = facing +Y axis (North)
-            # FOV geom is built facing +Y but appears inverted; add 180° to align
-            self.fov_nodepath.setH((90 - bot["theta"]) + 180)
+            self.fov_nodepath.setH(bot["theta"] - 90)
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_nodepath.setColor(color)
         elif self.fov_nodepath:
