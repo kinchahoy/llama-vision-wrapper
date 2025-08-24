@@ -51,6 +51,19 @@ def _init_hq_rendering(app):
     SHADOW_MAP = 4096
 
     try:
+        # Only enable complexpbr when the driver supports GLSL 4.3+ and we're not on macOS.
+        import sys
+        supports_430 = False
+        gsg = getattr(app.win, "getGsg", lambda: None)()
+        if gsg and hasattr(gsg, "getDriverShaderVersionMajor"):
+            major = gsg.getDriverShaderVersionMajor()
+            minor = gsg.getDriverShaderVersionMinor()
+            supports_430 = (major, minor) >= (4, 3)
+        if sys.platform == "darwin" or not supports_430:
+            raise RuntimeError(
+                "complexpbr requires GLSL 4.3+; falling back to simplepbr on this driver"
+            )
+
         import complexpbr
         # Apply PBR+IBL and enable screen-space effects (AA/SSAO/HSV; SSR tweakable)
         complexpbr.apply_shader(app.render, default_lighting=True)
@@ -83,7 +96,7 @@ def _init_hq_rendering(app):
         app._pbr_pipeline = "complexpbr"
         print("[HQ] complexpbr active.")
     except Exception as e:
-        print("[HQ] complexpbr failed on this driver; falling back. Error:", e)
+        print("[HQ] complexpbr unavailable or failed; using simplepbr. Reason:", e)
         import simplepbr
         pbr = simplepbr.init(
             use_330=True,
