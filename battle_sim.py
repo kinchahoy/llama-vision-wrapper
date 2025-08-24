@@ -616,7 +616,7 @@ class Arena:
             # Interior walls
             (-width * 0.25, height * 0.2, 10, thickness, 0),
             (0, -height * 0.15, thickness, 8, 0),
-            (width * 0.25, -height * 0.3, 9, thickness, 20),
+            (-width * 0.25, -height * 0.3, 9, thickness, 20),
             (width * 0.3, height * 0.1, thickness, 6, 0),
         ]
 
