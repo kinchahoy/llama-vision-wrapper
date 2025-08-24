@@ -510,7 +510,7 @@ class Battle3DViewer(ShowBase):
         DirectButton(
             parent=self.ui_frame,
             text="<",
-            command=self._step_frame,
+            command=self._change_playback_speed,
             extraArgs=[-1],
             pos=(-0.45 * 4, 0, -0.3),
             scale=0.3,
@@ -518,7 +518,7 @@ class Battle3DViewer(ShowBase):
         DirectButton(
             parent=self.ui_frame,
             text=">",
-            command=self._step_frame,
+            command=self._change_playback_speed,
             extraArgs=[1],
             pos=(0.0 * 4, 0, -0.3),
             scale=0.3,
@@ -1074,9 +1074,14 @@ class Battle3DViewer(ShowBase):
             # Color by team
             color = (0, 0.5, 1, 1) if bot["team"] == 0 else (1, 0.3, 0.3, 1)
             np.setColor(color)
-            # Make cone a darker shade of the bot's color
-            darker_color = (color[0] * 0.5, color[1] * 0.5, color[2] * 0.5, 1)
-            heading_cone.setColor(darker_color)
+            # Make cone a lighter shade of the bot's color
+            lighter_color = (
+                min(1.0, color[0] + 0.4),
+                min(1.0, color[1] + 0.4),
+                min(1.0, color[2] + 0.4),
+                1,
+            )
+            heading_cone.setColor(lighter_color)
 
             # Update health bar fill and color
             if bot_id in self.bot_healthbars:
@@ -1143,8 +1148,17 @@ class Battle3DViewer(ShowBase):
             np.setScale(0.15)
             color = (0.2, 1, 1, 1) if proj.get("team") == 0 else (1, 0.5, 1, 1)
             np.setColor(color)
-            # Make projectiles glow with PBR emission
-            np.set_shader_input("emission", (*color[:3], 1.0))
+            # Make projectiles glow with PBR emission and pulsate
+            pulse = (
+                math.sin(self.taskMgr.globalClock.getFrameTime() * 8) + 1
+            ) / 2  # Varies 0..1
+            brightness = 1.5 + pulse * 1.0  # Varies 1.5..2.5 for bright projectiles
+            emission_color = (
+                color[0] * brightness,
+                color[1] * brightness,
+                color[2] * brightness,
+            )
+            np.set_shader_input("emission", (*emission_color, 1.0))
 
     def _update_ui(self, state: Dict):
         """Update the text in the UI panels."""
@@ -1288,6 +1302,13 @@ class Battle3DViewer(ShowBase):
         self.play_pause_btn["text"] = "Play"
         self.current_frame += direction
         self.current_frame = max(0, min(len(self.timeline) - 1, self.current_frame))
+
+    def _change_playback_speed(self, direction: float):
+        """Increase or decrease playback speed."""
+        if direction > 0:
+            self.playback_speed = min(16.0, self.playback_speed * 1.5)
+        else:
+            self.playback_speed = max(0.1, self.playback_speed / 1.5)
 
     def _reset_sim(self):
         """Reset simulation to the first frame."""
