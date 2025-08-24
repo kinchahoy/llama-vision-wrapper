@@ -552,7 +552,7 @@ class Battle3DViewer:
                 )
                 heading_cone = gfx.Mesh(heading_geom, heading_mat)
                 heading_cone.local.position = (0, 0.25, 0)  # In front of body
-                heading_cone.local.rotation = la.quaternion_from_axis_angle(
+                heading_cone.local.rotation = la.quat_from_axis_angle(
                     (1, 0, 0), math.pi / 2
                 )
                 bot_body.add(heading_cone)
@@ -593,7 +593,7 @@ class Battle3DViewer:
             bot_body = bot_obj_group["body"]
             bot_body.local.position = pos
             # Sim angle: 0 is +X. pygfx Z-up: rotation is around Z axis.
-            bot_body.local.rotation = la.quaternion_from_axis_angle(
+            bot_body.local.rotation = la.quat_from_axis_angle(
                 (0, 0, 1), math.radians(bot["theta"])
             )
 
@@ -810,7 +810,7 @@ class Battle3DViewer:
 
             bot = self.selected_bot
             self.fov_object.local.position = (bot["x"], bot["y"], 0.1)
-            self.fov_object.local.rotation = la.quaternion_from_axis_angle(
+            self.fov_object.local.rotation = la.quat_from_axis_angle(
                 (0, 0, 1), math.radians(bot["theta"])
             )
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
