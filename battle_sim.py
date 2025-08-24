@@ -842,6 +842,8 @@ class Arena:
                         "vy": round(body.velocity[1], 2),
                         "team": proj_data.team,
                         "age": self.tick - proj_data.birth_tick,
+                        "shooter_id": proj_data.shooter_id,
+                        "ttl": round(proj_data.ttl, 2),
                     }
                 )
 
