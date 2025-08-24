@@ -165,31 +165,31 @@ class Battle3DViewer(ShowBase):
             parent=self.ui_frame,
             text="Play",
             command=self._toggle_play,
-            pos=(-0.8, 0, -0.3),
-            scale=0.4,
+            pos=(-0.75, 0, -0.3),
+            scale=0.3,
         )
         DirectButton(
             parent=self.ui_frame,
             text="<",
             command=self._step_frame,
             extraArgs=[-1],
-            pos=(-0.6, 0, -0.3),
-            scale=0.4,
+            pos=(-0.25, 0, -0.3),
+            scale=0.3,
         )
         DirectButton(
             parent=self.ui_frame,
             text=">",
             command=self._step_frame,
             extraArgs=[1],
-            pos=(-0.4, 0, -0.3),
-            scale=0.4,
+            pos=(0.25, 0, -0.3),
+            scale=0.3,
         )
         DirectButton(
             parent=self.ui_frame,
             text="Reset",
             command=self._reset_sim,
-            pos=(-0.2, 0, -0.3),
-            scale=0.4,
+            pos=(0.75, 0, -0.3),
+            scale=0.3,
         )
 
         # Info Text
@@ -260,7 +260,7 @@ class Battle3DViewer(ShowBase):
                 self._toggle_play()
 
         # Ensure slider is updated if frame changes
-        self.timeline_slider.setValue(self.current_frame)
+        self.timeline_slider["value"] = self.current_frame
 
         current_state = self._get_current_state()
         self._update_bots(current_state)
