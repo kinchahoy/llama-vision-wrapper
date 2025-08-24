@@ -237,7 +237,11 @@ class Battle3DViewer:
         x = event["x"] if isinstance(event, dict) else getattr(event, "x", 0)
         y = event["y"] if isinstance(event, dict) else getattr(event, "y", 0)
         pick_info = self.renderer.get_pick_info((x, y), self.camera, self.scene)
-        if pick_info and "world_object" in pick_info and hasattr(pick_info["world_object"], "bot_id"):
+        if (
+            pick_info
+            and "world_object" in pick_info
+            and hasattr(pick_info["world_object"], "bot_id")
+        ):
             bot_id = pick_info["world_object"].bot_id
             current_state = self._get_current_state()
             for bot in current_state.get("bots", []):
@@ -592,7 +596,7 @@ class Battle3DViewer:
                 # Bot ID label
                 id_text = gfx.Text(
                     text=str(bot_id),
-                    font_size=10,
+                    font_size=1,
                     screen_space=False,
                     material=gfx.TextMaterial(color="#FFF"),
                 )
