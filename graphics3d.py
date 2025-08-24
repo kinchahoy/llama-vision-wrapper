@@ -140,18 +140,17 @@ class Battle3DViewer(ShowBase):
         height = self.arena_height
         wall_height = 1.5
 
-        # Wall data (perimeter and interior)
+        # Wall data (perimeter and interior), matching battle_sim.py
         walls_data = [
             # Perimeter walls
-            ((0, 0), (width, 0)),  # Bottom
+            ((0, 0), (0, height)),  # Left
             ((width, 0), (width, height)),  # Right
-            ((width, height), (0, height)),  # Top
-            ((0, height), (0, 0)),  # Left
+            ((0, 0), (width, 0)),  # Bottom
+            ((0, height), (width, height)),  # Top
             # Interior walls
             ((width * 0.2, height * 0.7), (width * 0.2 + 10, height * 0.7)),
             ((width * 0.4, height * 0.3), (width * 0.4, height * 0.3 + 8)),
-            # Corrected wall that was extending beyond arena bounds with default 20x20 size
-            ((width * 0.5, height * 0.2), (width * 0.5 + 9, height * 0.2)),
+            ((width * 0.6, height * 0.2), (width * 0.6 + 9, height * 0.2)),
             ((width * 0.8, height * 0.6), (width * 0.8, height * 0.6 + 6)),
         ]
 
@@ -434,7 +433,7 @@ class Battle3DViewer(ShowBase):
 
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
-            np.setH(90 - bot["theta"])  # Convert math angle to Panda3D heading
+            np.setH(bot["theta"])  # Bot angle is already a compass heading
             np.setScale(0.4)
 
             # Color by team
@@ -532,7 +531,7 @@ class Battle3DViewer(ShowBase):
             self.fov_nodepath.setPos(
                 bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.1
             )
-            self.fov_nodepath.setH(90 - bot["theta"])
+            self.fov_nodepath.setH(bot["theta"])
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_nodepath.setColor(color)
         elif self.fov_nodepath:
