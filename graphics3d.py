@@ -4,14 +4,15 @@ Interactive 3D visualization of battle simulations using the Panda3D engine.
 """
 
 from panda3d.core import loadPrcFileData
+
 # Force OpenGL core profile (mac wants this), and linear workflow.
-loadPrcFileData('', 'load-display pandagl')
-loadPrcFileData('', 'gl-version 3 2')          # macOS core profile unlocks modern GLSL
-loadPrcFileData('', 'framebuffer-srgb true')   # linear/sRGB correct output
-loadPrcFileData('', 'textures-power-2 none')
-loadPrcFileData('', 'sync-video true')
-loadPrcFileData('', 'gl-debug true')
-loadPrcFileData('', 'notify-level-glgsg info')
+loadPrcFileData("", "load-display pandagl")
+loadPrcFileData("", "gl-version 4 1")  # macOS core profile unlocks modern GLSL
+loadPrcFileData("", "framebuffer-srgb true")  # linear/sRGB correct output
+loadPrcFileData("", "textures-power-2 none")
+loadPrcFileData("", "sync-video true")
+loadPrcFileData("", "gl-debug true")
+loadPrcFileData("", "notify-level-glgsg info")
 
 import math
 import json
@@ -54,20 +55,23 @@ def _init_hq_rendering(app):
     SHADOW_MAP_SIZE = 4096
     BLOOM_INTENSITY = 0.25
     SSAO_SAMPLES = 24
-    SPECULAR_BOOST = 1.0    # can push to ~2–10 for shinier specular in complexpbr
+    SPECULAR_BOOST = 1.0  # can push to ~2–10 for shinier specular in complexpbr
 
     try:
         # --- Primary: complexpbr path ---
         import complexpbr
+
         # Apply IBL/PBR scene shader
-        complexpbr.apply_shader(app.render)        # sets up dynamic env reflections, PBR, etc.
-        complexpbr.screenspace_init()              # enables SSAO, SSR, AA, HSV; also provides bloom controls
+        complexpbr.apply_shader(
+            app.render
+        )  # sets up dynamic env reflections, PBR, etc.
+        complexpbr.screenspace_init()  # enables SSAO, SSR, AA, HSV; also provides bloom controls
 
         # Optional: tune screenspace effects on the screen quad
         screen_quad = app.screen_quad
-        screen_quad.set_shader_input('ssao_samples', SSAO_SAMPLES)
-        screen_quad.set_shader_input('bloom_intensity', BLOOM_INTENSITY)
-        app.render.set_shader_input('specular_factor', SPECULAR_BOOST)
+        screen_quad.set_shader_input("ssao_samples", SSAO_SAMPLES)
+        screen_quad.set_shader_input("bloom_intensity", BLOOM_INTENSITY)
+        app.render.set_shader_input("specular_factor", SPECULAR_BOOST)
 
         # Shadows: define a sun with high-res shadow map
         sun = DirectionalLight("sun")
@@ -89,9 +93,14 @@ def _init_hq_rendering(app):
         # --- Fallback: simplepbr + CommonFilters ---
         # Keep simplepbr focused on PBR/IBL/shadows:
         import simplepbr
-        pbr = simplepbr.init(use_330=True, enable_shadows=True,
-                             use_normal_maps=True, use_occlusion_maps=True,
-                             use_emission_maps=True)
+
+        pbr = simplepbr.init(
+            use_330=True,
+            enable_shadows=True,
+            use_normal_maps=True,
+            use_occlusion_maps=True,
+            use_emission_maps=True,
+        )
 
         # Light & shadows
         sun = DirectionalLight("sun")
@@ -105,6 +114,7 @@ def _init_hq_rendering(app):
 
         # PostFX via CommonFilters (Bloom/SSAO/MSAA)
         from direct.filter.CommonFilters import CommonFilters
+
         filters = CommonFilters(app.win, app.cam)
         app.render.setAntialias(AntialiasAttrib.MMultisample)
         filters.setMSAA(8)  # prefer MSAA here, not via window config
