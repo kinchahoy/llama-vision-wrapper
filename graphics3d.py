@@ -756,9 +756,9 @@ class Battle3DViewer(ShowBase):
 
         for i in range(num_segments + 1):
             angle = start_angle + i * angle_step
-            # Create fan along +X axis (0 degrees)
-            x = fov_range * math.cos(angle)
-            y = fov_range * math.sin(angle)
+            # Create fan along +Y axis (0 degrees)
+            x = fov_range * math.sin(angle)
+            y = fov_range * math.cos(angle)
             vertex.addData3f(x, y, 0)
 
         # Create triangles for the fan
