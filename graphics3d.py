@@ -159,7 +159,8 @@ class Battle3DViewer(ShowBase):
             # Position and orient the wall
             # Z-pos is half height to sit on the floor
             wall_node.setPos(center_x, center_y, wall_height / 2)
-            wall_node.setHpr(angle_deg, 0, 0)
+            # Convert from math angle (0=East) to Panda3D heading (0=North)
+            wall_node.setHpr(90 - angle_deg, 0, 0)
 
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
@@ -418,7 +419,8 @@ class Battle3DViewer(ShowBase):
 
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
-            np.setH(bot["theta"])  # Bot angle is already a compass heading
+            # Convert from math angle (0=East) to Panda3D heading (0=North)
+            np.setH(90 - bot["theta"])
             np.setScale(0.4)
 
             # Color by team
@@ -512,7 +514,8 @@ class Battle3DViewer(ShowBase):
             # Update position, orientation, and color
             bot = self.selected_bot
             self.fov_nodepath.setPos(bot["x"], bot["y"], 0.1)
-            self.fov_nodepath.setH(bot["theta"])
+            # Convert from math angle (0=East) to Panda3D heading (0=North)
+            self.fov_nodepath.setH(90 - bot["theta"])
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_nodepath.setColor(color)
         elif self.fov_nodepath:
@@ -539,9 +542,9 @@ class Battle3DViewer(ShowBase):
 
         for i in range(num_segments + 1):
             angle = start_angle + i * angle_step
-            # Y is forward, X is right
-            x = fov_range * math.sin(angle)
-            y = fov_range * math.cos(angle)
+            # Create fan along +X axis (0 degrees)
+            x = fov_range * math.cos(angle)
+            y = fov_range * math.sin(angle)
             vertex.addData3f(x, y, 0)
 
         # Create triangles for the fan

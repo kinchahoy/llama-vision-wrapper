@@ -340,10 +340,10 @@ class BattleViewer:
             heading_rad = math.radians(
                 bot["theta"]
             )  # bot['theta'] is in degrees from battle_sim
-            end_x = screen_x + math.sin(heading_rad) * bot_radius * 1.5
+            end_x = screen_x + math.cos(heading_rad) * bot_radius * 1.5
             end_y = (
-                screen_y - math.cos(heading_rad) * bot_radius * 1.5
-            )  # negative cos for flipped Y
+                screen_y - math.sin(heading_rad) * bot_radius * 1.5
+            )  # negative sin for flipped Y
             pygame.draw.line(
                 self.screen,
                 self.WHITE,
@@ -388,17 +388,17 @@ class BattleViewer:
         current_angle = start_angle
 
         while current_angle <= end_angle:
-            arc_x = x + math.sin(current_angle) * fov_range
+            arc_x = x + math.cos(current_angle) * fov_range
             arc_y = (
-                y - math.cos(current_angle) * fov_range
+                y - math.sin(current_angle) * fov_range
             )  # Flip Y for pygame coordinates
             arc_points.append((arc_x, arc_y))
             current_angle += angle_step
 
         # Ensure we include the end angle
         if current_angle - angle_step < end_angle:
-            arc_x = x + math.sin(end_angle) * fov_range
-            arc_y = y - math.cos(end_angle) * fov_range
+            arc_x = x + math.cos(end_angle) * fov_range
+            arc_y = y - math.sin(end_angle) * fov_range
             arc_points.append((arc_x, arc_y))
 
         # Draw semi-transparent FOV arc sector
@@ -959,7 +959,7 @@ class BattleViewer:
             distance = math.sqrt(dx * dx + dy * dy)
 
             if distance <= max_range:
-                bearing = math.degrees(math.atan2(dx, dy))
+                bearing = math.degrees(math.atan2(dy, dx))
                 if bearing < 0:
                     bearing += 360
 
@@ -990,7 +990,7 @@ class BattleViewer:
             distance = math.sqrt(dx * dx + dy * dy)
 
             if distance <= max_range:
-                bearing = math.degrees(math.atan2(dx, dy))
+                bearing = math.degrees(math.atan2(dy, dx))
                 if bearing < 0:
                     bearing += 360
 

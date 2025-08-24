@@ -45,7 +45,7 @@ class PythonLLMController:
     ) -> bool:
         """Check if target is within bot's field of view."""
         # Calculate angle from bot to target
-        target_angle = math.atan2(target_x - bot_x, target_y - bot_y)
+        target_angle = math.atan2(target_y - bot_y, target_x - bot_x)
 
         # Calculate relative angle from bot's heading
         angle_diff = target_angle - bot_heading
@@ -147,8 +147,8 @@ class PythonLLMController:
 
         for i in range(ray_count):
             ray_angle = start_angle + i * angle_step
-            ray_end_x = bot_x + math.sin(ray_angle) * max_range
-            ray_end_y = bot_y + math.cos(ray_angle) * max_range
+            ray_end_x = bot_x + math.cos(ray_angle) * max_range
+            ray_end_y = bot_y + math.sin(ray_angle) * max_range
 
             # Find closest intersection along this ray
             closest_distance = float("inf")
@@ -182,7 +182,7 @@ class PythonLLMController:
                             if intersects:
                                 bearing = (
                                     math.degrees(
-                                        math.atan2(point[0] - bot_x, point[1] - bot_y)
+                                        math.atan2(point[1] - bot_y, point[0] - bot_x)
                                     )
                                     % 360
                                 )
@@ -213,7 +213,7 @@ class PythonLLMController:
 
                 if intersects:
                     bearing = (
-                        math.degrees(math.atan2(other_x - bot_x, other_y - bot_y)) % 360
+                        math.degrees(math.atan2(other_y - bot_y, other_x - bot_x)) % 360
                     )
 
                     bot_type = "friend" if other_data.team == bot_data.team else "enemy"
@@ -252,7 +252,7 @@ class PythonLLMController:
 
                 if intersects:
                     bearing = (
-                        math.degrees(math.atan2(proj_x - bot_x, proj_y - bot_y)) % 360
+                        math.degrees(math.atan2(proj_y - bot_y, proj_x - bot_x)) % 360
                     )
                     ray_objects.append(
                         {
@@ -367,7 +367,7 @@ def bot_function(visible_objects, move_history, allowed_signals):
     # Priority 2: Engage enemies at safe distance
     enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
     if not enemies:
-        return {'action': 'rotate', 'angle': 90.0, 'signal': 'watching_flank'}
+        return {'action': 'rotate', 'angle': 0.0, 'signal': 'watching_flank'}
     
     # Find closest enemy
     enemies.sort(key=lambda e: e.get('distance', float('inf')))
@@ -421,7 +421,7 @@ def bot_function(visible_objects, move_history, allowed_signals):
                 return {'action': 'move', 'target_x': nearest_wall['x'], 'target_y': nearest_wall['y'], 'signal': 'positioning'}
         
         signal = 'regrouping' if backup_needed else 'ready'
-        return {'action': 'rotate', 'angle': 135.0, 'signal': signal}
+        return {'action': 'rotate', 'angle': 315.0, 'signal': signal}
     
     # Find best target (closest enemy)
     enemies.sort(key=lambda e: e.get('distance', float('inf')))
@@ -470,7 +470,7 @@ def bot_function(visible_objects, move_history, allowed_signals):
         # Check if friends need support
         friends_in_combat = any(friend.get('signal') in ['need_backup', 'retreating'] for friend in friends)
         signal = 'watching_flank' if friends_in_combat else 'holding_position'
-        return {'action': 'rotate', 'angle': 180.0, 'signal': signal}
+        return {'action': 'rotate', 'angle': 270.0, 'signal': signal}
     
     # Sort enemies by distance (prefer longer range targets)
     enemies.sort(key=lambda e: e.get('distance', float('inf')))

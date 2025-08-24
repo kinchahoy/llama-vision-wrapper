@@ -145,17 +145,17 @@ class Arena:
                 x = self.rng.uniform(team0_bounds[0], team0_bounds[1])
                 y = self.rng.uniform(team0_bounds[2], team0_bounds[3])
                 dx, dy = -x, -y  # Vector to center (0,0)
-                center_angle = math.atan2(dx, dy)
+                center_angle = math.atan2(dy, dx)
                 angle_variation = self.rng.uniform(-math.pi / 6, math.pi / 6)
                 theta = center_angle + angle_variation
             else:
                 # Fixed positions (simplified for centered arena)
                 if team0_quadrant == "left":
                     x, y = -W / 2 + margin + i * 2, 0
-                    theta = math.pi / 2  # Face East
+                    theta = 0  # Face East
                 else:  # Default to right
                     x, y = W / 2 - margin - i * 2, 0
-                    theta = -math.pi / 2  # Face West
+                    theta = math.pi  # Face West
             self._create_bot(i, x, y, theta, team=0)
 
         # Spawn team 1
@@ -165,16 +165,16 @@ class Arena:
                 x = self.rng.uniform(team1_bounds[0], team1_bounds[1])
                 y = self.rng.uniform(team1_bounds[2], team1_bounds[3])
                 dx, dy = -x, -y
-                center_angle = math.atan2(dx, dy)
+                center_angle = math.atan2(dy, dx)
                 angle_variation = self.rng.uniform(-math.pi / 6, math.pi / 6)
                 theta = center_angle + angle_variation
             else:
                 if team1_quadrant == "right":
                     x, y = W / 2 - margin - i * 2, 0
-                    theta = -math.pi / 2  # Face West
+                    theta = math.pi  # Face West
                 else:  # Default to left
                     x, y = -W / 2 + margin + i * 2, 0
-                    theta = math.pi / 2  # Face East
+                    theta = 0  # Face East
             self._create_bot(bot_id, x, y, theta, team=1)
 
     def step_physics(self):
@@ -262,14 +262,14 @@ class Arena:
             # Convert direction and speed to target velocity using current heading
             current_angle = body.angle
             if direction == "FWD":
-                dx, dy = math.sin(current_angle), math.cos(current_angle)
+                dx, dy = math.cos(current_angle), math.sin(current_angle)
             elif direction == "BACK":
-                dx, dy = -math.sin(current_angle), -math.cos(current_angle)
+                dx, dy = -math.cos(current_angle), -math.sin(current_angle)
                 speed = min(speed, self.V_REV_MAX / self.V_MAX)  # limit reverse speed
             elif direction == "LEFT":
-                dx, dy = -math.cos(current_angle), math.sin(current_angle)
+                dx, dy = -math.sin(current_angle), math.cos(current_angle)
             elif direction == "RIGHT":
-                dx, dy = math.cos(current_angle), -math.sin(current_angle)
+                dx, dy = math.sin(current_angle), -math.cos(current_angle)
             else:
                 dx, dy = 0, 0
 
@@ -342,16 +342,16 @@ class Arena:
                 # Convert direction and speed to target velocity using current heading
                 current_angle = body.angle
                 if direction == "FWD":
-                    dx, dy = math.sin(current_angle), math.cos(current_angle)
+                    dx, dy = math.cos(current_angle), math.sin(current_angle)
                 elif direction == "BACK":
-                    dx, dy = -math.sin(current_angle), -math.cos(current_angle)
+                    dx, dy = -math.cos(current_angle), -math.sin(current_angle)
                     speed = min(
                         speed, self.V_REV_MAX / self.V_MAX
                     )  # limit reverse speed
                 elif direction == "LEFT":
-                    dx, dy = -math.cos(current_angle), math.sin(current_angle)
+                    dx, dy = -math.sin(current_angle), math.cos(current_angle)
                 elif direction == "RIGHT":
-                    dx, dy = math.cos(current_angle), -math.sin(current_angle)
+                    dx, dy = math.sin(current_angle), -math.cos(current_angle)
                 else:
                     dx, dy = 0, 0
 
@@ -390,7 +390,7 @@ class Arena:
                 current_x, current_y = body.position
                 dx = target_x - current_x
                 dy = target_y - current_y
-                target_heading = math.atan2(dx, dy)
+                target_heading = math.atan2(dy, dx)
 
                 # Set heading and enable firing
                 self.target_theta[bot_id] = target_heading
@@ -421,8 +421,8 @@ class Arena:
         # Create projectile at bot position with bot heading
         px, py = body.position
         heading = body.angle
-        pvx = math.sin(heading) * self.PROJ_SPEED
-        pvy = math.cos(heading) * self.PROJ_SPEED
+        pvx = math.cos(heading) * self.PROJ_SPEED
+        pvy = math.sin(heading) * self.PROJ_SPEED
 
         proj_id = self.next_projectile_id
         self.next_projectile_id += 1
@@ -525,7 +525,7 @@ class Arena:
             other_body = self.bot_bodies[other_id]
             dx = other_body.position[0] - bot_body.position[0]
             dy = other_body.position[1] - bot_body.position[1]
-            angle_to_teammate = math.atan2(dx, dy)
+            angle_to_teammate = math.atan2(dy, dx)
 
             angle_diff = abs(self._normalize_angle(angle_to_teammate - fire_angle))
             if angle_diff <= cone_half_angle:
@@ -598,7 +598,7 @@ class Arena:
         aim_dy = intercept_y - by
 
         # Convert to our coordinate system (0° = North)
-        return math.atan2(aim_dx, aim_dy)
+        return math.atan2(aim_dy, aim_dx)
 
     def _create_arena_walls(self):
         """Create static walls around the arena and interior obstacles."""
