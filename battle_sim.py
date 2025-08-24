@@ -662,7 +662,7 @@ class Arena:
 
     def _create_arena_walls(self):
         """Create static walls around the arena and interior obstacles."""
-        wall_thickness = 0.1
+        wall_thickness = 0.05
         width, height = self.ARENA_SIZE
 
         # Create boundary wall segments

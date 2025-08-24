@@ -138,7 +138,7 @@ class Battle3DViewer(ShowBase):
         """Create interior and perimeter walls with PBR materials."""
         width = self.arena_width
         height = self.arena_height
-        wall_height = 1.5
+        wall_height = 2.0
 
         # Wall data (perimeter and interior), matching battle_sim.py
         walls_data = [
