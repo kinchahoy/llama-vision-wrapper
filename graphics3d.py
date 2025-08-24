@@ -9,7 +9,6 @@ import sys
 from typing import Dict, List, Tuple, Optional
 
 import simplepbr
-from direct.filter.CommonFilters import CommonFilters
 from direct.showbase.ShowBase import ShowBase
 from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText
 from panda3d.core import (
@@ -46,6 +45,15 @@ class Battle3DViewer(ShowBase):
             enable_shadows=True,
             use_normal_maps=True,
             use_occlusion_maps=True,
+            # Add post-processing effects previously handled by CommonFilters
+            enable_ssao=True,
+            ssao_samples=16,
+            ssao_radius=0.3,
+            ssao_amount=2.0,
+            enable_bloom=True,
+            bloom_intensity=0.7,
+            bloom_mintrigger=0.6,
+            bloom_size="medium",
         )
 
         self.battle_data = battle_data
@@ -78,9 +86,6 @@ class Battle3DViewer(ShowBase):
 
         # Start the main update loop
         self.taskMgr.add(self._update_task, "update_battle_task")
-
-        # Defer filter setup to the next frame to ensure the display region is ready.
-        self.taskMgr.doMethodLater(0, self._setup_filters, "setup_filters_task")
 
     def _setup_scene(self):
         """Set up the 3D scene, camera, and lighting."""
@@ -242,14 +247,6 @@ class Battle3DViewer(ShowBase):
         self.pickerRay = CollisionRay()
         self.pickerNode.addSolid(self.pickerRay)
         self.picker.addCollider(self.pickerNP, self.pq)
-
-    def _setup_filters(self, task):
-        """Set up post-processing filters. Called one frame after init."""
-        # Post-processing effects for realism
-        # self.filters = CommonFilters(self.win, self.cam)
-        # self.filters.setAmbientOcclusion(num_samples=16, radius=0.3, amount=2.0)
-        # self.filters.setBloom(size="medium", mintrigger=0.6, intensity=0.7)
-        return task.done
 
     def _handle_mouse_click(self):
         """Handle mouse clicks for bot selection."""
