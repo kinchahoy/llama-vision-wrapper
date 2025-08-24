@@ -709,9 +709,13 @@ class Battle3DViewer:
         # Remove old projectiles
         for proj_id in list(self.projectile_objects.keys()):
             if proj_id not in current_proj_ids:
-                obj = self.projectile_objects[proj_id]
-                if obj in self.scene.children:
-                    self.scene.remove(obj)
+                entry = self.projectile_objects[proj_id]
+                mesh = entry.get("mesh", entry)
+                light = entry.get("light")
+                if mesh in self.scene.children:
+                    self.scene.remove(mesh)
+                if light in self.scene.children:
+                    self.scene.remove(light)
                 del self.projectile_objects[proj_id]
 
         # Update/create projectiles
@@ -724,11 +728,19 @@ class Battle3DViewer:
                     color=color, emissive="#FFFFFF", emissive_intensity=1
                 )
                 proj_model = gfx.Mesh(proj_geom, proj_mat)
-                self.projectile_objects[proj_id] = proj_model
+                # Create a bright yellow point light to travel with the projectile
+                try:
+                    light_color = (1.0, 0.95, 0.3)
+                    proj_light = gfx.PointLight(color=light_color, intensity=4.0)
+                except Exception:
+                    proj_light = gfx.PointLight(intensity=4.0)
+                self.projectile_objects[proj_id] = {"mesh": proj_model, "light": proj_light}
                 self.scene.add(proj_model)
+                self.scene.add(proj_light)
 
-            np = self.projectile_objects[proj_id]
-            np.local.position = pos
+            entry = self.projectile_objects[proj_id]
+            entry["mesh"].local.position = pos
+            entry["light"].local.position = pos
 
     def _update_ui(self, state: Dict):
         """Update the text in the UI panels."""
