@@ -190,35 +190,44 @@ class Battle3DViewer:
         self.canvas.add_event_handler(self.handle_event, "key_down", "pointer_down")
 
     def handle_event(self, event):
-        """Handle keyboard and mouse events."""
-        if event.type == "key_down":
-            self._handle_keypress(event.key)
-        elif event.type == "pointer_down" and event.button == 1:  # Left click
-            self._handle_mouse_click(event)
+        """Handle keyboard and mouse events (wgpu events are dict-like)."""
+        etype = event["type"] if isinstance(event, dict) else getattr(event, "type", None)
+        if etype == "key_down":
+            key = event["key"] if isinstance(event, dict) else getattr(event, "key", "")
+            self._handle_keypress(key)
+        elif etype == "pointer_down":
+            button = event.get("button") if isinstance(event, dict) else getattr(event, "button", None)
+            if button == 1:  # Left click
+                self._handle_mouse_click(event)
 
     def _handle_keypress(self, key: str):
-        if key.lower() == "q" or key == "Escape":
+        if not isinstance(key, str):
+            return
+        k = key
+        if k.lower() == "q" or k == "Escape":
             sys.exit()
-        elif key == " ":
+        elif k in (" ", "Space", "Spacebar"):
             self._toggle_play()
-        elif key == "r":
+        elif k.lower() == "r":
             self._reset_sim()
-        elif key == "ArrowLeft":
+        elif k in ("ArrowLeft", "Left"):
             self._step_frame(-1)
-        elif key == "ArrowRight":
+        elif k in ("ArrowRight", "Right"):
             self._step_frame(1)
-        elif key == "c":
+        elif k.lower() == "c":
             self._reset_camera_view()
-        elif key == "f":
+        elif k.lower() == "f":
             self._toggle_fov()
-        elif key == "=" or key == "+":
+        elif k in ("=", "+"):
             self._change_playback_speed(1)
-        elif key == "-":
+        elif k in ("-", "Minus"):
             self._change_playback_speed(-1)
 
     def _handle_mouse_click(self, event):
-        pick_info = self.scene.get_pick_info((event.x, event.y))
-        if pick_info and hasattr(pick_info["world_object"], "bot_id"):
+        x = event["x"] if isinstance(event, dict) else getattr(event, "x", 0)
+        y = event["y"] if isinstance(event, dict) else getattr(event, "y", 0)
+        pick_info = self.renderer.get_pick_info((x, y), self.camera, self.scene)
+        if pick_info and "world_object" in pick_info and hasattr(pick_info["world_object"], "bot_id"):
             bot_id = pick_info["world_object"].bot_id
             current_state = self._get_current_state()
             for bot in current_state.get("bots", []):
