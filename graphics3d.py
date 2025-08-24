@@ -147,10 +147,14 @@ class Battle3DViewer(ShowBase):
             wall_node = self._create_wall_geometry(width, height, wall_height)
             wall_node.reparentTo(self.render)
 
-            # Position and orient the wall
+            # Position the wall - battle sim coordinates are already centered at (0,0)
             # Z-pos is half height to sit on the floor
             wall_node.setPos(center_x, center_y, wall_height / 2)
-            # Convert from math angle (0=East) to Panda3D heading (0=North)
+            
+            # Rotation conversion: 
+            # Battle sim: 0° = +X axis (East), angles increase counter-clockwise
+            # Panda3D: 0° heading = +Y axis (North), angles increase clockwise
+            # So: panda3d_heading = 90 - battle_sim_angle
             wall_node.setHpr(90 - angle_deg, 0, 0)
 
             # Apply PBR materials after positioning
@@ -486,7 +490,8 @@ class Battle3DViewer(ShowBase):
 
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
-            # Convert from math angle (0=East) to Panda3D heading (0=North)
+            # Convert from battle sim angle to Panda3D heading
+            # Battle sim: 0° = +X axis (East), Panda3D: 0° = +Y axis (North)
             np.setH(90 - bot["theta"])
             np.setScale(0.4)
 
@@ -588,7 +593,8 @@ class Battle3DViewer(ShowBase):
             # Update position, orientation, and color
             bot = self.selected_bot
             self.fov_nodepath.setPos(bot["x"], bot["y"], 0.1)
-            # Convert from math angle (0=East) to Panda3D heading (0=North)
+            # Convert from battle sim angle to Panda3D heading
+            # Battle sim: 0° = +X axis (East), Panda3D: 0° = +Y axis (North)
             self.fov_nodepath.setH(90 - bot["theta"])
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_nodepath.setColor(color)
