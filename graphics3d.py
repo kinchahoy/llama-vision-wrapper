@@ -252,7 +252,7 @@ class Battle3DViewer(ShowBase):
     def _update_task(self, task):
         """Main update loop."""
         if self.playing:
-            dt = globalClock.getDt()
+            dt = task.getDt()
             frame_advance = 10 * self.playback_speed * dt
             self.current_frame += frame_advance
             if self.current_frame >= len(self.timeline) - 1:
