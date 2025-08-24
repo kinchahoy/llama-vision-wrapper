@@ -172,7 +172,7 @@ class Battle3DViewer(ShowBase):
         self.fov_nodepath = None
         self.bot_healthbars = {}
         self.bot_id_labels = {}
-        self.bot_velocity_cones = {}
+        self.bot_heading_indicators = {}
 
         # Signal descriptions for UI
         self.signal_descriptions = {
@@ -998,9 +998,9 @@ class Battle3DViewer(ShowBase):
                 if bot_id in self.bot_id_labels:
                     self.bot_id_labels[bot_id].removeNode()
                     del self.bot_id_labels[bot_id]
-                if bot_id in self.bot_velocity_cones:
-                    self.bot_velocity_cones[bot_id].removeNode()
-                    del self.bot_velocity_cones[bot_id]
+                if bot_id in self.bot_heading_indicators:
+                    self.bot_heading_indicators[bot_id].removeNode()
+                    del self.bot_heading_indicators[bot_id]
 
         # Update or create bots
         for bot in state.get("bots", []):
@@ -1018,15 +1018,6 @@ class Battle3DViewer(ShowBase):
                 bot_model.reparentTo(self.render)
                 bot_model.setTag("bot_id", str(bot_id))
                 self.bot_nodepaths[bot_id] = bot_model
-
-                # Heading indicator (procedurally generated quad)
-                cm = CardMaker("heading_indicator")
-                # Creates a rectangle that is 0.1 wide and 0.5 long,
-                # starting just outside the bot's sphere model.
-                cm.setFrame(-0.05, 0.05, 0.45, 0.95)  # x1, x2, y1, y2
-                heading_indicator = NodePath(cm.generate())
-                heading_indicator.reparentTo(bot_model)
-                heading_indicator.setColor(1, 1, 1, 1)  # White indicator
 
                 # Health bar (background + fill)
                 bg_maker = CardMaker("hb_bg")
@@ -1059,13 +1050,12 @@ class Battle3DViewer(ShowBase):
                     pass
                 self.bot_id_labels[bot_id] = label_np
 
-                # Velocity indicator cone
-                vel_cone = self._create_procedural_cone(radius=1.0, height=1.0)
-                vel_cone.reparentTo(bot_model)
-                vel_cone.setScale(0.2, 0.4, 0.2) # Adjust size: radius=0.2, height=0.4
-                vel_cone.setPos(0, 1.0, 0) # Move cone in front of heading indicator
-                vel_cone.setColor(1, 1, 0, 0.8) # Yellow, slightly transparent
-                self.bot_velocity_cones[bot_id] = vel_cone
+                # Heading indicator cone
+                heading_cone = self._create_procedural_cone(radius=0.2, height=0.4)
+                heading_cone.reparentTo(bot_model)
+                heading_cone.setPos(0, 0.5, 0)  # Position cone at the front of the sphere
+                heading_cone.setColor(1, 1, 1, 1)  # White indicator
+                self.bot_heading_indicators[bot_id] = heading_cone
 
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
@@ -1114,24 +1104,6 @@ class Battle3DViewer(ShowBase):
             if bot_id in self.bot_id_labels:
                 self.bot_id_labels[bot_id].setColor(1, 1, 1, 1)
 
-            # Update velocity cone
-            if bot_id in self.bot_velocity_cones:
-                vel_cone = self.bot_velocity_cones[bot_id]
-                vx, vy = bot.get("vx", 0), bot.get("vy", 0)
-                speed = math.sqrt(vx**2 + vy**2)
-
-                if speed > 0.1:
-                    vel_cone.show()
-                    # Point cone in direction of velocity vector (vx, vy)
-                    # The cone model points along its local Y axis.
-                    # We want to align this Y axis with the velocity vector.
-                    # We can use lookAt, but need to be careful.
-                    # The cone is a child of the bot model, which is already rotated.
-                    # We need to set the rotation in the parent's frame.
-                    target_pos = np.getPos() + Vec3(vx, vy, 0)
-                    vel_cone.lookAt(target_pos)
-                else:
-                    vel_cone.hide()
 
     def _update_projectiles(self, state: Dict):
         """Update projectile models in the scene."""
