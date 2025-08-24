@@ -170,6 +170,7 @@ class Battle3DViewer(ShowBase):
         self.fov_nodepath = None
         self.bot_healthbars = {}
         self.bot_id_labels = {}
+        self.bot_velocity_cones = {}
 
         # Signal descriptions for UI
         self.signal_descriptions = {
@@ -859,6 +860,9 @@ class Battle3DViewer(ShowBase):
                 if bot_id in self.bot_id_labels:
                     self.bot_id_labels[bot_id].removeNode()
                     del self.bot_id_labels[bot_id]
+                if bot_id in self.bot_velocity_cones:
+                    self.bot_velocity_cones[bot_id].removeNode()
+                    del self.bot_velocity_cones[bot_id]
 
         # Update or create bots
         for bot in state.get("bots", []):
@@ -922,6 +926,21 @@ class Battle3DViewer(ShowBase):
                     pass
                 self.bot_id_labels[bot_id] = label_np
 
+                # Velocity indicator cone
+                vel_cone = self.loader.loadModel("misc/cone")
+                if not vel_cone:
+                    # Fallback to a simple line if cone model is not available
+                    ls = LineSegs()
+                    ls.moveTo(0, 0, 0)
+                    ls.drawTo(0, 1, 0)
+                    ls.setThickness(4)
+                    vel_cone = NodePath(ls.create())
+                vel_cone.reparentTo(bot_model)
+                vel_cone.setScale(0.2, 0.4, 0.2)
+                vel_cone.setPos(0, 0.6, 0)
+                vel_cone.setColor(1, 1, 0, 0.8) # Yellow, slightly transparent
+                self.bot_velocity_cones[bot_id] = vel_cone
+
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
             # Convert from battle sim angle to Panda3D heading
@@ -968,6 +987,25 @@ class Battle3DViewer(ShowBase):
             # Update ID label color for contrast
             if bot_id in self.bot_id_labels:
                 self.bot_id_labels[bot_id].setColor(1, 1, 1, 1)
+
+            # Update velocity cone
+            if bot_id in self.bot_velocity_cones:
+                vel_cone = self.bot_velocity_cones[bot_id]
+                vx, vy = bot.get("vx", 0), bot.get("vy", 0)
+                speed = math.sqrt(vx**2 + vy**2)
+
+                if speed > 0.1:
+                    vel_cone.show()
+                    # Point cone in direction of velocity vector (vx, vy)
+                    # The cone model points along its local Y axis.
+                    # We want to align this Y axis with the velocity vector.
+                    # We can use lookAt, but need to be careful.
+                    # The cone is a child of the bot model, which is already rotated.
+                    # We need to set the rotation in the parent's frame.
+                    target_pos = np.getPos() + Vec3(vx, vy, 0)
+                    vel_cone.lookAt(target_pos)
+                else:
+                    vel_cone.hide()
 
     def _update_projectiles(self, state: Dict):
         """Update projectile models in the scene."""
