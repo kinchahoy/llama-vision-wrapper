@@ -448,6 +448,8 @@ class Battle3DViewer(ShowBase):
             pos=(-0.05, -0.1),
             scale=0.05,
             align=TextNode.ARight,
+            shadow=(0, 0, 0, 0.7),
+            shadowOffset=(0.004, -0.004),
         )
         self.bot_info_text = OnscreenText(
             parent=self.a2dTopLeft,
@@ -455,6 +457,17 @@ class Battle3DViewer(ShowBase):
             pos=(0.05, -0.1),
             scale=0.05,
             align=TextNode.ALeft,
+            shadow=(0, 0, 0, 0.7),
+            shadowOffset=(0.004, -0.004),
+        )
+        self.tactical_info_text = OnscreenText(
+            parent=self.a2dTopLeft,
+            text="",
+            pos=(0.05, -0.4),
+            scale=0.04,
+            align=TextNode.ALeft,
+            shadow=(0, 0, 0, 0.7),
+            shadowOffset=(0.003, -0.003),
         )
         self.events_text = OnscreenText(
             parent=self.a2dBottomRight,
@@ -462,6 +475,8 @@ class Battle3DViewer(ShowBase):
             pos=(-0.05, 0.1),
             scale=0.05,
             align=TextNode.ARight,
+            shadow=(0, 0, 0, 0.7),
+            shadowOffset=(0.004, -0.004),
         )
 
     def _setup_controls(self):
@@ -1044,8 +1059,43 @@ class Battle3DViewer(ShowBase):
                 f"Tactical: {friends_count}F, {enemies_count}E, {len(nearby_projectiles)}P, {len(visible_walls)}W",
             ]
             self.bot_info_text.setText("\n".join(info))
+
+            # Detailed tactical info
+            tactical_lines = ["--- Tactical Situation ---"]
+            if visible_bots:
+                tactical_lines.append("Units:")
+                for vis_bot, distance, bearing in visible_bots:
+                    if vis_bot["team"] == bot["team"]:
+                        unit_type = "F"
+                        signal = vis_bot.get("signal", "none")
+                        signal_part = f" [{signal}]" if signal != "none" else ""
+                        vis_text = f"  {unit_type}{vis_bot['id']}: {distance:.1f}m @ {bearing:.0f}°{signal_part}"
+                    else:
+                        unit_type = "E"
+                        vis_text = (
+                            f"  {unit_type}{vis_bot['id']}: {distance:.1f}m @ {bearing:.0f}°"
+                        )
+                    tactical_lines.append(vis_text)
+
+            if nearby_projectiles:
+                tactical_lines.append("Projectiles:")
+                for proj, distance, bearing in nearby_projectiles:
+                    proj_text = f"  P: {distance:.1f}m @ {bearing:.0f}°"
+                    tactical_lines.append(proj_text)
+
+            if visible_walls:
+                tactical_lines.append("Walls:")
+                for wall, distance, bearing in visible_walls:
+                    wall_text = f"  W: {distance:.1f}m @ {bearing:.0f}°"
+                    tactical_lines.append(wall_text)
+
+            if len(tactical_lines) > 1:
+                self.tactical_info_text.setText("\n".join(tactical_lines))
+            else:
+                self.tactical_info_text.setText("")
         else:
             self.bot_info_text.setText("Click on a bot to select it")
+            self.tactical_info_text.setText("")
 
         # Recent events (last 5)
         events = state.get("events", [])
