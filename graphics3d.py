@@ -722,6 +722,9 @@ class Battle3DViewer(ShowBase):
                 fov_geom_node = self._create_fov_geom(fov_angle_deg, fov_range)
                 self.fov_nodepath = self.render.attachNewNode(fov_geom_node)
                 self.fov_nodepath.setTransparency(1)
+                self.fov_nodepath.setTwoSided(True)      # Ensure visible regardless of winding
+                self.fov_nodepath.setDepthWrite(False)   # Proper transparency rendering
+                self.fov_nodepath.setBin("fixed", 0)     # Render on top of floor to avoid z-fighting
 
             # Update position, orientation, and color
             bot = self.selected_bot
