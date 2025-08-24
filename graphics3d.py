@@ -47,12 +47,13 @@ from panda3d.core import (
 
 
 def _init_hq_rendering(app):
-    """Try complexpbr first; fall back to simplepbr+CommonFilters if needed."""
+    """Try complexpbr first; fall back to simplepbr if needed."""
     SHADOW_MAP = 4096
 
     try:
         # Only enable complexpbr when the driver supports GLSL 4.3+ and we're not on macOS.
         import sys
+
         supports_430 = False
         gsg = getattr(app.win, "getGsg", lambda: None)()
         if gsg and hasattr(gsg, "getDriverShaderVersionMajor"):
@@ -65,6 +66,7 @@ def _init_hq_rendering(app):
             )
 
         import complexpbr
+
         # Apply PBR+IBL and enable screen-space effects (AA/SSAO/HSV; SSR tweakable)
         complexpbr.apply_shader(app.render, default_lighting=True)
         complexpbr.screenspace_init()
@@ -72,14 +74,14 @@ def _init_hq_rendering(app):
         # Optional quality knobs (only if screen_quad exists on your build)
         if hasattr(app, "screen_quad"):
             q = app.screen_quad
-            q.set_shader_input('ssao_samples', 24)
-            q.set_shader_input('ssao_radius', 0.35)
-            q.set_shader_input('bloom_intensity', 0.25)
-            q.set_shader_input('ssr_samples', 64)      # 0 disables SSR
-            q.set_shader_input('ssr_intensity', 0.5)
-            q.set_shader_input('ssr_step', 4.0)
-            q.set_shader_input('ssr_fresnel_pow', 3.0)
-        app.render.set_shader_input('specular_factor', 1.0)  # global specular tweak
+            q.set_shader_input("ssao_samples", 24)
+            q.set_shader_input("ssao_radius", 0.35)
+            q.set_shader_input("bloom_intensity", 0.25)
+            q.set_shader_input("ssr_samples", 64)  # 0 disables SSR
+            q.set_shader_input("ssr_intensity", 0.5)
+            q.set_shader_input("ssr_step", 4.0)
+            q.set_shader_input("ssr_fresnel_pow", 3.0)
+        app.render.set_shader_input("specular_factor", 1.0)  # global specular tweak
 
         # Sun + shadows
         sun = DirectionalLight("sun")
@@ -98,6 +100,7 @@ def _init_hq_rendering(app):
     except Exception as e:
         print("[HQ] complexpbr unavailable or failed; using simplepbr. Reason:", e)
         import simplepbr
+
         pbr = simplepbr.init(
             use_330=True,
             enable_shadows=True,
