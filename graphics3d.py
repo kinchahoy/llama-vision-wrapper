@@ -246,9 +246,9 @@ class Battle3DViewer(ShowBase):
     def _setup_filters(self, task):
         """Set up post-processing filters. Called one frame after init."""
         # Post-processing effects for realism
-        self.filters = CommonFilters(self.win, self.cam)
-        self.filters.setAmbientOcclusion(num_samples=16, radius=0.3, amount=2.0)
-        self.filters.setBloom(size="medium", mintrigger=0.6, intensity=0.7)
+        # self.filters = CommonFilters(self.win, self.cam)
+        # self.filters.setAmbientOcclusion(num_samples=16, radius=0.3, amount=2.0)
+        # self.filters.setBloom(size="medium", mintrigger=0.6, intensity=0.7)
         return task.done
 
     def _handle_mouse_click(self):
