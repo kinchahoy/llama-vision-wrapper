@@ -466,7 +466,6 @@ class Battle3DViewer(ShowBase):
                 bot_model = self.loader.loadModel("smiley")
                 if not bot_model:
                     # Create a procedural sphere as fallback
-                    from panda3d.core import CardMaker
                     cm = CardMaker("bot_sphere")
                     cm.setFrame(-0.5, 0.5, -0.5, 0.5)
                     bot_model = NodePath(cm.generate())
@@ -507,7 +506,6 @@ class Battle3DViewer(ShowBase):
             proj_model = self.loader.loadModel("smiley")
             if not proj_model:
                 # Create a procedural sphere as fallback
-                from panda3d.core import CardMaker
                 cm = CardMaker("proj_sphere")
                 cm.setFrame(-0.5, 0.5, -0.5, 0.5)
                 proj_model = NodePath(cm.generate())
