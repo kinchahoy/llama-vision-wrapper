@@ -114,6 +114,33 @@ class Battle3DViewer:
         rim_light = gfx.DirectionalLight(intensity=0.6)
         rim_light.local.position = (-2, 1, 2)
         self.scene.add(rim_light)
+        # Enable shadows if supported by pygfx
+        try:
+            # Enable renderer shadow mapping
+            if hasattr(self.renderer, "shadow"):
+                self.renderer.shadow.enabled = True
+            # Enable shadow casting for the key light
+            if hasattr(sun, "cast_shadow"):
+                sun.cast_shadow = True
+            # Configure shadow camera/map if available
+            if hasattr(sun, "shadow") and hasattr(gfx, "OrthographicCamera"):
+                try:
+                    sun.shadow.camera = gfx.OrthographicCamera(
+                        self.arena_width, self.arena_height
+                    )
+                except Exception:
+                    pass
+                try:
+                    sun.shadow.bias = 0.0005
+                except Exception:
+                    pass
+                try:
+                    sun.shadow.map_size = (2048, 2048)
+                except Exception:
+                    pass
+        except Exception:
+            # Fallback silently if current pygfx build lacks shadow support
+            pass
 
         # Arena floor
         floor_geom = gfx.plane_geometry(self.arena_width, self.arena_height)
@@ -126,6 +153,12 @@ class Battle3DViewer:
         )
         self.floor = gfx.Mesh(floor_geom, floor_mat)
         self.scene.add(self.floor)
+        # Floor should receive shadows if supported
+        try:
+            self.floor.receive_shadow = True
+            self.floor.cast_shadow = False
+        except Exception:
+            pass
 
         self._create_walls()
 
@@ -164,6 +197,12 @@ class Battle3DViewer:
                 (0, 0, 1), math.radians(angle_deg)
             )
             self.scene.add(wall)
+            # Walls both cast and can receive shadows if supported
+            try:
+                wall.cast_shadow = True
+                wall.receive_shadow = True
+            except Exception:
+                pass
 
     def _setup_ui(self):
         """Set up text elements for UI."""
