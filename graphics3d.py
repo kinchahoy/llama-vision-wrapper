@@ -603,17 +603,8 @@ class Battle3DViewer(ShowBase):
         self.pickerNode.addSolid(self.pickerRay)
         self.picker.addCollider(self.pickerNP, self.pq)
 
-    def _is_camera_modifier_down(self):
-        """Check if Control or Alt/Option key is held down."""
-        return self.mouseWatcherNode.is_button_down(
-            "control"
-        ) or self.mouseWatcherNode.is_button_down("alt")
-
     def _handle_mouse_click(self):
         """Handle mouse clicks for bot selection."""
-        if self._is_camera_modifier_down():
-            return  # Using modifier for camera controls
-
         if self.mouseWatcherNode.hasMouse():
             mpos = self.mouseWatcherNode.getMouse()
             self.pickerRay.setFromLens(self.camNode, mpos.getX(), mpos.getY())
@@ -632,23 +623,18 @@ class Battle3DViewer(ShowBase):
                             break
 
     def _handle_zoom(self, direction: float):
-        """Handle mouse wheel zooming when control is held."""
-        if self._is_camera_modifier_down():
-            zoom_speed = 5.0
-            # Move camera along its local Y axis (forward/backward)
-            current_dist = (self.cam.getPos() - self.camera_target).length()
-            # Prevent zooming in too close or past the target
-            if current_dist - (direction * zoom_speed) > 2.0:
-                self.cam.setY(self.cam, direction * zoom_speed)
+        """Handle mouse wheel zooming."""
+        zoom_speed = 5.0
+        # Move camera along its local Y axis (forward/backward)
+        current_dist = (self.cam.getPos() - self.camera_target).length()
+        # Prevent zooming in too close or past the target
+        if current_dist - (direction * zoom_speed) > 2.0:
+            self.cam.setY(self.cam, direction * zoom_speed)
 
     def _update_camera_controls(self):
-        """Handle camera panning with mouse when control is held."""
-        if not self._is_camera_modifier_down():
-            self.last_mouse_pos = None
-            return
-
-        # Panning with mouse drag (mouse1)
-        if self.mouseWatcherNode.is_button_down("mouse1"):
+        """Handle camera panning with the right mouse button."""
+        # Panning with right-mouse drag (mouse3)
+        if self.mouseWatcherNode.is_button_down("mouse3"):
             if self.mouseWatcherNode.hasMouse():
                 mpos = self.mouseWatcherNode.getMouse()
                 if self.last_mouse_pos is not None:
@@ -1431,8 +1417,8 @@ def run_3d_viewer(battle_file: str):
     print("  Q/ESC = Quit")
     print("  Click bots to select them")
     print("\n  Camera Controls:")
-    print("    - Pan:  Hold CTRL or ALT/Option + Drag Mouse")
-    print("    - Zoom: Hold CTRL or ALT/Option + Use Mouse Wheel or +/- keys")
+    print("    - Pan:  Right-click + Drag Mouse")
+    print("    - Zoom: Use Mouse Wheel or +/- keys")
 
     app = Battle3DViewer(battle_data)
     app.run()
