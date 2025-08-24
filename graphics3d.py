@@ -1147,18 +1147,20 @@ class Battle3DViewer(ShowBase):
             np.setPos(pos)
             np.setScale(0.15)
             color = (0.2, 1, 1, 1) if proj.get("team") == 0 else (1, 0.5, 1, 1)
-            np.setColor(color)
-            # Make projectiles glow with PBR emission and pulsate
+            # Make projectiles pulse brightly using color, as PBR emission is not reliable on all platforms
             pulse = (
                 math.sin(self.taskMgr.globalClock.getFrameTime() * 12) + 1
             ) / 2  # Varies 0..1
-            brightness = 2.0 + pulse * 2.0  # Varies 2.0..4.0 for very bright projectiles
-            emission_color = (
-                color[0] * brightness,
-                color[1] * brightness,
-                color[2] * brightness,
+            brightness = 0.8 + pulse * 0.7  # Varies 0.8..1.5 for a visible pulse
+            pulsing_color = (
+                min(1.0, color[0] * brightness),
+                min(1.0, color[1] * brightness),
+                min(1.0, color[2] * brightness),
+                1,
             )
-            np.set_shader_input("emission", (*emission_color, 1.0))
+            np.setColor(pulsing_color)
+            # Disable emission to avoid conflicts
+            np.set_shader_input("emission", (0, 0, 0, 1))
 
     def _update_ui(self, state: Dict):
         """Update the text in the UI panels."""
