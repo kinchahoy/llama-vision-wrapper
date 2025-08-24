@@ -45,6 +45,7 @@ class Battle3DViewer(ShowBase):
             enable_shadows=True,
             use_normal_maps=True,
             use_occlusion_maps=True,
+            use_330=True,  # Enable modern OpenGL features for better reflections
         )
 
         # Configure post-processing effects on the simplepbr pipeline
@@ -56,6 +57,11 @@ class Battle3DViewer(ShowBase):
         self.pbr_pipeline.bloom_intensity = 0.7
         self.pbr_pipeline.bloom_mintrigger = 0.6
         self.pbr_pipeline.bloom_size = "medium"
+        
+        # Enable screen-space reflections if available
+        if hasattr(self.pbr_pipeline, 'enable_ssr'):
+            self.pbr_pipeline.enable_ssr = True
+            self.pbr_pipeline.ssr_roughness_cutoff = 0.5
 
         self.battle_data = battle_data
         self.timeline = battle_data["timeline"]
@@ -126,11 +132,11 @@ class Battle3DViewer(ShowBase):
         floor = self.render.attachNewNode(cm.generate())
         floor.setPos(0, 0, 0)  # Floor at ground level (z=0)
         floor.setP(-90)  # Rotate to lie flat on XY plane
-        # Apply PBR shader first, then materials
+        # Apply PBR shader first, then materials - make floor highly reflective
         floor.set_shader_auto()
-        floor.set_shader_input("metallic", 0.3)
-        floor.set_shader_input("roughness", 0.2)
-        floor.setColor(0.2, 0.2, 0.25, 1)  # Dark, slightly blue tint
+        floor.set_shader_input("metallic", 0.9)  # High metallic for reflections
+        floor.set_shader_input("roughness", 0.05)  # Very smooth for clear reflections
+        floor.setColor(0.15, 0.15, 0.2, 1)  # Dark blue-gray metallic floor
 
         self._create_walls()
 
@@ -160,11 +166,20 @@ class Battle3DViewer(ShowBase):
             # A 0° wall runs horizontally (along X), a 90° wall runs vertically (along Y)
             wall_node.setHpr(angle_deg, 0, 0)
 
-            # Apply PBR materials after positioning
+            # Apply PBR materials after positioning - different colors for different wall types
             wall_node.set_shader_auto()
-            wall_node.set_shader_input("metallic", 0.8)
-            wall_node.set_shader_input("roughness", 0.1)
-            wall_node.setColor(0.7, 0.7, 0.8, 1)  # Slightly blue metallic
+            
+            # First 4 walls are perimeter walls (outside boundary)
+            if i < 4:
+                # Perimeter walls - dark metallic with moderate reflectivity
+                wall_node.set_shader_input("metallic", 0.7)
+                wall_node.set_shader_input("roughness", 0.3)
+                wall_node.setColor(0.3, 0.3, 0.35, 1)  # Dark gray
+            else:
+                # Interior walls - brighter with higher reflectivity
+                wall_node.set_shader_input("metallic", 0.9)
+                wall_node.set_shader_input("roughness", 0.1)
+                wall_node.setColor(0.6, 0.8, 0.9, 1)  # Light blue metallic
 
     def _create_wall_geometry(self, width, height, wall_height):
         """Create a procedural box geometry for walls."""
