@@ -241,6 +241,7 @@ class Battle3DViewer(ShowBase):
                 wall_x_size, wall_y_size, wall_3d_height
             )
             wall_node.reparentTo(self.render)
+            wall_node.setTwoSided(True)
 
             # Position the wall - battle sim uses (x,y) but Panda3D uses (x,y,z)
             # Battle sim: +X = East, +Y = North
@@ -275,71 +276,76 @@ class Battle3DViewer(ShowBase):
                 wall_node.setColor(0.6, 0.8, 0.9, 1)  # Brighter light blue metallic
 
     def _create_wall_geometry(self, width, height, wall_height):
-        """Create a procedural box geometry for walls."""
-        from panda3d.core import GeomPrimitive
-
+        """Create a procedural box geometry for walls with correct face winding."""
         # Create vertex data
-        vdata = GeomVertexData("wall", GeomVertexFormat.getV3n3(), Geom.UHStatic)
-        vdata.setNumRows(24)  # 6 faces * 4 vertices each
-
+        vformat = GeomVertexFormat.getV3n3()
+        vdata = GeomVertexData("wall", vformat, Geom.UHStatic)
         vertex = GeomVertexWriter(vdata, "vertex")
         normal = GeomVertexWriter(vdata, "normal")
 
-        # Half dimensions
-        hw, hh, hz = width / 2, height / 2, wall_height / 2
+        hw, hh, hz = width / 2.0, height / 2.0, wall_height / 2.0
 
-        # Define the 8 corners of the box
-        corners = [
-            (-hw, -hh, -hz),
-            (hw, -hh, -hz),
-            (hw, hh, -hz),
-            (-hw, hh, -hz),  # bottom
-            (-hw, -hh, hz),
-            (hw, -hh, hz),
-            (hw, hh, hz),
-            (-hw, hh, hz),  # top
-        ]
-
-        # Define faces (each face has 4 vertices)
-        faces = [
-            # Bottom face (z = -hz)
-            [(0, 1, 2, 3), (0, 0, -1)],
-            # Top face (z = hz)
-            [(4, 7, 6, 5), (0, 0, 1)],
-            # Front face (y = -hh)
-            [(0, 4, 5, 1), (0, -1, 0)],
-            # Back face (y = hh)
-            [(2, 6, 7, 3), (0, 1, 0)],
-            # Left face (x = -hw)
-            [(0, 3, 7, 4), (-1, 0, 0)],
-            # Right face (x = hw)
-            [(1, 5, 6, 2), (1, 0, 0)],
-        ]
-
-        # Add vertices and normals for each face
-        for face_indices, face_normal in faces:
-            for idx in face_indices:
-                corner = corners[idx]
-                vertex.addData3f(*corner)
-                normal.addData3f(*face_normal)
-
-        # Create geometry and add triangles
-        geom = Geom(vdata)
-
-        # Each face needs 2 triangles (6 vertices total, but we use 4 unique vertices per face)
-        for face_idx in range(6):
+        def add_face(verts, n):
+            start = vertex.getWriteRow()
+            for v in verts:
+                vertex.addData3f(*v)
+                normal.addData3f(*n)
             tris = GeomTriangles(Geom.UHStatic)
-            base = face_idx * 4
-            # First triangle: 0, 1, 2
-            tris.addVertices(base, base + 1, base + 2)
-            # Second triangle: 0, 2, 3
-            tris.addVertices(base, base + 2, base + 3)
-            geom.addPrimitive(tris)
+            tris.addVertices(start + 0, start + 1, start + 2)
+            tris.addVertices(start + 0, start + 2, start + 3)
+            return tris
 
-        # Create the geometry node
+        geom = Geom(vdata)
+        primitives = []
+
+        # +Z (top) - CCW when looking from above
+        primitives.append(
+            add_face(
+                [(-hw, -hh, hz), (hw, -hh, hz), (hw, hh, hz), (-hw, hh, hz)],
+                (0, 0, 1),
+            )
+        )
+        # -Z (bottom) - CCW when looking from below
+        primitives.append(
+            add_face(
+                [(-hw, hh, -hz), (hw, hh, -hz), (hw, -hh, -hz), (-hw, -hh, -hz)],
+                (0, 0, -1),
+            )
+        )
+        # +Y (front) - CCW when looking from +Y
+        primitives.append(
+            add_face(
+                [(-hw, hh, -hz), (hw, hh, -hz), (hw, hh, hz), (-hw, hh, hz)],
+                (0, 1, 0),
+            )
+        )
+        # -Y (back) - CCW when looking from -Y
+        primitives.append(
+            add_face(
+                [(hw, -hh, -hz), (-hw, -hh, -hz), (-hw, -hh, hz), (hw, -hh, hz)],
+                (0, -1, 0),
+            )
+        )
+        # +X (right) - CCW when looking from +X
+        primitives.append(
+            add_face(
+                [(hw, hh, -hz), (hw, -hh, -hz), (hw, -hh, hz), (hw, hh, hz)],
+                (1, 0, 0),
+            )
+        )
+        # -X (left) - CCW when looking from -X
+        primitives.append(
+            add_face(
+                [(-hw, -hh, -hz), (-hw, hh, -hz), (-hw, hh, hz), (-hw, -hh, hz)],
+                (-1, 0, 0),
+            )
+        )
+
+        for prim in primitives:
+            geom.addPrimitive(prim)
+
         geom_node = GeomNode("wall_geom")
         geom_node.addGeom(geom)
-
         return NodePath(geom_node)
 
     def _setup_ui(self):
