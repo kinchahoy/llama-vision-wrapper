@@ -159,8 +159,8 @@ class Battle3DViewer(ShowBase):
             # Position and orient the wall
             # Z-pos is half height to sit on the floor
             wall_node.setPos(center_x, center_y, wall_height / 2)
-            # Convert from math angle (0=East) to Panda3D heading (0=North)
-            wall_node.setHpr(90 - angle_deg, 0, 0)
+            # Rotate wall. Model length is along X, so heading=-angle_deg is correct.
+            wall_node.setHpr(-angle_deg, 0, 0)
 
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
