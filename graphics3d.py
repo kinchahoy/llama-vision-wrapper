@@ -731,8 +731,8 @@ class Battle3DViewer(ShowBase):
             self.fov_nodepath.setPos(bot["x"], bot["y"], 0.1)
             # Convert from battle sim angle to Panda3D heading
             # Battle sim: 0° = facing +X axis (East), Panda3D: 0° heading = facing +Y axis (North)
-            # So: panda3d_heading = 90 - battle_sim_angle
-            self.fov_nodepath.setH(90 - bot["theta"])
+            # FOV geom is built facing +Y but appears inverted; add 180° to align
+            self.fov_nodepath.setH((90 - bot["theta"]) + 180)
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_nodepath.setColor(color)
         elif self.fov_nodepath:
