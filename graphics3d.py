@@ -161,27 +161,28 @@ class Battle3DViewer(ShowBase):
 
     def _create_walls(self):
         """Create interior and perimeter walls from metadata."""
-        wall_height = 2.0
+        # Use a reasonable default height for 3D visualization (walls extend upward)
+        wall_3d_height = 2.0
         walls_data = self.metadata.get("walls", [])
 
         for i, wall_def in enumerate(walls_data):
             center_x, center_y, width, height, angle_deg = wall_def
 
-            # Use the actual wall dimensions from battle simulation
-            # The battle sim already ensures walls have proper thickness (0.2m default)
+            # Use the actual wall dimensions from battle simulation JSON data
+            # width and height are the wall's 2D footprint dimensions
             wall_width = width
             wall_depth = height
 
             # Create a procedural box for the wall
-            # Note: wall_width and wall_depth are the wall's 2D dimensions in the XY plane
-            wall_node = self._create_wall_geometry(wall_width, wall_depth, wall_height)
+            # wall_width and wall_depth are from JSON, wall_3d_height is for 3D visualization
+            wall_node = self._create_wall_geometry(wall_width, wall_depth, wall_3d_height)
             wall_node.reparentTo(self.render)
 
             # Position the wall - battle sim uses (x,y) but Panda3D uses (x,y,z)
             # Battle sim: +X = East, +Y = North
             # Panda3D: +X = East, +Y = North, +Z = Up
             # Z-pos is half height to sit on the floor
-            wall_node.setPos(center_x, center_y, wall_height / 2)
+            wall_node.setPos(center_x, center_y, wall_3d_height / 2)
             
             # Rotation conversion:
             # Battle sim: 0° = along +X axis (horizontal), 90° = along +Y axis (vertical)
