@@ -284,10 +284,71 @@ class Battle3DViewer(ShowBase):
         return task.cont
 
     def _get_current_state(self) -> Dict:
-        """Get the state for the current frame."""
-        frame_idx = int(self.current_frame)
+        """Get the state for the current frame, with interpolation for smooth animation."""
+        if not self.timeline:
+            return {}
+
+        frame_idx_float = self.current_frame
+        frame_idx = int(frame_idx_float)
+        interp = frame_idx_float - frame_idx
+
+        # Clamp frame indices
         frame_idx = max(0, min(len(self.timeline) - 1, frame_idx))
-        return self.timeline[frame_idx]
+        next_frame_idx = min(frame_idx + 1, len(self.timeline) - 1)
+
+        state1 = self.timeline[frame_idx]
+        if frame_idx == next_frame_idx:
+            return state1  # No interpolation at the end of the timeline
+
+        state2 = self.timeline[next_frame_idx]
+
+        # Create a new state, starting with data from the first frame
+        interp_state = state1.copy()
+
+        # Interpolate time
+        time1 = state1.get("time", 0)
+        time2 = state2.get("time", 0)
+        interp_state["time"] = time1 + (time2 - time1) * interp
+
+        # Interpolate bots
+        bots1 = {bot["id"]: bot for bot in state1.get("bots", [])}
+        bots2 = {bot["id"]: bot for bot in state2.get("bots", [])}
+        interp_bots = []
+
+        for bot_id, bot1 in bots1.items():
+            if bot_id in bots2:
+                bot2 = bots2[bot_id]
+                # Always interpolate if bot exists in both frames.
+                # The `alive` flag from state1 is carried over. The bot will be
+                # removed on the next discrete frame if it's dead in that frame.
+                interp_bot = bot1.copy()
+
+                # Interpolate position
+                interp_bot["x"] = bot1["x"] + (bot2["x"] - bot1["x"]) * interp
+                interp_bot["y"] = bot1["y"] + (bot2["y"] - bot1["y"]) * interp
+
+                # Interpolate angle (heading), handling wraparound from 0-360 degrees
+                theta1 = bot1["theta"]
+                theta2 = bot2["theta"]
+                d_theta = theta2 - theta1
+                if d_theta > 180:
+                    d_theta -= 360
+                elif d_theta < -180:
+                    d_theta += 360
+                interp_bot["theta"] = theta1 + d_theta * interp
+
+                interp_bots.append(interp_bot)
+            else:
+                # Bot not in next frame, just use its last known state
+                interp_bots.append(bot1)
+
+        interp_state["bots"] = interp_bots
+
+        # Projectiles are not interpolated due to lack of stable IDs.
+        # They will snap to the current frame's state.
+        interp_state["projectiles"] = state1.get("projectiles", [])
+
+        return interp_state
 
     def _update_bots(self, state: Dict):
         """Update bot models in the scene."""
