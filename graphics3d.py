@@ -495,7 +495,7 @@ class Battle3DViewer(ShowBase):
             value=0,
             pageSize=1,
             command=self._on_slider_move,
-            pos=(0, 0, 0.5),
+            pos=(0 * 4, 0, 0.5),
             scale=(0.8, 1, 1),
         )
 
@@ -504,7 +504,7 @@ class Battle3DViewer(ShowBase):
             parent=self.ui_frame,
             text="Play",
             command=self._toggle_play,
-            pos=(-0.9, 0, -0.3),
+            pos=(-0.9 * 4, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
@@ -512,7 +512,7 @@ class Battle3DViewer(ShowBase):
             text="<",
             command=self._step_frame,
             extraArgs=[-1],
-            pos=(-0.45, 0, -0.3),
+            pos=(-0.45 * 4, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
@@ -520,21 +520,21 @@ class Battle3DViewer(ShowBase):
             text=">",
             command=self._step_frame,
             extraArgs=[1],
-            pos=(0.0, 0, -0.3),
+            pos=(0.0 * 4, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
             parent=self.ui_frame,
             text="Reset",
             command=self._reset_sim,
-            pos=(0.45, 0, -0.3),
+            pos=(0.45 * 4, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
             parent=self.ui_frame,
             text="Reset View",
             command=self._reset_camera_view,
-            pos=(0.9, 0, -0.3),
+            pos=(0.9, 0 * 4, -0.3),
             scale=0.3,
         )
 
@@ -648,7 +648,9 @@ class Battle3DViewer(ShowBase):
                     cam_up = self.render.getRelativeVector(self.cam, Vec3.up())
 
                     # Move camera and target together for panning
-                    move_vec = (cam_right * -dx * pan_speed) + (cam_up * -dy * pan_speed)
+                    move_vec = (cam_right * -dx * pan_speed) + (
+                        cam_up * -dy * pan_speed
+                    )
                     self.cam.setPos(self.cam.getPos() + move_vec)
                     self.camera_target += move_vec
                     self.cam.lookAt(self.camera_target)
@@ -1041,7 +1043,7 @@ class Battle3DViewer(ShowBase):
                 text_node.setText(str(bot_id))
                 text_node.setAlign(TextNode.ACenter)
                 label_np = bot_model.attachNewNode(text_node)
-                label_np.setScale(0.4)
+                label_np.setScale(1)
                 label_np.setPos(0, 0, 1.0)
                 label_np.setColor(1, 1, 1, 1)
                 try:
@@ -1053,8 +1055,12 @@ class Battle3DViewer(ShowBase):
                 # Heading indicator cone
                 heading_cone = self._create_procedural_cone(radius=0.2, height=0.4)
                 heading_cone.reparentTo(bot_model)
-                heading_cone.setPos(0, 0.5, 0)  # Position cone at the front of the sphere
+                heading_cone.setPos(
+                    0, 0.5, 0
+                )  # Position cone at the front of the sphere
+
                 heading_cone.setColor(1, 1, 1, 1)  # White indicator
+
                 self.bot_heading_indicators[bot_id] = heading_cone
 
             np = self.bot_nodepaths[bot_id]
@@ -1068,6 +1074,7 @@ class Battle3DViewer(ShowBase):
             # Color by team
             color = (0, 0.5, 1, 1) if bot["team"] == 0 else (1, 0.3, 0.3, 1)
             np.setColor(color)
+            heading_cone.setColor(color)  # White indicator
 
             # Update health bar fill and color
             if bot_id in self.bot_healthbars:
@@ -1103,7 +1110,6 @@ class Battle3DViewer(ShowBase):
             # Update ID label color for contrast
             if bot_id in self.bot_id_labels:
                 self.bot_id_labels[bot_id].setColor(1, 1, 1, 1)
-
 
     def _update_projectiles(self, state: Dict):
         """Update projectile models in the scene."""
@@ -1178,15 +1184,17 @@ class Battle3DViewer(ShowBase):
 
             # Function info from summary (supports int or str keys)
             bot_functions = summary.get("bot_functions", {}) or {}
-            bot_func_data = bot_functions.get(bot["id"]) or bot_functions.get(
-                str(bot["id"])
-            ) or {}
+            bot_func_data = (
+                bot_functions.get(bot["id"]) or bot_functions.get(str(bot["id"])) or {}
+            )
             personality = bot_func_data.get("personality", "unknown")
             version = bot_func_data.get("version", "N/A")
 
             # Visible objects summary
             visible_bots = self._get_visible_bots(bot, state)
-            friends_count = len([b for b, _, _ in visible_bots if b["team"] == bot["team"]])
+            friends_count = len(
+                [b for b, _, _ in visible_bots if b["team"] == bot["team"]]
+            )
             enemies_count = len(visible_bots) - friends_count
             nearby_projectiles = self._get_nearby_projectiles(bot, state)
             visible_walls = self._get_visible_walls(bot, state)
@@ -1215,9 +1223,7 @@ class Battle3DViewer(ShowBase):
                         vis_text = f"  {unit_type}{vis_bot['id']}: {distance:.1f}m @ {bearing:.0f}°{signal_part}"
                     else:
                         unit_type = "E"
-                        vis_text = (
-                            f"  {unit_type}{vis_bot['id']}: {distance:.1f}m @ {bearing:.0f}°"
-                        )
+                        vis_text = f"  {unit_type}{vis_bot['id']}: {distance:.1f}m @ {bearing:.0f}°"
                     tactical_lines.append(vis_text)
 
             if nearby_projectiles:
@@ -1249,7 +1255,9 @@ class Battle3DViewer(ShowBase):
                 if et == "shot":
                     text = f"Bot {event['bot_id']} fired"
                 elif et == "hit":
-                    text = f"Bot {event['projectile_shooter']} hit Bot {event['target']}"
+                    text = (
+                        f"Bot {event['projectile_shooter']} hit Bot {event['target']}"
+                    )
                 elif et == "death":
                     text = f"Bot {event['bot_id']} destroyed"
                 else:
@@ -1309,9 +1317,13 @@ class Battle3DViewer(ShowBase):
                 fov_geom_node = self._create_fov_geom(fov_angle_deg, fov_range)
                 self.fov_nodepath = self.render.attachNewNode(fov_geom_node)
                 self.fov_nodepath.setTransparency(1)
-                self.fov_nodepath.setTwoSided(True)      # Ensure visible regardless of winding
-                self.fov_nodepath.setDepthWrite(False)   # Proper transparency rendering
-                self.fov_nodepath.setBin("fixed", 0)     # Render on top of floor to avoid z-fighting
+                self.fov_nodepath.setTwoSided(
+                    True
+                )  # Ensure visible regardless of winding
+                self.fov_nodepath.setDepthWrite(False)  # Proper transparency rendering
+                self.fov_nodepath.setBin(
+                    "fixed", 0
+                )  # Render on top of floor to avoid z-fighting
 
             # Update position, orientation, and color
             bot = self.selected_bot
