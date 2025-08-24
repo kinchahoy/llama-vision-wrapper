@@ -9,6 +9,7 @@ import sys
 from typing import Dict, List, Tuple, Optional
 
 import simplepbr
+from direct.filter.CommonFilters import CommonFilters
 from direct.showbase.ShowBase import ShowBase
 from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText
 from panda3d.core import (
@@ -87,6 +88,13 @@ class Battle3DViewer(ShowBase):
         arena_diagonal = math.sqrt(self.arena_width**2 + self.arena_height**2)
         self.cam.setPos(0, -arena_diagonal * 1.2, arena_diagonal * 1.1)
         self.cam.lookAt(0, 0, 0)
+        # Tighten camera frustum for better SSAO and depth precision
+        self.cam.node().getLens().setNearFar(10, 100)
+
+        # Post-processing effects for realism
+        self.filters = CommonFilters(self.win, self.cam)
+        self.filters.setAmbientOcclusion(num_samples=16, radius=0.3, amount=2.0)
+        self.filters.setBloom(size="medium", mintrigger=0.6, intensity=0.7)
 
         # Lighting with shadows
         dlight = DirectionalLight("sun")
@@ -95,10 +103,12 @@ class Battle3DViewer(ShowBase):
         dlnp.setHpr(60, -60, 0)
         self.render.setLight(dlnp)
 
-        # Tune shadow camera
+        # Tune shadow camera for crisp shadows
         lens = dlight.getLens()
-        lens.setFilmSize(self.arena_width * 1.5, self.arena_height * 1.5)
-        lens.setNearFar(1, 100)
+        # Fit the film size to the arena. A tighter film size gives crisper shadows.
+        lens.setFilmSize(self.arena_width * 1.2, self.arena_height * 1.2)
+        # Tighten the near/far planes to include only the battle area.
+        lens.setNearFar(1, 60)
 
         # Arena floor
         floor = self.loader.loadModel("models/plane")
