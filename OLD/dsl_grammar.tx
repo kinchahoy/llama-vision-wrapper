@@ -1,0 +1,86 @@
+Program:
+    rules*=Rule
+;
+
+Rule:
+    (number=INT ")")? "IF" conditions=ConditionList ":" actions=ActionList
+;
+
+ConditionList:
+    conditions+=Condition["AND"]
+;
+
+Condition:
+    FieldCondition | CountCondition | FlagCondition
+;
+
+FieldCondition:
+    slot_field=SlotField op=ComparisonOp value=Value
+;
+
+CountCondition:
+    count_type=CountType op=ComparisonOp value=INT
+;
+
+FlagCondition:
+    flag_name=FlagName "=" "1"
+;
+
+SlotField:
+    slot_type=SlotType ("." selector=Selector ("#" index=INT)?)? "." field=ID
+;
+
+ActionList:
+    actions+=Action[";"]
+;
+
+Action:
+    RotateToHeadingAction | RotateToTargetAction | MoveAction | DodgeAction | FireAction
+;
+
+RotateToHeadingAction:
+    "ROTATE" "TO" "HEADING" angle=INT "+" weight=Weight
+;
+
+RotateToTargetAction:
+    "ROTATE" "TO" "TARGET" target=TargetRef "+" weight=Weight
+;
+
+MoveAction:
+    "MOVE" direction=Direction "SPEED" speed=Speed "+" weight=Weight
+;
+
+DodgeAction:
+    "DODGE" direction=DodgeDirection "+" weight=Weight
+;
+
+FireAction:
+    "FIRE" mode=FireMode "+" weight=Weight
+;
+
+TargetRef:
+    SlotReference | SpecialTarget
+;
+
+SlotReference:
+    slot_type=SlotType ("." selector=Selector ("#" index=INT)?)?
+;
+
+SpecialTarget:
+    "VISIBLE_ENEMYS_CENTROID" | "VISIBLE_FRIENDS_CENTROID"
+;
+
+SlotType: "ENEMY" | "FRIEND" | "PROJ" | "SELF";
+Selector: "FRONT" | "NEAR";
+CountType: "enemy_count_near" | "friend_count_near";
+FlagName: "proj_imminent" | "ff_risk_front";
+ComparisonOp: "≤" | "≥" | "<" | ">" | "=";
+Direction: "LEFT" | "RIGHT" | "FWD" | "BACK";
+DodgeDirection: "LEFT" | "RIGHT";
+FireMode: "ON" | "OFF";
+Speed: FLOAT | INT;
+Weight: INT;
+Value: FLOAT | INT | ID | BOOL;
+
+// Terminals
+BOOL: "1" | "0" | "true" | "false";
