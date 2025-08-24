@@ -102,19 +102,27 @@ class Battle3DViewer:
         self.camera.look_at((0, 0, 0))
 
         # Lighting
-        self.scene.add(gfx.AmbientLight(intensity=0.4))
-        sun = gfx.DirectionalLight(intensity=0.8)
+        self.scene.add(gfx.AmbientLight(intensity=0.8))
+        sun = gfx.DirectionalLight(intensity=1.4)
         sun.local.position = (-1, -2, 3)
         self.scene.add(sun)
 
-        fill_light = gfx.DirectionalLight(intensity=0.4)
+        fill_light = gfx.DirectionalLight(intensity=0.9)
         fill_light.local.position = (1, 2, 1)
         self.scene.add(fill_light)
+
+        rim_light = gfx.DirectionalLight(intensity=0.6)
+        rim_light.local.position = (-2, 1, 2)
+        self.scene.add(rim_light)
 
         # Arena floor
         floor_geom = gfx.plane_geometry(self.arena_width, self.arena_height)
         floor_mat = gfx.MeshStandardMaterial(
-            color=(0.2, 0.2, 0.25), roughness=0.05, metalness=1.0
+            color=(0.28, 0.28, 0.33),
+            roughness=0.08,
+            metalness=0.6,
+            emissive=(0.1, 0.1, 0.12),
+            emissive_intensity=0.6,
         )
         self.floor = gfx.Mesh(floor_geom, floor_mat)
         self.scene.add(self.floor)
@@ -133,11 +141,21 @@ class Battle3DViewer:
 
             if i < 4:  # Perimeter walls
                 wall_mat = gfx.MeshStandardMaterial(
-                    color=(0.4, 0.4, 0.45), roughness=0.2, metalness=0.8
+                    color=(0.5, 0.5, 0.55),
+                    roughness=0.15,
+                    metalness=0.6,
+                    emissive=(0.1, 0.1, 0.1),
+                    emissive_intensity=0.3,
+                    side="both",
                 )
             else:  # Interior walls
                 wall_mat = gfx.MeshStandardMaterial(
-                    color=(0.6, 0.8, 0.9), roughness=0.1, metalness=1.0
+                    color=(0.7, 0.85, 0.95),
+                    roughness=0.05,
+                    metalness=0.6,
+                    emissive=(0.15, 0.2, 0.22),
+                    emissive_intensity=0.5,
+                    side="both",
                 )
 
             wall = gfx.Mesh(wall_geom, wall_mat)
