@@ -581,6 +581,8 @@ class Battle3DViewer(ShowBase):
         self.accept("mouse1", self._handle_mouse_click)
         self.accept("wheel_up", self._handle_zoom, [1.0])
         self.accept("wheel_down", self._handle_zoom, [-1.0])
+        self.accept("equal", self._handle_zoom, [1.0])
+        self.accept("minus", self._handle_zoom, [-1.0])
 
     def _setup_mouse_picking(self):
         """Set up the collision system for mouse picking."""
@@ -1406,6 +1408,8 @@ def run_3d_viewer(battle_file: str):
     print("  F = Toggle FOV display")
     print("  Q/ESC = Quit")
     print("  Click bots to select them")
+    print("  Hold CTRL + Mouse Drag to pan view")
+    print("  Hold CTRL + Mouse Wheel or +/- keys to zoom")
 
     app = Battle3DViewer(battle_data)
     app.run()
