@@ -1059,11 +1059,11 @@ class Battle3DViewer(ShowBase):
                     0, 0.5, 0
                 )  # Position cone at the front of the sphere
 
-                heading_cone.setColor(1, 1, 1, 1)  # White indicator
-
+                # Color will be set below based on team
                 self.bot_heading_indicators[bot_id] = heading_cone
 
             np = self.bot_nodepaths[bot_id]
+            heading_cone = self.bot_heading_indicators[bot_id]
             np.setPos(pos)
             # Convert from battle sim angle to Panda3D heading
             # Battle sim: 0° = facing +X axis (East), Panda3D: 0° heading = facing +Y axis (North)
@@ -1074,7 +1074,9 @@ class Battle3DViewer(ShowBase):
             # Color by team
             color = (0, 0.5, 1, 1) if bot["team"] == 0 else (1, 0.3, 0.3, 1)
             np.setColor(color)
-            heading_cone.setColor(color)  # White indicator
+            # Make cone a darker shade of the bot's color
+            darker_color = (color[0] * 0.5, color[1] * 0.5, color[2] * 0.5, 1)
+            heading_cone.setColor(darker_color)
 
             # Update health bar fill and color
             if bot_id in self.bot_healthbars:
