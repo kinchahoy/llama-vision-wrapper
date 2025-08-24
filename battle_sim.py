@@ -892,6 +892,7 @@ class Arena:
                 body = self.projectile_bodies[proj_id]
                 projectiles.append(
                     {
+                        "id": proj_id,
                         "x": round(body.position[0], 2),
                         "y": round(body.position[1], 2),
                         "vx": round(body.velocity[0], 2),
