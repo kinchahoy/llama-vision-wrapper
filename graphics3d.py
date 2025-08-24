@@ -351,7 +351,7 @@ class Battle3DViewer:
     def _create_fov_indicator(self, bot: Dict):
         """Create 3D FOV indicator for a bot."""
         bot_x = bot["x"] - self.arena_width / 2
-        bot_z = -(bot["y"] - self.arena_height / 2)
+        bot_z = bot["y"] - self.arena_height / 2
         bot_heading = math.radians(bot["theta"])
 
         fov_range = 15.0
@@ -445,9 +445,9 @@ class Battle3DViewer:
 
             bot_id = bot["id"]
 
-            # Convert coordinates (flip Z and center)
+            # Convert coordinates (center)
             x = bot["x"] - self.arena_width / 2
-            z = -(bot["y"] - self.arena_height / 2)
+            z = bot["y"] - self.arena_height / 2
             y = 1.0  # Height above ground
 
             if bot_id not in self.bot_entities:
@@ -502,7 +502,7 @@ class Battle3DViewer:
         for proj in state.get("projectiles", []):
             # Convert coordinates
             x = proj["x"] - self.arena_width / 2
-            z = -(proj["y"] - self.arena_height / 2)
+            z = proj["y"] - self.arena_height / 2
             y = 1.5  # Height above ground
 
             # Projectile color based on team
@@ -665,8 +665,6 @@ def run_3d_viewer(battle_file: str):
     print("  +/- = Adjust speed")
     print("  R = Reset to start")
     print("  F = Toggle FOV display")
-    print("  T = Toggle projectile trails")
-    print("  C = Cycle camera modes (Overview/Follow/FPS)")
     print("  Q/ESC = Quit")
     print("  Click bots to select them")
 
