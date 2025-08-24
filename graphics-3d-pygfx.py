@@ -170,9 +170,12 @@ class Battle3DViewer:
     def _create_text_object(
         self, text, position, font_size=14, color="#FFF", anchor="top-left"
     ):
-        text_geom = gfx_text.TextGeometry(text, anchor=anchor)
-        text_mat = gfx_text.TextMaterial(color=color, font_size=font_size)
-        text_obj = gfx.Text(text_geom, text_mat)
+        text_obj = gfx.Text(
+            text=text,
+            font_size=font_size,
+            screen_space=False,
+            material=gfx.TextMaterial(color=color),
+        )
         text_obj.local.position = position
         return text_obj
 
@@ -566,8 +569,10 @@ class Battle3DViewer:
 
                 # Bot ID label
                 id_text = gfx.Text(
-                    gfx_text.TextGeometry(str(bot_id), anchor="center"),
-                    gfx_text.TextMaterial(color="#FFF", font_size=10),
+                    text=str(bot_id),
+                    font_size=10,
+                    screen_space=False,
+                    material=gfx.TextMaterial(color="#FFF"),
                 )
                 id_text.local.position = (0, 0, 1.0)
                 bot_body.add(id_text)
@@ -659,7 +664,7 @@ class Battle3DViewer:
             )
         info_lines.append(f"Intensity: {float(intensity):.1f} shots/sec")
         info_lines.append(f"Overall Accuracy: {float(accuracy):.1%}")
-        self.info_text.geometry.set_text("\n".join(info_lines))
+        self.info_text.text = "\n".join(info_lines)
 
         # Selected bot info with more details
         if self.selected_bot:
@@ -696,7 +701,7 @@ class Battle3DViewer:
                 f"{signal_desc}",
                 f"Tactical: {friends_count}F, {enemies_count}E, {len(nearby_projectiles)}P, {len(visible_walls)}W",
             ]
-            self.bot_info_text.geometry.set_text("\n".join(info))
+            self.bot_info_text.text = "\n".join(info)
 
             # Detailed tactical info
             tactical_lines = ["--- Tactical Situation ---"]
@@ -726,12 +731,12 @@ class Battle3DViewer:
                     tactical_lines.append(wall_text)
 
             if len(tactical_lines) > 1:
-                self.tactical_info_text.geometry.set_text("\n".join(tactical_lines))
+                self.tactical_info_text.text = "\n".join(tactical_lines)
             else:
-                self.tactical_info_text.geometry.set_text("")
+                self.tactical_info_text.text = ""
         else:
-            self.bot_info_text.geometry.set_text("Click on a bot to select it")
-            self.tactical_info_text.geometry.set_text("")
+            self.bot_info_text.text = "Click on a bot to select it"
+            self.tactical_info_text.text = ""
 
         # Recent events (last 5)
         events = state.get("events", [])
@@ -750,11 +755,11 @@ class Battle3DViewer:
                 else:
                     text = f"{et}: {event}"
                 lines.append(text)
-            self.events_text.geometry.set_text("\n".join(lines))
+            self.events_text.text = "\n".join(lines)
             w, h = self.canvas.get_logical_size()
             self.events_text.local.position = (w - 250, 10, 0)
         else:
-            self.events_text.geometry.set_text("")
+            self.events_text.text = ""
 
     def _toggle_play(self):
         self.playing = not self.playing
