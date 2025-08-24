@@ -92,9 +92,14 @@ class Battle3DViewer(ShowBase):
 
         # Arena floor
         cm = CardMaker("floor")
-        cm.setFrame(-self.arena_width / 2, self.arena_width / 2, -self.arena_height / 2, self.arena_height / 2)
+        cm.setFrame(
+            -self.arena_width / 2,
+            self.arena_width / 2,
+            -self.arena_height / 2,
+            self.arena_height / 2,
+        )
         floor = self.render.attachNewNode(cm.generate())
-        floor.setP(-90) # Rotate to be flat on the XY plane
+        floor.setP(-90)  # Rotate to be flat on the XY plane
         floor.setColor(0.3, 0.3, 0.3, 1)
 
         self._create_walls()
@@ -124,16 +129,15 @@ class Battle3DViewer(ShowBase):
             lines.setColor(0.6, 0.6, 0.6, 1)
             lines.moveTo(start_x, start_y, 0)
             lines.drawTo(end_x, end_y, 0)
-            
+
             # Create a simple mesh for the wall's height
             cm = CardMaker(f"wall_{start}_{end}")
-            wall_length = math.sqrt((end_x - start_x)**2 + (end_y - start_y)**2)
+            wall_length = math.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
             cm.setFrame(0, wall_length, 0, wall_height)
             wall_node = self.render.attachNewNode(cm.generate())
             wall_node.setColor(0.5, 0.5, 0.5, 1)
             wall_node.setPos(start_x, start_y, 0)
             wall_node.lookAt(end_x, end_y, 0)
-
 
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
@@ -165,13 +169,27 @@ class Battle3DViewer(ShowBase):
             scale=0.4,
         )
         DirectButton(
-            parent=self.ui_frame, text="<", command=self._step_frame, extraArgs=[-1], pos=(-0.6, 0, -0.3), scale=0.4
+            parent=self.ui_frame,
+            text="<",
+            command=self._step_frame,
+            extraArgs=[-1],
+            pos=(-0.6, 0, -0.3),
+            scale=0.4,
         )
         DirectButton(
-            parent=self.ui_frame, text=">", command=self._step_frame, extraArgs=[1], pos=(-0.4, 0, -0.3), scale=0.4
+            parent=self.ui_frame,
+            text=">",
+            command=self._step_frame,
+            extraArgs=[1],
+            pos=(-0.4, 0, -0.3),
+            scale=0.4,
         )
         DirectButton(
-            parent=self.ui_frame, text="Reset", command=self._reset_sim, pos=(-0.2, 0, -0.3), scale=0.4
+            parent=self.ui_frame,
+            text="Reset",
+            command=self._reset_sim,
+            pos=(-0.2, 0, -0.3),
+            scale=0.4,
         )
 
         # Info Text
@@ -259,7 +277,7 @@ class Battle3DViewer(ShowBase):
     def _update_bots(self, state: Dict):
         """Update bot models in the scene."""
         current_bot_ids = {bot["id"] for bot in state.get("bots", []) if bot["alive"]}
-        
+
         # Remove dead bots
         for bot_id in list(self.bot_nodepaths.keys()):
             if bot_id not in current_bot_ids:
@@ -270,16 +288,18 @@ class Battle3DViewer(ShowBase):
         for bot in state.get("bots", []):
             if not bot["alive"]:
                 continue
-            
+
             bot_id = bot["id"]
-            pos = LPoint3f(bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.5)
-            
+            pos = LPoint3f(
+                bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.5
+            )
+
             if bot_id not in self.bot_nodepaths:
                 bot_model = self.loader.loadModel("models/misc/sphere")
                 bot_model.reparentTo(self.render)
                 bot_model.setTag("bot_id", str(bot_id))
                 self.bot_nodepaths[bot_id] = bot_model
-                
+
                 # Heading indicator
                 heading_indicator = self.loader.loadModel("models/misc/arrow")
                 heading_indicator.reparentTo(bot_model)
@@ -288,9 +308,9 @@ class Battle3DViewer(ShowBase):
 
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
-            np.setH(bot["theta"] - 90) # Adjust for model orientation
+            np.setH(bot["theta"] - 90)  # Adjust for model orientation
             np.setScale(0.4)
-            
+
             # Color by team
             color = (0, 0.5, 1, 1) if bot["team"] == 0 else (1, 0.3, 0.3, 1)
             np.setColor(color)
@@ -302,7 +322,9 @@ class Battle3DViewer(ShowBase):
         self.projectile_nodepaths.clear()
 
         for proj in state.get("projectiles", []):
-            pos = LPoint3f(proj["x"] - self.arena_width / 2, proj["y"] - self.arena_height / 2, 0.5)
+            pos = LPoint3f(
+                proj["x"] - self.arena_width / 2, proj["y"] - self.arena_height / 2, 0.5
+            )
             proj_model = self.loader.loadModel("models/misc/sphere")
             proj_model.reparentTo(self.render)
             proj_model.setPos(pos)
@@ -375,7 +397,9 @@ class Battle3DViewer(ShowBase):
             cm = CardMaker("fov")
             cm.setFrame(0, 1, -0.5, 0.5)
             self.fov_nodepath = self.render.attachNewNode(cm.generate())
-            self.fov_nodepath.setPos(bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.1)
+            self.fov_nodepath.setPos(
+                bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.1
+            )
             self.fov_nodepath.setScale(fov_range)
             self.fov_nodepath.setH(bot["theta"] - 90)
             self.fov_nodepath.setTransparency(1)
