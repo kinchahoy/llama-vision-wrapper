@@ -898,7 +898,9 @@ class Battle3DViewer:
         self._update_ui(current_state)
         self._update_fov_display()
 
-        self.renderer.render(self.scene, self.camera)
+        # Render 3D scene first without presenting the frame yet,
+        # then render the UI overlay and present once. This avoids clearing.
+        self.renderer.render(self.scene, self.camera, flush=False)
         self.renderer.render(self.ui_scene, self.ui_camera)
         self.canvas.request_draw()
 
