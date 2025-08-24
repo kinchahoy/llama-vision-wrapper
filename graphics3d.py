@@ -146,9 +146,10 @@ class Battle3DViewer(ShowBase):
             wall_node = self.loader.loadModel("box")
             wall_node.reparentTo(self.render)
 
-            # Scale the box to be the wall dimensions
-            # Height in sim is thickness, in 3D it's Y-scale
-            wall_node.setScale(width, height, wall_height)
+            # Scale the box to be the wall dimensions.
+            # We align wall length with the model's Y-axis for consistent rotation with bots.
+            # `width` from sim is length, `height` is thickness.
+            wall_node.setScale(height, width, wall_height)
 
             # Apply PBR materials
             wall_node.set_shader_auto()
@@ -159,8 +160,9 @@ class Battle3DViewer(ShowBase):
             # Position and orient the wall
             # Z-pos is half height to sit on the floor
             wall_node.setPos(center_x, center_y, wall_height / 2)
-            # Rotate wall. Model length is along X, so heading=-angle_deg is correct.
-            wall_node.setHpr(-angle_deg, 0, 0)
+            # Convert from math angle (0=East) to Panda3D heading (0=North),
+            # same as bots, since wall length is now along model's Y-axis.
+            wall_node.setHpr(90 - angle_deg, 0, 0)
 
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
