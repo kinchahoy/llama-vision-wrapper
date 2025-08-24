@@ -106,18 +106,26 @@ class Battle3DViewer(ShowBase):
         # Tighten camera frustum for better SSAO and depth precision
         self.cam.node().getLens().setNearFar(10, 100)
 
-        # Lighting with shadows
+        # Lighting with shadows - brighter directional light
         dlight = DirectionalLight("sun")
+        dlight.setColor((1.2, 1.2, 1.0, 1))  # Bright warm white light
         dlight.set_shadow_caster(True, 4096, 4096)
         dlnp = self.render.attachNewNode(dlight)
-        dlnp.setHpr(60, -60, 0)
+        dlnp.setHpr(45, -45, 0)  # Better angle for reflections
         self.render.setLight(dlnp)
 
-        # Add a dim ambient light to fill in shadows
+        # Add brighter ambient light to fill in shadows and enable reflections
         alight = AmbientLight("ambient")
-        alight.setColor((0.2, 0.2, 0.2, 1))
+        alight.setColor((0.4, 0.4, 0.45, 1))  # Much brighter ambient
         alnp = self.render.attachNewNode(alight)
         self.render.setLight(alnp)
+
+        # Add a second directional light from opposite side for better illumination
+        dlight2 = DirectionalLight("fill_light")
+        dlight2.setColor((0.6, 0.6, 0.7, 1))  # Cooler fill light
+        dl2np = self.render.attachNewNode(dlight2)
+        dl2np.setHpr(-135, -30, 0)  # Opposite side
+        self.render.setLight(dl2np)
 
         # Tune shadow camera for crisp shadows
         lens = dlight.getLens()
@@ -134,9 +142,9 @@ class Battle3DViewer(ShowBase):
         floor.setP(-90)  # Rotate to lie flat on XY plane
         # Apply PBR shader first, then materials - make floor highly reflective
         floor.set_shader_auto()
-        floor.set_shader_input("metallic", 0.9)  # High metallic for reflections
-        floor.set_shader_input("roughness", 0.05)  # Very smooth for clear reflections
-        floor.setColor(0.15, 0.15, 0.2, 1)  # Dark blue-gray metallic floor
+        floor.set_shader_input("metallic", 0.8)  # High metallic for reflections
+        floor.set_shader_input("roughness", 0.02)  # Very smooth for clear reflections
+        floor.setColor(0.3, 0.3, 0.35, 1)  # Lighter metallic floor for better visibility
 
         self._create_walls()
 
@@ -171,15 +179,15 @@ class Battle3DViewer(ShowBase):
             
             # First 4 walls are perimeter walls (outside boundary)
             if i < 4:
-                # Perimeter walls - dark metallic with moderate reflectivity
-                wall_node.set_shader_input("metallic", 0.7)
-                wall_node.set_shader_input("roughness", 0.3)
-                wall_node.setColor(0.3, 0.3, 0.35, 1)  # Dark gray
+                # Perimeter walls - metallic with moderate reflectivity
+                wall_node.set_shader_input("metallic", 0.6)
+                wall_node.set_shader_input("roughness", 0.2)
+                wall_node.setColor(0.5, 0.5, 0.55, 1)  # Medium gray for better visibility
             else:
                 # Interior walls - brighter with higher reflectivity
-                wall_node.set_shader_input("metallic", 0.9)
-                wall_node.set_shader_input("roughness", 0.1)
-                wall_node.setColor(0.6, 0.8, 0.9, 1)  # Light blue metallic
+                wall_node.set_shader_input("metallic", 0.8)
+                wall_node.set_shader_input("roughness", 0.05)
+                wall_node.setColor(0.7, 0.85, 0.95, 1)  # Brighter light blue metallic
 
     def _create_wall_geometry(self, width, height, wall_height):
         """Create a procedural box geometry for walls."""
