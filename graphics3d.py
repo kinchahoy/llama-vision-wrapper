@@ -45,7 +45,7 @@ class Battle3DViewer(ShowBase):
             enable_shadows=True,
             use_normal_maps=True,
             use_occlusion_maps=True,
-            use_330=True,  # Enable modern OpenGL features for better reflections
+            # use_330=True,  # Enable modern OpenGL features for better reflections
             use_hardware_skinning=True,
             use_emission_maps=True,
         )
@@ -59,14 +59,14 @@ class Battle3DViewer(ShowBase):
         self.pbr_pipeline.bloom_intensity = 0.7
         self.pbr_pipeline.bloom_mintrigger = 0.6
         self.pbr_pipeline.bloom_size = "medium"
-        
+
         # Try different reflection approaches
-        if hasattr(self.pbr_pipeline, 'enable_ssr'):
+        if hasattr(self.pbr_pipeline, "enable_ssr"):
             self.pbr_pipeline.enable_ssr = True
             self.pbr_pipeline.ssr_roughness_cutoff = 0.8
-        
+
         # Enable environment mapping for reflections
-        if hasattr(self.pbr_pipeline, 'enable_ibl'):
+        if hasattr(self.pbr_pipeline, "enable_ibl"):
             self.pbr_pipeline.enable_ibl = True
 
         self.battle_data = battle_data
@@ -142,17 +142,28 @@ class Battle3DViewer(ShowBase):
 
         # Arena floor (procedurally generated)
         cm = CardMaker("floor")
-        cm.setFrame(-self.arena_width/2, self.arena_width/2, -self.arena_height/2, self.arena_height/2)
+        cm.setFrame(
+            -self.arena_width / 2,
+            self.arena_width / 2,
+            -self.arena_height / 2,
+            self.arena_height / 2,
+        )
         floor = self.render.attachNewNode(cm.generate())
         floor.setPos(0, 0, 0)  # Floor at ground level (z=0)
         floor.setP(-90)  # Rotate to lie flat on XY plane
-        
+
         # Apply PBR materials - make floor highly reflective
-        floor.set_shader_input("metallic", 1.0)  # Maximum metallic for mirror-like reflections
-        floor.set_shader_input("roughness", 0.0)  # Perfect smoothness for clear reflections
-        floor.set_shader_input("basecolor", (0.2, 0.2, 0.25, 1.0))  # Set base color via shader input
+        floor.set_shader_input(
+            "metallic", 1.0
+        )  # Maximum metallic for mirror-like reflections
+        floor.set_shader_input(
+            "roughness", 0.0
+        )  # Perfect smoothness for clear reflections
+        floor.set_shader_input(
+            "basecolor", (0.2, 0.2, 0.25, 1.0)
+        )  # Set base color via shader input
         floor.setColor(0.2, 0.2, 0.25, 1)  # Dark metallic floor
-        
+
         # Try to force material properties
         floor.setRenderModeWireframe()
         floor.clearRenderMode()  # Reset to solid
@@ -173,11 +184,11 @@ class Battle3DViewer(ShowBase):
             # - For 0° walls (horizontal): width=length, height=thickness
             # - For 90° walls (vertical): width=thickness, height=length
             # We need to determine which dimension is the thickness (should be smaller)
-            
+
             # The thickness should be the smaller dimension (typically 0.2m from WALL_THICKNESS)
             wall_thickness = min(width, height)
             wall_length = max(width, height)
-            
+
             # For 3D rendering, we need to map these to X and Y dimensions based on angle
             if angle_deg == 0:  # Horizontal wall (runs along X-axis)
                 wall_x_size = wall_length  # Length along X
@@ -190,7 +201,9 @@ class Battle3DViewer(ShowBase):
                 wall_y_size = height
 
             # Create a procedural box for the wall
-            wall_node = self._create_wall_geometry(wall_x_size, wall_y_size, wall_3d_height)
+            wall_node = self._create_wall_geometry(
+                wall_x_size, wall_y_size, wall_3d_height
+            )
             wall_node.reparentTo(self.render)
 
             # Position the wall - battle sim uses (x,y) but Panda3D uses (x,y,z)
@@ -198,7 +211,7 @@ class Battle3DViewer(ShowBase):
             # Panda3D: +X = East, +Y = North, +Z = Up
             # Z-pos is half height to sit on the floor
             wall_node.setPos(center_x, center_y, wall_3d_height / 2)
-            
+
             # Rotation conversion:
             # Battle sim: 0° = along +X axis (horizontal), 90° = along +Y axis (vertical)
             # Panda3D: 0° heading = facing +Y axis
@@ -208,14 +221,16 @@ class Battle3DViewer(ShowBase):
 
             # Apply PBR materials after positioning - different colors for different wall types
             # (no setShaderAuto for simplepbr)
-            
+
             # First 4 walls are perimeter walls (outside boundary)
             if i < 4:
                 # Perimeter walls - metallic with moderate reflectivity
                 wall_node.set_shader_input("metallic", 0.8)
                 wall_node.set_shader_input("roughness", 0.1)
                 wall_node.set_shader_input("basecolor", (0.4, 0.4, 0.45, 1.0))
-                wall_node.setColor(0.4, 0.4, 0.45, 1)  # Medium gray for better visibility
+                wall_node.setColor(
+                    0.4, 0.4, 0.45, 1
+                )  # Medium gray for better visibility
             else:
                 # Interior walls - brighter with higher reflectivity
                 wall_node.set_shader_input("metallic", 1.0)
@@ -226,28 +241,34 @@ class Battle3DViewer(ShowBase):
     def _create_wall_geometry(self, width, height, wall_height):
         """Create a procedural box geometry for walls."""
         from panda3d.core import GeomPrimitive
-        
+
         # Create vertex data
         vdata = GeomVertexData("wall", GeomVertexFormat.getV3n3(), Geom.UHStatic)
         vdata.setNumRows(24)  # 6 faces * 4 vertices each
-        
+
         vertex = GeomVertexWriter(vdata, "vertex")
         normal = GeomVertexWriter(vdata, "normal")
-        
+
         # Half dimensions
-        hw, hh, hz = width/2, height/2, wall_height/2
-        
+        hw, hh, hz = width / 2, height / 2, wall_height / 2
+
         # Define the 8 corners of the box
         corners = [
-            (-hw, -hh, -hz), (hw, -hh, -hz), (hw, hh, -hz), (-hw, hh, -hz),  # bottom
-            (-hw, -hh, hz), (hw, -hh, hz), (hw, hh, hz), (-hw, hh, hz)       # top
+            (-hw, -hh, -hz),
+            (hw, -hh, -hz),
+            (hw, hh, -hz),
+            (-hw, hh, -hz),  # bottom
+            (-hw, -hh, hz),
+            (hw, -hh, hz),
+            (hw, hh, hz),
+            (-hw, hh, hz),  # top
         ]
-        
+
         # Define faces (each face has 4 vertices)
         faces = [
             # Bottom face (z = -hz)
             [(0, 1, 2, 3), (0, 0, -1)],
-            # Top face (z = hz)  
+            # Top face (z = hz)
             [(4, 7, 6, 5), (0, 0, 1)],
             # Front face (y = -hh)
             [(0, 4, 5, 1), (0, -1, 0)],
@@ -256,33 +277,33 @@ class Battle3DViewer(ShowBase):
             # Left face (x = -hw)
             [(0, 3, 7, 4), (-1, 0, 0)],
             # Right face (x = hw)
-            [(1, 5, 6, 2), (1, 0, 0)]
+            [(1, 5, 6, 2), (1, 0, 0)],
         ]
-        
+
         # Add vertices and normals for each face
         for face_indices, face_normal in faces:
             for idx in face_indices:
                 corner = corners[idx]
                 vertex.addData3f(*corner)
                 normal.addData3f(*face_normal)
-        
+
         # Create geometry and add triangles
         geom = Geom(vdata)
-        
+
         # Each face needs 2 triangles (6 vertices total, but we use 4 unique vertices per face)
         for face_idx in range(6):
             tris = GeomTriangles(Geom.UHStatic)
             base = face_idx * 4
             # First triangle: 0, 1, 2
             tris.addVertices(base, base + 1, base + 2)
-            # Second triangle: 0, 2, 3  
+            # Second triangle: 0, 2, 3
             tris.addVertices(base, base + 2, base + 3)
             geom.addPrimitive(tris)
-        
+
         # Create the geometry node
         geom_node = GeomNode("wall_geom")
         geom_node.addGeom(geom)
-        
+
         return NodePath(geom_node)
 
     def _setup_ui(self):
@@ -533,7 +554,7 @@ class Battle3DViewer(ShowBase):
                     cm = CardMaker("bot_sphere")
                     cm.setFrame(-0.5, 0.5, -0.5, 0.5)
                     bot_model = NodePath(cm.generate())
-                
+
                 # No setShaderAuto for simplepbr - let simplepbr handle shading
                 bot_model.reparentTo(self.render)
                 bot_model.setTag("bot_id", str(bot_id))
@@ -575,7 +596,7 @@ class Battle3DViewer(ShowBase):
                 cm = CardMaker("proj_sphere")
                 cm.setFrame(-0.5, 0.5, -0.5, 0.5)
                 proj_model = NodePath(cm.generate())
-            
+
             # No setShaderAuto for simplepbr - let simplepbr handle shading
             proj_model.reparentTo(self.render)
             proj_model.setPos(pos)
