@@ -124,12 +124,13 @@ class Battle3DViewer(ShowBase):
         cm = CardMaker("floor")
         cm.setFrame(-0.5, 0.5, -0.5, 0.5)
         floor = self.render.attachNewNode(cm.generate())
-        floor.reparentTo(self.render)
         floor.setScale(self.arena_width, self.arena_height, 1)
         floor.setPos(0, 0, 0)
-        # PBR materials for a reflective floor
-        floor.set_shader_input("metallic", 1.0)
-        floor.set_shader_input("roughness", 0.1)
+        floor.setP(-90)  # Rotate to lie flat on XY plane
+        # Apply PBR shader first, then materials
+        floor.set_shader_auto()
+        floor.set_shader_input("metallic", 0.3)
+        floor.set_shader_input("roughness", 0.2)
         floor.setColor(0.2, 0.2, 0.25, 1)  # Dark, slightly blue tint
 
         self._create_walls()
@@ -142,27 +143,83 @@ class Battle3DViewer(ShowBase):
         for i, wall_def in enumerate(walls_data):
             center_x, center_y, width, height, angle_deg = wall_def
 
-            # Use a box model for walls with thickness
-            wall_node = self.loader.loadModel("box")
+            # Create a procedural box for the wall
+            wall_node = self._create_wall_geometry(width, height, wall_height)
             wall_node.reparentTo(self.render)
-
-            # Scale the box to be the wall dimensions.
-            # We align wall length with the model's Y-axis for consistent rotation with bots.
-            # `width` from sim is length, `height` is thickness.
-            wall_node.setScale(height, width, wall_height)
-
-            # Apply PBR materials
-            wall_node.set_shader_auto()
-            wall_node.set_shader_input("metallic", 0.2)
-            wall_node.set_shader_input("roughness", 0.5)
-            wall_node.setColor(0.6, 0.6, 0.6, 1)
 
             # Position and orient the wall
             # Z-pos is half height to sit on the floor
             wall_node.setPos(center_x, center_y, wall_height / 2)
-            # Convert from math angle (0=East) to Panda3D heading (0=North),
-            # same as bots, since wall length is now along model's Y-axis.
+            # Convert from math angle (0=East) to Panda3D heading (0=North)
             wall_node.setHpr(90 - angle_deg, 0, 0)
+
+            # Apply PBR materials after positioning
+            wall_node.set_shader_auto()
+            wall_node.set_shader_input("metallic", 0.8)
+            wall_node.set_shader_input("roughness", 0.1)
+            wall_node.setColor(0.7, 0.7, 0.8, 1)  # Slightly blue metallic
+
+    def _create_wall_geometry(self, width, height, wall_height):
+        """Create a procedural box geometry for walls."""
+        from panda3d.core import GeomPrimitive
+        
+        # Create vertex data
+        vdata = GeomVertexData("wall", GeomVertexFormat.getV3n3(), Geom.UHStatic)
+        vdata.setNumRows(24)  # 6 faces * 4 vertices each
+        
+        vertex = GeomVertexWriter(vdata, "vertex")
+        normal = GeomVertexWriter(vdata, "normal")
+        
+        # Half dimensions
+        hw, hh, hz = width/2, height/2, wall_height/2
+        
+        # Define the 8 corners of the box
+        corners = [
+            (-hw, -hh, -hz), (hw, -hh, -hz), (hw, hh, -hz), (-hw, hh, -hz),  # bottom
+            (-hw, -hh, hz), (hw, -hh, hz), (hw, hh, hz), (-hw, hh, hz)       # top
+        ]
+        
+        # Define faces (each face has 4 vertices)
+        faces = [
+            # Bottom face (z = -hz)
+            [(0, 1, 2, 3), (0, 0, -1)],
+            # Top face (z = hz)  
+            [(4, 7, 6, 5), (0, 0, 1)],
+            # Front face (y = -hh)
+            [(0, 4, 5, 1), (0, -1, 0)],
+            # Back face (y = hh)
+            [(2, 6, 7, 3), (0, 1, 0)],
+            # Left face (x = -hw)
+            [(0, 3, 7, 4), (-1, 0, 0)],
+            # Right face (x = hw)
+            [(1, 5, 6, 2), (1, 0, 0)]
+        ]
+        
+        # Add vertices and normals for each face
+        for face_indices, face_normal in faces:
+            for idx in face_indices:
+                corner = corners[idx]
+                vertex.addData3f(*corner)
+                normal.addData3f(*face_normal)
+        
+        # Create geometry and add triangles
+        geom = Geom(vdata)
+        
+        # Each face needs 2 triangles (6 vertices total, but we use 4 unique vertices per face)
+        for face_idx in range(6):
+            tris = GeomTriangles(Geom.UHStatic)
+            base = face_idx * 4
+            # First triangle: 0, 1, 2
+            tris.addVertices(base, base + 1, base + 2)
+            # Second triangle: 0, 2, 3  
+            tris.addVertices(base, base + 2, base + 3)
+            geom.addPrimitive(tris)
+        
+        # Create the geometry node
+        geom_node = GeomNode("wall_geom")
+        geom_node.addGeom(geom)
+        
+        return NodePath(geom_node)
 
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
@@ -405,7 +462,15 @@ class Battle3DViewer(ShowBase):
             pos = LPoint3f(bot["x"], bot["y"], 0.5)
 
             if bot_id not in self.bot_nodepaths:
+                # Try to load smiley model, fallback to procedural sphere
                 bot_model = self.loader.loadModel("smiley")
+                if not bot_model:
+                    # Create a procedural sphere as fallback
+                    from panda3d.core import CardMaker
+                    cm = CardMaker("bot_sphere")
+                    cm.setFrame(-0.5, 0.5, -0.5, 0.5)
+                    bot_model = NodePath(cm.generate())
+                
                 bot_model.set_shader_auto()
                 bot_model.reparentTo(self.render)
                 bot_model.setTag("bot_id", str(bot_id))
@@ -418,6 +483,7 @@ class Battle3DViewer(ShowBase):
                 cm.setFrame(-0.05, 0.05, 0.45, 0.95)  # x1, x2, y1, y2
                 heading_indicator = NodePath(cm.generate())
                 heading_indicator.reparentTo(bot_model)
+                heading_indicator.setColor(1, 1, 1, 1)  # White indicator
 
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
@@ -437,7 +503,15 @@ class Battle3DViewer(ShowBase):
 
         for proj in state.get("projectiles", []):
             pos = LPoint3f(proj["x"], proj["y"], 0.5)
+            # Try to load smiley model, fallback to procedural sphere
             proj_model = self.loader.loadModel("smiley")
+            if not proj_model:
+                # Create a procedural sphere as fallback
+                from panda3d.core import CardMaker
+                cm = CardMaker("proj_sphere")
+                cm.setFrame(-0.5, 0.5, -0.5, 0.5)
+                proj_model = NodePath(cm.generate())
+            
             proj_model.set_shader_auto()
             proj_model.reparentTo(self.render)
             proj_model.setPos(pos)
