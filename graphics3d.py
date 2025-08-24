@@ -60,7 +60,10 @@ class Battle3DViewer:
         # Initialize scene
         self._setup_scene()
         self._setup_ui()
-        self._setup_controls()
+
+        # Assign input/update handlers
+        self.app.input = self.input
+        self.app.update = self.update
 
         # Bot and projectile entities
         self.bot_entities = {}
@@ -140,57 +143,51 @@ class Battle3DViewer:
             color=color.white
         )
 
-        # Selected bot info text (left side, overlaid on 3D)
+        # Selected bot info panel (left side, overlaid on 3D)
+        self.bot_info_panel = Entity(
+            parent=camera.ui,
+            model="quad",
+            color=color.rgba(20, 20, 20, 200),
+            scale=(0.4, 0.6),
+            position=(-0.7, 0.1),
+            visible=False,
+        )
         self.bot_info_text = Text(
-            "Click on a bot to select it", 
-            parent=camera.ui, 
-            position=(-0.9, 0.4), 
-            scale=0.6, 
-            color=color.white
+            "",
+            parent=self.bot_info_panel,
+            origin=(-0.5, 0.5),
+            position=(-0.45, 0.45),
+            scale=1.2, # scale is relative to parent, so needs to be adjusted
+            color=color.white,
         )
 
-    def _setup_controls(self):
-        """Set up input controls matching graphics.py."""
-
-        def input(key):
-            if key == "space":
-                self.playing = not self.playing
-            elif key == "r":
-                self.current_frame = 0
-                self.playing = False
-            elif key == "left arrow":
-                self.current_frame = max(0, self.current_frame - 1)
-                self.playing = False
-            elif key == "right arrow":
-                self.current_frame = min(len(self.timeline) - 1, self.current_frame + 1)
-                self.playing = False
-            elif key == "plus" or key == "equal":
-                self.playback_speed = min(5.0, self.playback_speed * 1.5)
-            elif key == "minus":
-                self.playback_speed = max(0.1, self.playback_speed / 1.5)
-            elif key == "f":
-                self.show_fov = not self.show_fov
-                self._update_fov_display()
-            elif key == "q":
-                application.quit()
-            elif key == "escape":
-                application.quit()
-
-        def update():
-            # Simple bot selection on mouse click
-            if mouse.left and mouse.hovered_entity:
-                if hasattr(mouse.hovered_entity, "bot_id"):
-                    current_state = self._get_current_state()
-                    for bot in current_state.get("bots", []):
-                        if bot["id"] == mouse.hovered_entity.bot_id and bot["alive"]:
-                            self.selected_bot = bot
-                            self.playing = False
-                            self._update_fov_display()
-                            break
-
-        self.app.input = input
-        # Store update function for later use
-        self._input_update = update
+    def input(self, key):
+        """Handle keyboard and mouse input."""
+        if key == "space":
+            self.playing = not self.playing
+        elif key == "r":
+            self.current_frame = 0
+            self.playing = False
+        elif key == "left arrow":
+            self.current_frame = max(0, self.current_frame - 1)
+            self.playing = False
+        elif key == "right arrow":
+            self.current_frame = min(len(self.timeline) - 1, self.current_frame + 1)
+            self.playing = False
+        elif key == "plus" or key == "equal":
+            self.playback_speed = min(5.0, self.playback_speed * 1.5)
+        elif key == "minus":
+            self.playback_speed = max(0.1, self.playback_speed / 1.5)
+        elif key == "f":
+            self.show_fov = not self.show_fov
+            self._update_fov_display()
+        elif key == "q" or key == "escape":
+            application.quit()
+        elif key == "left mouse down":
+            self._handle_mouse_input()
+            self._handle_bot_selection()
+        elif key == "left mouse up":
+            self.dragging_scrubber = False
 
     def _create_arena(self):
         """Create the arena floor and boundaries."""
@@ -302,37 +299,32 @@ class Battle3DViewer:
             self.wall_entities.append(wall_entity)
 
     def _handle_mouse_input(self):
-        """Handle mouse input for timeline scrubbing and bot selection."""
-        # Timeline scrubbing (bottom 10% of screen)
-        if mouse.left:
-            # Convert mouse position to normalized coordinates
-            norm_x = (mouse.x + 1) / 2  # Convert from [-1,1] to [0,1]
-            norm_y = (mouse.y + 1) / 2  # Convert from [-1,1] to [0,1]
-            
-            # Check if clicking on timeline (bottom area)
-            if norm_y < 0.15:  # Bottom 15% of screen
-                if 0.1 < norm_x < 0.9:  # Timeline area
-                    self.dragging_scrubber = True
-                    # Calculate target frame
-                    progress = (norm_x - 0.1) / 0.8  # Normalize to timeline area
-                    target_frame = int(progress * (len(self.timeline) - 1))
-                    self.current_frame = max(0, min(len(self.timeline) - 1, target_frame))
-                    self.playing = False
-        else:
-            self.dragging_scrubber = False
+        """Handle mouse input for timeline scrubbing."""
+        # This is called on mouse down and on motion while dragging
+        norm_x = (mouse.x + 1) / 2  # Convert from [-1,1] to [0,1]
+        norm_y = (mouse.y + 1) / 2  # Convert from [-1,1] to [0,1]
+
+        # Check if clicking on timeline (bottom area)
+        if norm_y < 0.15:  # Bottom 15% of screen
+            if 0.1 < norm_x < 0.9:  # Timeline area
+                self.dragging_scrubber = True
+                # Calculate target frame
+                progress = (norm_x - 0.1) / 0.8  # Normalize to timeline area
+                target_frame = int(progress * (len(self.timeline) - 1))
+                self.current_frame = max(0, min(len(self.timeline) - 1, target_frame))
+                self.playing = False
 
     def _handle_bot_selection(self):
         """Handle bot selection with mouse clicks."""
-        if mouse.left and not self.dragging_scrubber:
-            if mouse.hovered_entity and hasattr(mouse.hovered_entity, 'bot_id'):
-                # Find bot data from current state
-                current_state = self._get_current_state()
-                for bot in current_state.get("bots", []):
-                    if bot["id"] == mouse.hovered_entity.bot_id and bot["alive"]:
-                        self.selected_bot = bot
-                        self.playing = False
-                        self._update_fov_display()
-                        break
+        if not self.dragging_scrubber and mouse.hovered_entity and hasattr(mouse.hovered_entity, 'bot_id'):
+            # Find bot data from current state
+            current_state = self._get_current_state()
+            for bot in current_state.get("bots", []):
+                if bot["id"] == mouse.hovered_entity.bot_id and bot["alive"]:
+                    self.selected_bot = bot
+                    self.playing = False
+                    self._update_fov_display()
+                    break
 
     def _update_camera(self, current_state: Dict):
         """Keep camera in bird's eye view position."""
@@ -393,44 +385,35 @@ class Battle3DViewer:
                     destroy(trail_entity)
             self.trail_entities.clear()
 
+    def update(self):
+        """Main update loop, called every frame."""
+        if self.dragging_scrubber:
+            self._handle_mouse_input()
+
+        if not self.timeline:
+            return
+
+        # Update playback
+        if self.playing:
+            frames_per_second = 10  # 10Hz logging rate
+            frame_advance = frames_per_second * self.playback_speed * time.dt
+            self.current_frame += frame_advance
+
+            if self.current_frame >= len(self.timeline):
+                self.current_frame = len(self.timeline) - 1
+                self.playing = False
+
+        # Get current state
+        current_state = self._get_current_state()
+
+        # Update 3D objects
+        self._update_bots(current_state)
+        self._update_projectiles(current_state)
+        self._update_camera(current_state)
+        self._update_ui(current_state)
+
     def run(self):
         """Main viewer loop."""
-
-        def update():
-            if not self.timeline:
-                return
-
-            # Update playback
-            if self.playing:
-                frames_per_second = 10  # 10Hz logging rate
-                frame_advance = frames_per_second * self.playback_speed * time.dt
-                self.current_frame += frame_advance
-
-                if self.current_frame >= len(self.timeline):
-                    self.current_frame = len(self.timeline) - 1
-                    self.playing = False
-
-            # Get current state
-            current_state = self._get_current_state()
-
-            # Update 3D objects
-            self._update_bots(current_state)
-            self._update_projectiles(current_state)
-            self._update_camera(current_state)
-            self._update_ui(current_state)
-
-            # Handle bot selection with mouse
-            if mouse.left and mouse.hovered_entity:
-                if hasattr(mouse.hovered_entity, "bot_id"):
-                    bot_id = mouse.hovered_entity.bot_id
-                    for bot in current_state.get("bots", []):
-                        if bot["id"] == bot_id:
-                            self.selected_bot = bot
-                            self.playing = False
-                            self._update_fov_display()
-                            break
-
-        self.app.update = update
         self.app.run()
 
     def _get_current_state(self) -> Dict:
@@ -496,8 +479,7 @@ class Battle3DViewer:
 
             # Update health indicator (scale based on HP)
             health_ratio = max(0.3, bot["hp"] / 100)  # Minimum 30% size
-            bot_entity.scale_x = 0.8 * health_ratio
-            bot_entity.scale_z = 0.8 * health_ratio
+            bot_entity.scale = 0.8 * health_ratio
 
             # Update color based on health
             if bot["hp"] > 60:
@@ -568,31 +550,48 @@ class Battle3DViewer:
 
         # Update selected bot info
         if self.selected_bot:
-            bot = self.selected_bot
-            bot_info_lines = [
-                f"=== Bot {bot['id']} (Team {bot['team']}) ===",
-                f"Position: ({bot['x']:.1f}, {bot['y']:.1f})",
-                f"Heading: {bot['theta']:.0f}°",
-                f"Health: {bot['hp']} HP",
-                f"Speed: {math.sqrt(bot.get('vx', 0) ** 2 + bot.get('vy', 0) ** 2):.1f} m/s",
-            ]
-            self.bot_info_text.text = "\n".join(bot_info_lines)
+            self.bot_info_panel.visible = True
+            self._update_selected_bot_info(state)
         else:
-            self.bot_info_text.text = "Click on a bot to select it"
+            self.bot_info_panel.visible = False
+            self.bot_info_text.text = ""
 
     def _update_selected_bot_info(self, state: Dict):
-        """Update bot info with key details only."""
+        """Update comprehensive bot info panel."""
         bot = self.selected_bot
         bot_id = bot["id"]
 
-        # Build concise bot info text
-        info_lines = [
-            f"=== Bot {bot_id} (Team {bot['team']}) ===",
-            f"Pos: ({bot['x']:.1f}, {bot['y']:.1f})",
-            f"Heading: {bot['theta']:.0f}°",
-            f"HP: {bot['hp']}/100",
-            f"Speed: {math.sqrt(bot.get('vx', 0) ** 2 + bot.get('vy', 0) ** 2):.1f} m/s",
-        ]
+        # Build comprehensive bot info text
+        info_lines = [f"<bold>Bot {bot_id} (Team {bot['team']})</bold>"]
+
+        # Function info
+        bot_functions = self.battle_data.get("summary", {}).get("bot_functions", {})
+        bot_func_data = bot_functions.get(str(bot_id), {})
+        personality = bot_func_data.get("personality", "unknown")
+        info_lines.append(f"Personality: {personality}")
+
+        # State
+        info_lines.append("\n<bold>State</bold>")
+        info_lines.append(f"HP: {bot['hp']} | Signal: \"{bot.get('signal', 'none')}\"")
+        info_lines.append(f"Pos: ({bot['x']:.1f}, {bot['y']:.1f}) | H: {bot['theta']:.0f}°")
+
+        # Tactical
+        visible_bots = self._get_visible_bots(bot, state)
+        enemies = [b for b,_,_ in visible_bots if b['team'] != bot['team']]
+        info_lines.append(f"\n<bold>Tactical ({len(enemies)} enemies visible)</bold>")
+        for i, (vis_bot, dist, bear) in enumerate(visible_bots[:4]):
+            utype = "F" if vis_bot["team"] == bot["team"] else "E"
+            info_lines.append(f" {utype}{vis_bot['id']}: {dist:.1f}m @ {bear:.0f}°")
+
+        # Performance
+        summary = self.battle_data.get("summary", {})
+        bot_scores = summary.get("bot_scores", [])
+        bot_score = next((s for s in bot_scores if s["bot_id"] == bot_id), None)
+
+        if bot_score:
+            info_lines.append("\n<bold>Performance</bold>")
+            info_lines.append(f"Score: {bot_score['total_score']:.1f} | K/D: {bot_score['kills']}/{bot_score['deaths']}")
+            info_lines.append(f"Accuracy: {bot_score['hit_rate']:.0%}")
 
         self.bot_info_text.text = "\n".join(info_lines)
 
