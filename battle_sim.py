@@ -611,13 +611,13 @@ class Arena:
             # Perimeter walls
             (0, height / 2, width + thickness, thickness, 0),  # Top
             (0, -height / 2, width + thickness, thickness, 0),  # Bottom
-            (-width / 2, 0, thickness, height, 0),  # Left
-            (width / 2, 0, thickness, height, 0),  # Right
+            (-width / 2, 0, height, thickness, 90),  # Left
+            (width / 2, 0, height, thickness, 90),  # Right
             # Interior walls
             (-width * 0.25, height * 0.2, 10, thickness, 0),
-            (0, -height * 0.15, thickness, 8, 0),
+            (0, -height * 0.15, 8, thickness, 90),
             (-width * 0.25, -height * 0.3, 9, thickness, 20),
-            (width * 0.3, height * 0.1, thickness, 6, 0),
+            (width * 0.3, height * 0.1, 6, thickness, 90),
         ]
 
         self.wall_bodies = []
