@@ -300,11 +300,13 @@ class Battle3DViewer(ShowBase):
                 bot_model.setTag("bot_id", str(bot_id))
                 self.bot_nodepaths[bot_id] = bot_model
 
-                # Heading indicator
-                heading_indicator = self.loader.loadModel("models/misc/box")
+                # Heading indicator (procedurally generated quad)
+                cm = CardMaker("heading_indicator")
+                # Creates a rectangle that is 0.1 wide and 0.5 long,
+                # starting just outside the bot's sphere model.
+                cm.setFrame(-0.05, 0.05, 0.45, 0.95)  # x1, x2, y1, y2
+                heading_indicator = NodePath(cm.generate())
                 heading_indicator.reparentTo(bot_model)
-                heading_indicator.setPos(0, 0.7, 0)
-                heading_indicator.setScale(0.1, 0.5, 0.1)
 
             np = self.bot_nodepaths[bot_id]
             np.setPos(pos)
