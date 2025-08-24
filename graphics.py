@@ -900,9 +900,11 @@ class BattleViewer:
                     self.projectile_bodies[proj_id] = MockProjBody(proj)
 
                 class MockWallShape:
-                    def __init__(self, start, end):
-                        self.a = start
-                        self.b = end
+                    def __init__(self, vertices):
+                        self._vertices = vertices
+
+                    def get_vertices(self):
+                        return self._vertices
 
                 walls_data = viewer.metadata.get("walls", [])
                 for wall_def in walls_data:
@@ -921,11 +923,9 @@ class BattleViewer:
                     ]
                     abs_corners = [(p[0] + cx, p[1] + cy) for p in rotated_corners]
 
-                    for i in range(4):
-                        start_point = abs_corners[i]
-                        end_point = abs_corners[(i + 1) % 4]
-                        wall_shape = MockWallShape(start_point, end_point)
-                        self.wall_bodies.append((None, wall_shape))
+                    # Create a single polygon shape instead of segments
+                    wall_shape = MockWallShape(abs_corners)
+                    self.wall_bodies.append((None, wall_shape))
 
             def _is_bot_alive(self, bot_id):
                 return bot_id in self.bot_data
@@ -1069,18 +1069,8 @@ class BattleViewer:
         visible_walls = []
         for obj in visible_objects:
             if obj["type"] == "wall":
-                # Create wall data structure matching current format
-                wall_data = {
-                    "start": (
-                        obj.get("wall_start_x", obj["x"]),
-                        obj.get("wall_start_y", obj["y"]),
-                    ),
-                    "end": (
-                        obj.get("wall_end_x", obj["x"]),
-                        obj.get("wall_end_y", obj["y"]),
-                    ),
-                }
-                visible_walls.append((wall_data, obj["distance"], obj["angle"]))
+                # The wall object itself is not used, just distance and angle for display
+                visible_walls.append((obj, obj["distance"], obj["angle"]))
 
         # Sort by distance (closest first)
         visible_walls.sort(key=lambda x: x[1])

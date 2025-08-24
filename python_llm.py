@@ -158,39 +158,43 @@ class PythonLLMController:
             # Check walls first (they block everything behind them)
             if hasattr(arena, "wall_bodies"):
                 for wall_body, wall_shape in arena.wall_bodies:
-                    seg_start = wall_shape.a
-                    seg_end = wall_shape.b
+                    # Handle pymunk.Poly shapes by checking their edges
+                    if hasattr(wall_shape, "get_vertices"):
+                        if wall_body:  # It's a real pymunk.Poly from battle_sim
+                            local_verts = wall_shape.get_vertices()
+                            world_verts = [
+                                wall_body.local_to_world(v) for v in local_verts
+                            ]
+                        else:  # It's a MockWallShape from graphics.py
+                            world_verts = wall_shape.get_vertices()
 
-                    intersects, distance, point = self._ray_intersects_segment(
-                        (bot_x, bot_y), (ray_end_x, ray_end_y), seg_start, seg_end
-                    )
+                        for i in range(len(world_verts)):
+                            seg_start = world_verts[i]
+                            seg_end = world_verts[(i + 1) % len(world_verts)]
 
-                    if intersects:
-                        # Filter out arena boundary walls
-                        wall_length = math.sqrt(
-                            (seg_end[0] - seg_start[0]) ** 2
-                            + (seg_end[1] - seg_start[1]) ** 2
-                        )
-                        if wall_length < 15.0:  # Only interior walls
-                            bearing = (
-                                math.degrees(
-                                    math.atan2(point[0] - bot_x, point[1] - bot_y)
+                            intersects, distance, point = self._ray_intersects_segment(
+                                (bot_x, bot_y),
+                                (ray_end_x, ray_end_y),
+                                seg_start,
+                                seg_end,
+                            )
+
+                            if intersects:
+                                bearing = (
+                                    math.degrees(
+                                        math.atan2(point[0] - bot_x, point[1] - bot_y)
+                                    )
+                                    % 360
                                 )
-                                % 360
-                            )
-                            ray_objects.append(
-                                {
-                                    "type": "wall",
-                                    "x": point[0],
-                                    "y": point[1],
-                                    "distance": distance,
-                                    "angle": bearing,
-                                    "wall_start_x": seg_start[0],
-                                    "wall_start_y": seg_start[1],
-                                    "wall_end_x": seg_end[0],
-                                    "wall_end_y": seg_end[1],
-                                }
-                            )
+                                ray_objects.append(
+                                    {
+                                        "type": "wall",
+                                        "x": point[0],
+                                        "y": point[1],
+                                        "distance": distance,
+                                        "angle": bearing,
+                                    }
+                                )
 
             # Check bots
             for other_id, other_data in arena.bot_data.items():
