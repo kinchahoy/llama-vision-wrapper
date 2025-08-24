@@ -168,14 +168,29 @@ class Battle3DViewer(ShowBase):
         for i, wall_def in enumerate(walls_data):
             center_x, center_y, width, height, angle_deg = wall_def
 
-            # Use the actual wall dimensions from battle simulation JSON data
-            # width and height are the wall's 2D footprint dimensions
-            wall_width = width
-            wall_depth = height
+            # In the 2D battle sim JSON:
+            # - width and height represent the wall's 2D footprint (length and thickness)
+            # - For 0° walls (horizontal): width=length, height=thickness
+            # - For 90° walls (vertical): width=thickness, height=length
+            # We need to determine which dimension is the thickness (should be smaller)
+            
+            # The thickness should be the smaller dimension (typically 0.2m from WALL_THICKNESS)
+            wall_thickness = min(width, height)
+            wall_length = max(width, height)
+            
+            # For 3D rendering, we need to map these to X and Y dimensions based on angle
+            if angle_deg == 0:  # Horizontal wall (runs along X-axis)
+                wall_x_size = wall_length  # Length along X
+                wall_y_size = wall_thickness  # Thickness along Y
+            elif angle_deg == 90:  # Vertical wall (runs along Y-axis)
+                wall_x_size = wall_thickness  # Thickness along X
+                wall_y_size = wall_length  # Length along Y
+            else:  # Angled wall - use original dimensions
+                wall_x_size = width
+                wall_y_size = height
 
             # Create a procedural box for the wall
-            # wall_width and wall_depth are from JSON, wall_3d_height is for 3D visualization
-            wall_node = self._create_wall_geometry(wall_width, wall_depth, wall_3d_height)
+            wall_node = self._create_wall_geometry(wall_x_size, wall_y_size, wall_3d_height)
             wall_node.reparentTo(self.render)
 
             # Position the wall - battle sim uses (x,y) but Panda3D uses (x,y,z)
