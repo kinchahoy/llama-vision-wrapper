@@ -122,10 +122,9 @@ class Battle3DViewer(ShowBase):
 
         # Arena floor (procedurally generated)
         cm = CardMaker("floor")
-        cm.setFrame(-0.5, 0.5, -0.5, 0.5)
+        cm.setFrame(-self.arena_width/2, self.arena_width/2, -self.arena_height/2, self.arena_height/2)
         floor = self.render.attachNewNode(cm.generate())
-        floor.setScale(self.arena_width, self.arena_height, 1)
-        floor.setPos(0, 0, 0)
+        floor.setPos(0, 0, 0)  # Floor at ground level (z=0)
         floor.setP(-90)  # Rotate to lie flat on XY plane
         # Apply PBR shader first, then materials
         floor.set_shader_auto()
