@@ -191,14 +191,24 @@ class Battle3DViewer:
 
     def handle_event(self, event):
         """Handle keyboard and mouse events (wgpu events are dict-like)."""
-        etype = event["type"] if isinstance(event, dict) else getattr(event, "type", None)
-        if etype == "key_down":
-            key = event["key"] if isinstance(event, dict) else getattr(event, "key", "")
-            self._handle_keypress(key)
-        elif etype == "pointer_down":
-            button = event.get("button") if isinstance(event, dict) else getattr(event, "button", None)
-            if button == 1:  # Left click
+        # Some backends omit "type" when the handler is registered for a specific event.
+        # Detect by available keys instead of relying on event["type"].
+        if isinstance(event, dict):
+            if "key" in event:
+                self._handle_keypress(event.get("key", ""))
+                return
+            if "button" in event and "x" in event and "y" in event:
+                if event.get("button") == 1:  # Left click
+                    self._handle_mouse_click(event)
+                return
+        else:
+            etype = getattr(event, "type", None)
+            if etype == "key_down":
+                self._handle_keypress(getattr(event, "key", ""))
+                return
+            if etype == "pointer_down" and getattr(event, "button", None) == 1:
                 self._handle_mouse_click(event)
+                return
 
     def _handle_keypress(self, key: str):
         if not isinstance(key, str):
