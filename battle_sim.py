@@ -684,7 +684,7 @@ class Arena:
             # Vertical wall in middle-left
             [(width * 0.4, height * 0.3), (width * 0.4, height * 0.3 + 8)],
             # Horizontal wall in lower-right
-            [(width * 0.6, height * 0.2), (width * 0.6 + 9, height * 0.2)],
+            [(width * 0.5, height * 0.2), (width * 0.5 + 9, height * 0.2)],
             # Short vertical wall in upper-right
             [(width * 0.8, height * 0.6), (width * 0.8, height * 0.6 + 6)],
         ]

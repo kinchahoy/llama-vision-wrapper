@@ -150,7 +150,7 @@ class Battle3DViewer(ShowBase):
             # Interior walls
             ((width * 0.2, height * 0.7), (width * 0.2 + 10, height * 0.7)),
             ((width * 0.4, height * 0.3), (width * 0.4, height * 0.3 + 8)),
-            ((width * 0.6, height * 0.2), (width * 0.6 + 9, height * 0.2)),
+            ((width * 0.5, height * 0.2), (width * 0.5 + 9, height * 0.2)),
             ((width * 0.8, height * 0.6), (width * 0.8, height * 0.6 + 6)),
         ]
 
@@ -159,22 +159,28 @@ class Battle3DViewer(ShowBase):
             start_x, start_y = start[0] - width / 2, start[1] - height / 2
             end_x, end_y = end[0] - width / 2, end[1] - height / 2
 
-            # Create a simple mesh for the wall's height
-            cm = CardMaker(f"wall_{start}_{end}")
+            # Create a simple mesh for the wall's height using a more robust method
             wall_length = math.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
-            # The card's "Y" dimension should be its length, to align with lookAt.
-            # The card's "X" dimension will be its height, after we rotate it.
-            cm.setFrame(0, wall_height, 0, wall_length)
+            cm = CardMaker(f"wall_{start}_{end}")
+            # Create a card centered on its local origin, with length along X
+            cm.setFrame(-wall_length / 2, wall_length / 2, 0, wall_height)
             wall_node = self.render.attachNewNode(cm.generate())
-            wall_node.set_shader_auto()  # Enable PBR for this node
+
+            # Apply PBR materials and make it two-sided to be visible from behind
+            wall_node.set_shader_auto()
             wall_node.set_shader_input("metallic", 0.2)
             wall_node.set_shader_input("roughness", 0.5)
             wall_node.setColor(0.6, 0.6, 0.6, 1)
-            wall_node.setPos(start_x, start_y, 0)
-            wall_node.lookAt(end_x, end_y, 0)
-            # The card is on its local XY plane. After lookAt, it's a slanted plane.
-            # Rotate it around its new local X-axis to make it a vertical wall.
-            wall_node.setP(wall_node.getP() - 90)
+            wall_node.setTwoSided(True)
+
+            # Position the wall at its center
+            center_x = (start_x + end_x) / 2
+            center_y = (start_y + end_y) / 2
+            wall_node.setPos(center_x, center_y, 0)
+
+            # Orient the wall to align with the start/end points and make it vertical
+            angle = math.degrees(math.atan2(end_y - start_y, end_x - start_x))
+            wall_node.setHpr(angle, -90, 0)
 
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
