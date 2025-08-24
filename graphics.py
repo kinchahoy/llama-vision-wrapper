@@ -185,10 +185,14 @@ class BattleViewer:
 
         current_state = self.timeline[int(self.current_frame)]
 
-        # Convert mouse coordinates to arena coordinates
-        arena_x = (mouse_x - self.arena_offset_x) / self.scale_x
-        # Flip Y coordinate to match the arena coordinate system (pygame Y is inverted)
-        arena_y = self.arena_height - (mouse_y - self.arena_offset_y) / self.scale_y
+        # Convert mouse coordinates to centered arena coordinates
+        arena_x = (
+            mouse_x - self.arena_offset_x
+        ) / self.scale_x - self.arena_width / 2
+        # Flip Y coordinate and convert to centered
+        arena_y = (
+            self.arena_height / 2 - (mouse_y - self.arena_offset_y) / self.scale_y
+        )
 
         # Find closest bot
         closest_bot = None
@@ -305,10 +309,13 @@ class BattleViewer:
     def _draw_bots(self, state: Dict):
         """Draw bots with health bars and heading indicators."""
         for bot in state.get("bots", []):
-            # Convert to screen coordinates (flip Y for pygame's inverted coordinate system)
-            screen_x = self.arena_offset_x + bot["x"] * self.scale_x
+            # Convert centered sim coordinates to screen coordinates
+            screen_x = (
+                self.arena_offset_x + (bot["x"] + self.arena_width / 2) * self.scale_x
+            )
             screen_y = (
-                self.arena_offset_y + (self.arena_height - bot["y"]) * self.scale_y
+                self.arena_offset_y
+                + (self.arena_height / 2 - bot["y"]) * self.scale_y
             )
 
             # Bot color based on team
@@ -453,9 +460,12 @@ class BattleViewer:
 
         # Draw projectiles
         for i, proj in enumerate(projectiles):
-            screen_x = self.arena_offset_x + proj["x"] * self.scale_x
+            screen_x = (
+                self.arena_offset_x + (proj["x"] + self.arena_width / 2) * self.scale_x
+            )
             screen_y = (
-                self.arena_offset_y + (self.arena_height - proj["y"]) * self.scale_y
+                self.arena_offset_y
+                + (self.arena_height / 2 - proj["y"]) * self.scale_y
             )
 
             # Draw projectile with team color tint
@@ -482,7 +492,7 @@ class BattleViewer:
                 end_x = (
                     screen_x + proj["vx"] * vel_scale / 6.0
                 )  # Normalize to projectile speed
-                end_y = screen_y + proj["vy"] * vel_scale / 6.0
+                end_y = screen_y - proj["vy"] * vel_scale / 6.0  # Y is inverted
                 pygame.draw.line(
                     self.screen,
                     self.WHITE,
@@ -492,45 +502,35 @@ class BattleViewer:
                 )
 
     def _draw_walls(self, state: Dict):
-        """Draw interior walls/obstacles."""
-        # For now, we'll draw walls statically based on the arena configuration
-        # In a real implementation, walls could be part of the state data
+        """Draw interior walls/obstacles from metadata."""
+        wall_color = (100, 100, 100)
+        walls_data = self.metadata.get("walls", [])
 
-        # Draw interior walls (these match the walls added in battle_sim.py)
-        wall_color = (100, 100, 100)  # Gray walls
-        wall_thickness = 3
+        for wall_def in walls_data:
+            center_x, center_y, w, h, angle_deg = wall_def
 
-        # Scale walls to screen coordinates
-        width = self.arena_width
-        height = self.arena_height
+            # Create a surface for the wall, scaled to display size
+            wall_w_px = w * self.scale_x
+            wall_h_px = h * self.scale_y
+            wall_surface = pygame.Surface((wall_w_px, wall_h_px), pygame.SRCALPHA)
+            wall_surface.fill(wall_color)
+            pygame.draw.rect(wall_surface, self.WHITE, wall_surface.get_rect(), 1)
 
-        # Interior walls (matching the ones in _create_arena_walls)
-        walls = [
-            # Horizontal wall in upper area
-            [(width * 0.2, height * 0.7), (width * 0.2 + 10, height * 0.7)],
-            # Vertical wall in middle-left
-            [(width * 0.4, height * 0.3), (width * 0.4, height * 0.3 + 8)],
-            # Horizontal wall in lower-right
-            [(width * 0.6, height * 0.2), (width * 0.6 + 9, height * 0.2)],
-            # Short vertical wall in upper-right
-            [(width * 0.8, height * 0.6), (width * 0.8, height * 0.6 + 6)],
-        ]
+            # Pygame rotates counter-clockwise, so we negate the angle
+            rotated_surface = pygame.transform.rotate(wall_surface, -angle_deg)
+            new_rect = rotated_surface.get_rect()
 
-        for wall in walls:
-            start_x = self.arena_offset_x + wall[0][0] * self.scale_x
-            start_y = (
-                self.arena_offset_y + (height - wall[0][1]) * self.scale_y
-            )  # Flip Y
-            end_x = self.arena_offset_x + wall[1][0] * self.scale_x
-            end_y = self.arena_offset_y + (height - wall[1][1]) * self.scale_y  # Flip Y
-
-            pygame.draw.line(
-                self.screen,
-                wall_color,
-                (int(start_x), int(start_y)),
-                (int(end_x), int(end_y)),
-                wall_thickness,
+            # Convert center to screen coordinates
+            screen_cx = (
+                self.arena_offset_x + (center_x + self.arena_width / 2) * self.scale_x
             )
+            screen_cy = (
+                self.arena_offset_y
+                + (self.arena_height / 2 - center_y) * self.scale_y
+            )
+            new_rect.center = (screen_cx, screen_cy)
+
+            self.screen.blit(rotated_surface, new_rect)
 
     def _draw_ui(self, state: Dict):
         """Draw UI elements (timeline, controls, info)."""
@@ -842,37 +842,32 @@ class BattleViewer:
             # Fallback to simple distance-based visibility if LLM controller unavailable
             return self._get_visible_objects_fallback(selected_bot, current_state)
 
-        # Create a minimal mock arena with the current state data
+        # We need to reconstruct arena state from the logged state.
+        # Create a minimal mock that provides the necessary interface.
+        # Pass `self` (the viewer instance) to access metadata.
         from battle_sim import Arena
 
-        # We need to reconstruct arena state from the logged state
-        # Create a minimal mock that provides the necessary interface
         class MockArena:
-            def __init__(self, current_state, arena_width, arena_height):
+            def __init__(self, viewer, current_state):
                 self.SENSE_RANGE = 15.0
                 self.FOV_ANGLE = math.radians(120)
                 self.BOT_RADIUS = 0.5
-
-                # Create mock bot data and bodies
                 self.bot_data = {}
                 self.bot_bodies = {}
                 self.projectile_data = {}
                 self.projectile_bodies = {}
                 self.wall_bodies = []
 
-                # Populate from current state
                 for bot in current_state.get("bots", []):
                     if bot["alive"]:
                         bot_id = bot["id"]
 
-                        # Mock bot data
                         class MockBotData:
                             def __init__(self, bot_info):
                                 self.team = bot_info["team"]
                                 self.hp = bot_info["hp"]
                                 self.signal = bot_info.get("signal", "none")
 
-                        # Mock bot body
                         class MockBotBody:
                             def __init__(self, bot_info):
                                 self.position = (bot_info["x"], bot_info["y"])
@@ -885,9 +880,8 @@ class BattleViewer:
                         self.bot_data[bot_id] = MockBotData(bot)
                         self.bot_bodies[bot_id] = MockBotBody(bot)
 
-                # Populate projectiles
                 for proj in current_state.get("projectiles", []):
-                    proj_id = len(self.projectile_data)  # Simple ID assignment
+                    proj_id = len(self.projectile_data)
 
                     class MockProjData:
                         def __init__(self, proj_info):
@@ -905,44 +899,39 @@ class BattleViewer:
                     self.projectile_data[proj_id] = MockProjData(proj)
                     self.projectile_bodies[proj_id] = MockProjBody(proj)
 
-                # Add interior walls (matching battle_sim.py layout)
                 class MockWallShape:
                     def __init__(self, start, end):
                         self.a = start
                         self.b = end
 
-                walls = [
-                    # Horizontal wall in upper area
-                    (
-                        (arena_width * 0.2, arena_height * 0.7),
-                        (arena_width * 0.2 + 10, arena_height * 0.7),
-                    ),
-                    # Vertical wall in middle-left
-                    (
-                        (arena_width * 0.4, arena_height * 0.3),
-                        (arena_width * 0.4, arena_height * 0.3 + 8),
-                    ),
-                    # Horizontal wall in lower-right
-                    (
-                        (arena_width * 0.6, arena_height * 0.2),
-                        (arena_width * 0.6 + 9, arena_height * 0.2),
-                    ),
-                    # Short vertical wall in upper-right
-                    (
-                        (arena_width * 0.8, arena_height * 0.6),
-                        (arena_width * 0.8, arena_height * 0.6 + 6),
-                    ),
-                ]
+                walls_data = viewer.metadata.get("walls", [])
+                for wall_def in walls_data:
+                    cx, cy, w, h, angle_deg = wall_def
+                    angle_rad = math.radians(angle_deg)
+                    c, s = math.cos(angle_rad), math.sin(angle_rad)
+                    hw, hh = w / 2, h / 2
+                    corners = [
+                        (-hw, -hh),
+                        (hw, -hh),
+                        (hw, hh),
+                        (-hw, hh),
+                    ]
+                    rotated_corners = [
+                        (p[0] * c - p[1] * s, p[0] * s + p[1] * c) for p in corners
+                    ]
+                    abs_corners = [(p[0] + cx, p[1] + cy) for p in rotated_corners]
 
-                for start, end in walls:
-                    wall_shape = MockWallShape(start, end)
-                    self.wall_bodies.append((None, wall_shape))
+                    for i in range(4):
+                        start_point = abs_corners[i]
+                        end_point = abs_corners[(i + 1) % 4]
+                        wall_shape = MockWallShape(start_point, end_point)
+                        self.wall_bodies.append((None, wall_shape))
 
             def _is_bot_alive(self, bot_id):
                 return bot_id in self.bot_data
 
         # Create mock arena and use LLM controller's visibility system
-        mock_arena = MockArena(current_state, self.arena_width, self.arena_height)
+        mock_arena = MockArena(self, current_state)
         bot_id = selected_bot["id"]
 
         try:

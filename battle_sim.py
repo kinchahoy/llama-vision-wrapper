@@ -45,6 +45,7 @@ class Arena:
     DEFAULT_ARENA_SIZE = (20.0, 20.0)  # 20x20m for tight 2v2 action
     DEFAULT_BOTS_PER_SIDE = 2
     BOT_RADIUS = 0.4  # meters
+    WALL_THICKNESS = 0.2  # meters
     MAX_HP = 100
 
     # Physics parameters
@@ -108,6 +109,7 @@ class Arena:
         self.time = 0.0
         self.battle_log = []
         self.events = []
+        self.walls = []
         self.next_projectile_id = 1000  # Start projectile IDs at 1000
 
         # Setup collision handlers
@@ -121,82 +123,39 @@ class Arena:
 
     def _spawn_bots(self, spawn_config: Dict):
         """Spawn bots in starting positions with optional randomization."""
-        # Default quadrant configuration
         team0_quadrant = spawn_config.get("team0_quadrant", "left")
         team1_quadrant = spawn_config.get("team1_quadrant", "right")
         randomize = spawn_config.get("randomize_within_quadrants", True)
 
-        # Define quadrants (with safe margins from edges)
-        margin = self.BOT_RADIUS + 0.5  # 0.9m from edges
+        margin = self.BOT_RADIUS + 0.5
+        W, H = self.ARENA_SIZE
         quadrants = {
-            "left": (
-                margin,
-                self.ARENA_SIZE[0] / 2 - 1,
-                margin,
-                self.ARENA_SIZE[1] - margin,
-            ),
-            "right": (
-                self.ARENA_SIZE[0] / 2 + 1,
-                self.ARENA_SIZE[0] - margin,
-                margin,
-                self.ARENA_SIZE[1] - margin,
-            ),
-            "top": (
-                margin,
-                self.ARENA_SIZE[0] - margin,
-                margin,
-                self.ARENA_SIZE[1] / 2 - 1,
-            ),
-            "bottom": (
-                margin,
-                self.ARENA_SIZE[0] - margin,
-                self.ARENA_SIZE[1] / 2 + 1,
-                self.ARENA_SIZE[1] - margin,
-            ),
+            "left": (-W / 2 + margin, -1, -H / 2 + margin, H / 2 - margin),
+            "right": (1, W / 2 - margin, -H / 2 + margin, H / 2 - margin),
+            "top": (-W / 2 + margin, W / 2 - margin, 1, H / 2 - margin),
+            "bottom": (-W / 2 + margin, W / 2 - margin, -H / 2 + margin, -1),
         }
 
-        team0_bounds = quadrants[team0_quadrant]  # (x_min, x_max, y_min, y_max)
+        team0_bounds = quadrants[team0_quadrant]
         team1_bounds = quadrants[team1_quadrant]
-
-        # Calculate arena center for facing direction
-        center_x = self.ARENA_SIZE[0] / 2
-        center_y = self.ARENA_SIZE[1] / 2
 
         # Spawn team 0
         for i in range(self.BOTS_PER_SIDE):
             if randomize:
                 x = self.rng.uniform(team0_bounds[0], team0_bounds[1])
                 y = self.rng.uniform(team0_bounds[2], team0_bounds[3])
-                # Face roughly toward center with some variation
-                dx = center_x - x  # vector to center
-                dy = center_y - y
+                dx, dy = -x, -y  # Vector to center (0,0)
                 center_angle = math.atan2(dx, dy)
-                angle_variation = self.rng.uniform(-math.pi / 6, math.pi / 6)  # ±30°
+                angle_variation = self.rng.uniform(-math.pi / 6, math.pi / 6)
                 theta = center_angle + angle_variation
             else:
-                # Fixed positions within quadrant
-                spacing = min(
-                    2.0,
-                    (team0_bounds[1] - team0_bounds[0])
-                    / max(1, self.BOTS_PER_SIDE - 1),
-                )
+                # Fixed positions (simplified for centered arena)
                 if team0_quadrant == "left":
-                    x = team0_bounds[0] + i * spacing
-                    y = center_y
-                    theta = math.pi / 2  # Face east (toward center)
-                elif team0_quadrant == "right":
-                    x = team0_bounds[1] - i * spacing
-                    y = center_y
-                    theta = 3 * math.pi / 2  # Face west (toward center)
-                elif team0_quadrant == "top":
-                    x = center_x
-                    y = team0_bounds[2] + i * spacing
-                    theta = math.pi  # Face south (toward center)
-                elif team0_quadrant == "bottom":
-                    x = center_x
-                    y = team0_bounds[3] - i * spacing
-                    theta = 0  # Face north (toward center)
-
+                    x, y = -W / 2 + margin + i * 2, 0
+                    theta = math.pi / 2  # Face East
+                else:  # Default to right
+                    x, y = W / 2 - margin - i * 2, 0
+                    theta = -math.pi / 2  # Face West
             self._create_bot(i, x, y, theta, team=0)
 
         # Spawn team 1
@@ -205,36 +164,17 @@ class Arena:
             if randomize:
                 x = self.rng.uniform(team1_bounds[0], team1_bounds[1])
                 y = self.rng.uniform(team1_bounds[2], team1_bounds[3])
-                # Face roughly toward center with some variation
-                dx = center_x - x  # vector to center
-                dy = center_y - y
+                dx, dy = -x, -y
                 center_angle = math.atan2(dx, dy)
-                angle_variation = self.rng.uniform(-math.pi / 6, math.pi / 6)  # ±30°
+                angle_variation = self.rng.uniform(-math.pi / 6, math.pi / 6)
                 theta = center_angle + angle_variation
             else:
-                # Fixed positions within quadrant
-                spacing = min(
-                    2.0,
-                    (team1_bounds[1] - team1_bounds[0])
-                    / max(1, self.BOTS_PER_SIDE - 1),
-                )
                 if team1_quadrant == "right":
-                    x = team1_bounds[1] - i * spacing
-                    y = center_y
-                    theta = 3 * math.pi / 2  # Face west (toward center)
-                elif team1_quadrant == "left":
-                    x = team1_bounds[0] + i * spacing
-                    y = center_y
-                    theta = math.pi / 2  # Face east (toward center)
-                elif team1_quadrant == "top":
-                    x = center_x
-                    y = team1_bounds[2] + i * spacing
-                    theta = math.pi  # Face south (toward center)
-                elif team1_quadrant == "bottom":
-                    x = center_x
-                    y = team1_bounds[3] - i * spacing
-                    theta = 0  # Face north (toward center)
-
+                    x, y = W / 2 - margin - i * 2, 0
+                    theta = -math.pi / 2  # Face West
+                else:  # Default to left
+                    x, y = -W / 2 + margin + i * 2, 0
+                    theta = math.pi / 2  # Face East
             self._create_bot(bot_id, x, y, theta, team=1)
 
     def step_physics(self):
@@ -662,43 +602,41 @@ class Arena:
 
     def _create_arena_walls(self):
         """Create static walls around the arena and interior obstacles."""
-        wall_thickness = 0.05
         width, height = self.ARENA_SIZE
+        thickness = self.WALL_THICKNESS
 
-        # Create boundary wall segments
-        walls = [
-            # Left wall
-            [(0, 0), (0, height)],
-            # Right wall
-            [(width, 0), (width, height)],
-            # Bottom wall
-            [(0, 0), (width, 0)],
-            # Top wall
-            [(0, height), (width, height)],
+        # Wall definitions: (center_x, center_y, width, height, angle_deg)
+        # Angle is 0 for horizontal walls aligned with X-axis.
+        self.walls = [
+            # Perimeter walls
+            (0, height / 2, width + thickness, thickness, 0),  # Top
+            (0, -height / 2, width + thickness, thickness, 0),  # Bottom
+            (-width / 2, 0, thickness, height, 0),  # Left
+            (width / 2, 0, thickness, height, 0),  # Right
+            # Interior walls
+            (-width * 0.25, height * 0.2, 10, thickness, 0),
+            (0, -height * 0.15, thickness, 8, 0),
+            (width * 0.25, -height * 0.3, 9, thickness, 20),
+            (width * 0.3, height * 0.1, thickness, 6, 0),
         ]
 
-        # Add interior walls (2-4 walls, ~10 units long each)
-        interior_walls = [
-            # Horizontal wall in upper area
-            [(width * 0.2, height * 0.7), (width * 0.2 + 10, height * 0.7)],
-            # Vertical wall in middle-left
-            [(width * 0.4, height * 0.3), (width * 0.4, height * 0.3 + 8)],
-            # Horizontal wall in lower-right
-            [(width * 0.5, height * 0.2), (width * 0.5 + 9, height * 0.2)],
-            # Short vertical wall in upper-right
-            [(width * 0.8, height * 0.6), (width * 0.8, height * 0.6 + 6)],
-        ]
-
-        # Add interior walls to the main walls list
-        walls.extend(interior_walls)
-
-        # Store wall bodies to avoid iteration callbacks during cleanup
         self.wall_bodies = []
-
-        for wall in walls:
+        for center_x, center_y, w, h, angle_deg in self.walls:
             wall_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-            wall_shape = pymunk.Segment(wall_body, wall[0], wall[1], wall_thickness)
-            wall_shape.friction = 0.0
+            wall_body.position = center_x, center_y
+            wall_body.angle = math.radians(angle_deg)
+
+            # Pymunk polys are defined relative to body center of gravity
+            half_w, half_h = w / 2, h / 2
+            verts = [
+                (-half_w, -half_h),
+                (half_w, -half_h),
+                (half_w, half_h),
+                (-half_w, half_h),
+            ]
+
+            wall_shape = pymunk.Poly(wall_body, verts)
+            wall_shape.friction = 0.1
             wall_shape.collision_type = self.COLLISION_TYPE_WALL
             self.space.add(wall_body, wall_shape)
             self.wall_bodies.append((wall_body, wall_shape))
@@ -787,7 +725,8 @@ class Arena:
     def _is_projectile_out_of_bounds(self, body: pymunk.Body) -> bool:
         """Check if projectile is outside arena bounds."""
         x, y = body.position
-        return not (0 <= x <= self.ARENA_SIZE[0] and 0 <= y <= self.ARENA_SIZE[1])
+        W, H = self.ARENA_SIZE
+        return not (-W / 2 <= x <= W / 2 and -H / 2 <= y <= H / 2)
 
     def _process_projectile_hit(self, proj_id: int, bot_id: int):
         """Process projectile hitting a bot."""
@@ -914,6 +853,10 @@ class Arena:
         """Log current state to battle log."""
         self.battle_log.append(self.get_battle_state())
         self.events.clear()  # Clear events after logging
+
+    def get_walls(self) -> List[Tuple]:
+        """Get wall data for logging/visualization."""
+        return self.walls
 
     def is_battle_over(
         self, max_duration: float = 60.0

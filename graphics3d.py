@@ -135,52 +135,31 @@ class Battle3DViewer(ShowBase):
         self._create_walls()
 
     def _create_walls(self):
-        """Create interior and perimeter walls with PBR materials."""
-        width = self.arena_width
-        height = self.arena_height
+        """Create interior and perimeter walls from metadata."""
         wall_height = 2.0
+        walls_data = self.metadata.get("walls", [])
 
-        # Wall data (perimeter and interior), matching battle_sim.py
-        walls_data = [
-            # Perimeter walls
-            ((0, 0), (0, height)),  # Left
-            ((width, 0), (width, height)),  # Right
-            ((0, 0), (width, 0)),  # Bottom
-            ((0, height), (width, height)),  # Top
-            # Interior walls
-            ((width * 0.2, height * 0.7), (width * 0.2 + 10, height * 0.7)),
-            ((width * 0.4, height * 0.3), (width * 0.4, height * 0.3 + 8)),
-            ((width * 0.5, height * 0.2), (width * 0.5 + 9, height * 0.2)),
-            ((width * 0.8, height * 0.6), (width * 0.8, height * 0.6 + 6)),
-        ]
+        for i, wall_def in enumerate(walls_data):
+            center_x, center_y, width, height, angle_deg = wall_def
 
-        for start, end in walls_data:
-            # Convert to centered coordinates
-            start_x, start_y = start[0] - width / 2, start[1] - height / 2
-            end_x, end_y = end[0] - width / 2, end[1] - height / 2
+            # Use a box model for walls with thickness
+            wall_node = self.loader.loadModel("box")
+            wall_node.reparentTo(self.render)
 
-            # Create a simple mesh for the wall's height using a more robust method
-            wall_length = math.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
-            cm = CardMaker(f"wall_{start}_{end}")
-            # Create a card centered on its local origin, with length along X
-            cm.setFrame(-wall_length / 2, wall_length / 2, 0, wall_height)
-            wall_node = self.render.attachNewNode(cm.generate())
+            # Scale the box to be the wall dimensions
+            # Height in sim is thickness, in 3D it's Y-scale
+            wall_node.setScale(width, height, wall_height)
 
-            # Apply PBR materials and make it two-sided to be visible from behind
+            # Apply PBR materials
             wall_node.set_shader_auto()
             wall_node.set_shader_input("metallic", 0.2)
             wall_node.set_shader_input("roughness", 0.5)
             wall_node.setColor(0.6, 0.6, 0.6, 1)
-            wall_node.setTwoSided(True)
 
-            # Position the wall at its center
-            center_x = (start_x + end_x) / 2
-            center_y = (start_y + end_y) / 2
-            wall_node.setPos(center_x, center_y, 0)
-
-            # Orient the wall to align with the start/end points and make it vertical
-            angle = math.degrees(math.atan2(end_y - start_y, end_x - start_x))
-            wall_node.setHpr(angle, -90, 0)
+            # Position and orient the wall
+            # Z-pos is half height to sit on the floor
+            wall_node.setPos(center_x, center_y, wall_height / 2)
+            wall_node.setHpr(angle_deg, 0, 0)
 
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
@@ -420,9 +399,7 @@ class Battle3DViewer(ShowBase):
                 continue
 
             bot_id = bot["id"]
-            pos = LPoint3f(
-                bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.5
-            )
+            pos = LPoint3f(bot["x"], bot["y"], 0.5)
 
             if bot_id not in self.bot_nodepaths:
                 bot_model = self.loader.loadModel("smiley")
@@ -455,9 +432,7 @@ class Battle3DViewer(ShowBase):
         self.projectile_nodepaths.clear()
 
         for proj in state.get("projectiles", []):
-            pos = LPoint3f(
-                proj["x"] - self.arena_width / 2, proj["y"] - self.arena_height / 2, 0.5
-            )
+            pos = LPoint3f(proj["x"], proj["y"], 0.5)
             proj_model = self.loader.loadModel("smiley")
             proj_model.set_shader_auto()
             proj_model.reparentTo(self.render)
@@ -536,9 +511,7 @@ class Battle3DViewer(ShowBase):
 
             # Update position, orientation, and color
             bot = self.selected_bot
-            self.fov_nodepath.setPos(
-                bot["x"] - self.arena_width / 2, bot["y"] - self.arena_height / 2, 0.1
-            )
+            self.fov_nodepath.setPos(bot["x"], bot["y"], 0.1)
             self.fov_nodepath.setH(bot["theta"])
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_nodepath.setColor(color)

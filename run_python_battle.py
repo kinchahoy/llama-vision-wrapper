@@ -166,6 +166,7 @@ def run_python_battle(
             "winner": f"team_{winner}",
             "reason": reason,
             "arena_size": arena.ARENA_SIZE,
+            "walls": arena.get_walls(),
             "total_ticks": arena.tick,
             "real_time": round(elapsed, 2),
             "control_system": "python_functions",
