@@ -233,7 +233,11 @@ class Battle3DViewer:
             return
         k = key
         if k.lower() == "q" or k == "Escape":
-            sys.exit()
+            try:
+                self.canvas.close()
+            except Exception:
+                pass
+            return
         elif k in (" ", "Space", "Spacebar"):
             self._toggle_play()
         elif k.lower() == "r":
