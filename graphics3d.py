@@ -108,8 +108,10 @@ class Battle3DViewer(ShowBase):
         # Tighten the near/far planes to include only the battle area.
         lens.setNearFar(1, 60)
 
-        # Arena floor
-        floor = self.loader.loadModel("models/plane")
+        # Arena floor (procedurally generated)
+        cm = CardMaker("floor")
+        cm.setFrame(-0.5, 0.5, -0.5, 0.5)
+        floor = self.render.attachNewNode(cm.generate())
         floor.reparentTo(self.render)
         floor.setScale(self.arena_width, self.arena_height, 1)
         floor.setPos(0, 0, 0)
@@ -401,7 +403,7 @@ class Battle3DViewer(ShowBase):
             )
 
             if bot_id not in self.bot_nodepaths:
-                bot_model = self.loader.loadModel("models/misc/sphere")
+                bot_model = self.loader.loadModel("smiley")
                 bot_model.reparentTo(self.render)
                 bot_model.setTag("bot_id", str(bot_id))
                 self.bot_nodepaths[bot_id] = bot_model
@@ -433,7 +435,7 @@ class Battle3DViewer(ShowBase):
             pos = LPoint3f(
                 proj["x"] - self.arena_width / 2, proj["y"] - self.arena_height / 2, 0.5
             )
-            proj_model = self.loader.loadModel("models/misc/sphere")
+            proj_model = self.loader.loadModel("smiley")
             proj_model.reparentTo(self.render)
             proj_model.setPos(pos)
             proj_model.setScale(0.15)
