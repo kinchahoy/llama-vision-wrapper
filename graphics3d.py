@@ -157,6 +157,8 @@ class Battle3DViewer(ShowBase):
         # UI state
         self.show_fov = False
         self.selected_bot = None
+        self.camera_target = LPoint3f(0, 0, 0)
+        self.last_mouse_pos = None
 
         # Initialize visibility system (same as 2D viewer)
         if PythonLLMController is not None:
@@ -215,7 +217,7 @@ class Battle3DViewer(ShowBase):
         # Set up an isometric-style camera
         arena_diagonal = math.sqrt(self.arena_width**2 + self.arena_height**2)
         self.cam.setPos(0, -arena_diagonal * 1.2, arena_diagonal * 1.1)
-        self.cam.lookAt(0, 0, 0)
+        self.cam.lookAt(self.camera_target)
         # Tighten camera frustum for better SSAO and depth precision
         self.cam.node().getLens().setNearFar(10, 100)
 
@@ -577,6 +579,8 @@ class Battle3DViewer(ShowBase):
         self.accept("escape", sys.exit)
         self.accept("q", sys.exit)
         self.accept("mouse1", self._handle_mouse_click)
+        self.accept("wheel_up", self._handle_zoom, [1.0])
+        self.accept("wheel_down", self._handle_zoom, [-1.0])
 
     def _setup_mouse_picking(self):
         """Set up the collision system for mouse picking."""
@@ -591,6 +595,9 @@ class Battle3DViewer(ShowBase):
 
     def _handle_mouse_click(self):
         """Handle mouse clicks for bot selection."""
+        if self.mouseWatcherNode.is_button_down("control"):
+            return  # Using control for camera controls
+
         if self.mouseWatcherNode.hasMouse():
             mpos = self.mouseWatcherNode.getMouse()
             self.pickerRay.setFromLens(self.camNode, mpos.getX(), mpos.getY())
@@ -608,8 +615,50 @@ class Battle3DViewer(ShowBase):
                             self._update_fov_display()
                             break
 
+    def _handle_zoom(self, direction: float):
+        """Handle mouse wheel zooming when control is held."""
+        if self.mouseWatcherNode.is_button_down("control"):
+            zoom_speed = 5.0
+            # Move camera along its local Y axis (forward/backward)
+            current_dist = (self.cam.getPos() - self.camera_target).length()
+            # Prevent zooming in too close or past the target
+            if current_dist - (direction * zoom_speed) > 2.0:
+                self.cam.setY(self.cam, direction * zoom_speed)
+
+    def _update_camera_controls(self):
+        """Handle camera panning with mouse when control is held."""
+        if not self.mouseWatcherNode.is_button_down("control"):
+            self.last_mouse_pos = None
+            return
+
+        # Panning with mouse drag (mouse1)
+        if self.mouseWatcherNode.is_button_down("mouse1"):
+            if self.mouseWatcherNode.hasMouse():
+                mpos = self.mouseWatcherNode.getMouse()
+                if self.last_mouse_pos is not None:
+                    dx = mpos.getX() - self.last_mouse_pos.getX()
+                    dy = mpos.getY() - self.last_mouse_pos.getY()
+
+                    pan_speed = 40.0
+
+                    # Get camera's right and up vectors in world space
+                    cam_right = self.render.getRelativeVector(self.cam, Vec3.right())
+                    cam_up = self.render.getRelativeVector(self.cam, Vec3.up())
+
+                    # Move camera and target together for panning
+                    move_vec = (cam_right * -dx * pan_speed) + (cam_up * -dy * pan_speed)
+                    self.cam.setPos(self.cam.getPos() + move_vec)
+                    self.camera_target += move_vec
+                    self.cam.lookAt(self.camera_target)
+
+                self.last_mouse_pos = mpos
+        else:
+            self.last_mouse_pos = None
+
     def _update_task(self, task):
         """Main update loop."""
+        self._update_camera_controls()
+
         if self.playing:
             # Clamp dt to avoid large jumps after pausing
             dt = min(task.getDt(), 1.0 / 30.0)
