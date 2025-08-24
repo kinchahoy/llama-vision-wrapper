@@ -586,7 +586,7 @@ class Battle3DViewer:
                 # Create bot body
                 bot_geom = gfx.sphere_geometry(0.4)
                 color = (0, 0.5, 1) if bot["team"] == 0 else (1, 0.3, 0.3)
-                bot_mat = gfx.MeshStandardMaterial(color=color)
+                bot_mat = gfx.MeshStandardMaterial(color=color, roughness=0.15, metalness=0.6)
                 bot_body = gfx.Mesh(bot_geom, bot_mat)
                 bot_body.bot_id = bot_id  # For picking
                 self.scene.add(bot_body)
@@ -594,7 +594,9 @@ class Battle3DViewer:
                 # Heading indicator
                 heading_geom = gfx.cone_geometry(0.2, 0.4)
                 heading_mat = gfx.MeshStandardMaterial(
-                    color=tuple(c + 0.4 for c in color)
+                    color=tuple(c + 0.4 for c in color),
+                    roughness=0.15,
+                    metalness=0.6,
                 )
                 heading_cone = gfx.Mesh(heading_geom, heading_mat)
                 heading_cone.local.position = (0, 0.25, 0)  # In front of body
