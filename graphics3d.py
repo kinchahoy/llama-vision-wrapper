@@ -91,6 +91,9 @@ class Battle3DViewer(ShowBase):
         # Tighten camera frustum for better SSAO and depth precision
         self.cam.node().getLens().setNearFar(10, 100)
 
+        # We must have at least one frame rendered before setting up the filters.
+        self.graphicsEngine.renderFrame()
+
         # Post-processing effects for realism
         self.filters = CommonFilters(self.win, self.cam)
         self.filters.setAmbientOcclusion(num_samples=16, radius=0.3, amount=2.0)
