@@ -99,7 +99,7 @@ class Battle3DViewer:
         self.camera = gfx.PerspectiveCamera(70, 16 / 9)
         arena_diagonal = math.sqrt(self.arena_width**2 + self.arena_height**2)
         self.camera.local.position = (0, -arena_diagonal * 0.9, arena_diagonal * 0.9)
-        self.camera.look_at(la.Vector3(0, 0, 0))
+        self.camera.look_at((0, 0, 0))
 
         # Lighting
         self.scene.add(gfx.AmbientLight(intensity=0.4))
@@ -142,9 +142,7 @@ class Battle3DViewer:
 
             wall = gfx.Mesh(wall_geom, wall_mat)
             wall.local.position = (center_x, center_y, wall_3d_height / 2)
-            wall.local.rotation.set_from_euler(
-                la.Euler(0, 0, math.radians(angle_deg))
-            )
+            wall.local.rotation.set_from_axis_angle((0, 0, 1), math.radians(angle_deg))
             self.scene.add(wall)
 
     def _setup_ui(self):
@@ -546,9 +544,7 @@ class Battle3DViewer:
                 )
                 heading_cone = gfx.Mesh(heading_geom, heading_mat)
                 heading_cone.local.position = (0, 0.25, 0)  # In front of body
-                heading_cone.local.rotation.set_from_euler(
-                    la.Euler(math.pi / 2, 0, 0)
-                )
+                heading_cone.local.rotation.set_from_axis_angle((1, 0, 0), math.pi / 2)
                 bot_body.add(heading_cone)
 
                 # Health bar
@@ -585,9 +581,7 @@ class Battle3DViewer:
             bot_body = bot_obj_group["body"]
             bot_body.local.position = pos
             # Sim angle: 0 is +X. pygfx Z-up: rotation is around Z axis.
-            bot_body.local.rotation.set_from_euler(
-                la.Euler(0, 0, math.radians(bot["theta"]))
-            )
+            bot_body.local.rotation.set_from_axis_angle((0, 0, 1), math.radians(bot["theta"]))
 
             # Update health bar
             hp_ratio = max(0.0, min(1.0, bot["hp"] / 100.0))
@@ -776,8 +770,8 @@ class Battle3DViewer:
 
     def _reset_camera_view(self):
         self.camera.local.position = (0, -self.arena_width * 1.2, self.arena_height * 1.1)
-        self.camera.look_at(la.Vector3(0, 0, 0))
-        self.camera_controls.target.set(0, 0, 0)
+        self.camera.look_at((0, 0, 0))
+        self.camera_controls.target = (0, 0, 0)
 
     def _toggle_fov(self):
         self.show_fov = not self.show_fov
@@ -798,9 +792,7 @@ class Battle3DViewer:
 
             bot = self.selected_bot
             self.fov_object.local.position = (bot["x"], bot["y"], 0.1)
-            self.fov_object.local.rotation.set_from_euler(
-                la.Euler(0, 0, math.radians(bot["theta"]))
-            )
+            self.fov_object.local.rotation.set_from_axis_angle((0, 0, 1), math.radians(bot["theta"]))
             color = (0, 0.5, 1, 0.3) if bot["team"] == 0 else (1, 0.3, 0.3, 0.3)
             self.fov_object.material.color = color
             self.fov_object.visible = True
