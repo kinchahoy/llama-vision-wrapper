@@ -47,53 +47,44 @@ from panda3d.core import (
 
 
 def _init_hq_rendering(app):
-    """
-    Try complexpbr (SSR/SSAO/Bloom/AA). If it fails (e.g., unsupported GLSL),
-    fall back to simplepbr + CommonFilters.
-    """
-    # Quality knobs (tweak freely)
-    SHADOW_MAP_SIZE = 4096
-    BLOOM_INTENSITY = 0.25
-    SSAO_SAMPLES = 24
-    SPECULAR_BOOST = 1.0  # can push to ~2–10 for shinier specular in complexpbr
+    """Try complexpbr first; fall back to simplepbr+CommonFilters if needed."""
+    SHADOW_MAP = 4096
 
     try:
-        # --- Primary: complexpbr path ---
         import complexpbr
+        # Apply PBR+IBL and enable screen-space effects (AA/SSAO/HSV; SSR tweakable)
+        complexpbr.apply_shader(app.render, default_lighting=True)
+        complexpbr.screenspace_init()
 
-        # Apply IBL/PBR scene shader
-        complexpbr.apply_shader(
-            app.render
-        )  # sets up dynamic env reflections, PBR, etc.
-        complexpbr.screenspace_init()  # enables SSAO, SSR, AA, HSV; also provides bloom controls
+        # Optional quality knobs (only if screen_quad exists on your build)
+        if hasattr(app, "screen_quad"):
+            q = app.screen_quad
+            q.set_shader_input('ssao_samples', 24)
+            q.set_shader_input('ssao_radius', 0.35)
+            q.set_shader_input('bloom_intensity', 0.25)
+            q.set_shader_input('ssr_samples', 64)      # 0 disables SSR
+            q.set_shader_input('ssr_intensity', 0.5)
+            q.set_shader_input('ssr_step', 4.0)
+            q.set_shader_input('ssr_fresnel_pow', 3.0)
+        app.render.set_shader_input('specular_factor', 1.0)  # global specular tweak
 
-        # Optional: tune screenspace effects on the screen quad
-        screen_quad = app.screen_quad
-        screen_quad.set_shader_input("ssao_samples", SSAO_SAMPLES)
-        screen_quad.set_shader_input("bloom_intensity", BLOOM_INTENSITY)
-        app.render.set_shader_input("specular_factor", SPECULAR_BOOST)
-
-        # Shadows: define a sun with high-res shadow map
+        # Sun + shadows
         sun = DirectionalLight("sun")
-        sun.setShadowCaster(True, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE)
-        sun.getLens().setFilmSize(120, 120)
-        sun.getLens().setNearFar(0.5, 500)
+        sun.setShadowCaster(True, SHADOW_MAP, SHADOW_MAP)
+        sun.getLens().setFilmSize(150, 150)
+        sun.getLens().setNearFar(0.5, 800)
         sun_np = app.render.attachNewNode(sun)
         sun_np.setHpr(45, -55, 0)
         app.render.setLight(sun_np)
 
-        # Clean canvas: multisample at node level (complexpbr has its own AA as well)
+        # Extra smoothing
         app.render.setAntialias(AntialiasAttrib.MMultisample)
 
         app._pbr_pipeline = "complexpbr"
-        print("[HQ] complexpbr active (SSR/SSAO/Bloom/AA).")
-
+        print("[HQ] complexpbr active.")
     except Exception as e:
-        print("[HQ] complexpbr failed, falling back to simplepbr. Error:", e)
-        # --- Fallback: simplepbr + CommonFilters ---
-        # Keep simplepbr focused on PBR/IBL/shadows:
+        print("[HQ] complexpbr failed on this driver; falling back. Error:", e)
         import simplepbr
-
         pbr = simplepbr.init(
             use_330=True,
             enable_shadows=True,
@@ -101,28 +92,25 @@ def _init_hq_rendering(app):
             use_occlusion_maps=True,
             use_emission_maps=True,
         )
-
-        # Light & shadows
+        # Sun + shadows (same as above)
         sun = DirectionalLight("sun")
-        sun.setShadowCaster(True, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE)
-        sun.getLens().setFilmSize(120, 120)
-        sun.getLens().setNearFar(0.5, 500)
+        sun.setShadowCaster(True, SHADOW_MAP, SHADOW_MAP)
+        sun.getLens().setFilmSize(150, 150)
+        sun.getLens().setNearFar(0.5, 800)
         sun_np = app.render.attachNewNode(sun)
         sun_np.setHpr(45, -55, 0)
         app.render.setLight(sun_np)
-        pbr.shadow_bias = 0.003  # tweak if acne/peter-panning
+        pbr.shadow_bias = 0.003
 
-        # PostFX via CommonFilters (Bloom/SSAO/MSAA)
+        # Post FX via CommonFilters (MSAA/AO/Bloom)
         from direct.filter.CommonFilters import CommonFilters
-
-        filters = CommonFilters(app.win, app.cam)
         app.render.setAntialias(AntialiasAttrib.MMultisample)
-        filters.setMSAA(8)  # prefer MSAA here, not via window config
-        filters.setAmbientOcclusion(numsamples=SSAO_SAMPLES, radius=0.3, amount=1.0)
-        filters.setBloom(intensity=0.7, size="medium", mintrigger=0.6)
+        app._filters = CommonFilters(app.win, app.cam)
+        app._filters.setMSAA(8)
+        app._filters.setAmbientOcclusion(numsamples=16, radius=0.30, amount=1.0)
+        app._filters.setBloom(intensity=0.25, size="medium", mintrigger=0.6)
 
         app._pbr_pipeline = "simplepbr"
-        app._filters = filters
         print("[HQ] simplepbr + CommonFilters active.")
 
 
