@@ -45,7 +45,7 @@ class Arena:
     DEFAULT_ARENA_SIZE = (20.0, 20.0)  # 20x20m for tight 2v2 action
     DEFAULT_BOTS_PER_SIDE = 2
     BOT_RADIUS = 0.4  # meters
-    WALL_THICKNESS = 0.2  # meters - used for all walls (perimeter and interior)
+    WALL_THICKNESS = 0.5  # meters - used for all walls (perimeter and interior)
     MAX_HP = 100
 
     # Physics parameters
