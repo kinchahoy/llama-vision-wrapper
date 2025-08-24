@@ -504,7 +504,7 @@ class Battle3DViewer(ShowBase):
             parent=self.ui_frame,
             text="Play",
             command=self._toggle_play,
-            pos=(-0.8, 0, -0.3),
+            pos=(-0.9, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
@@ -512,7 +512,7 @@ class Battle3DViewer(ShowBase):
             text="<",
             command=self._step_frame,
             extraArgs=[-1],
-            pos=(-0.4, 0, -0.3),
+            pos=(-0.45, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
@@ -527,14 +527,14 @@ class Battle3DViewer(ShowBase):
             parent=self.ui_frame,
             text="Reset",
             command=self._reset_sim,
-            pos=(0.4, 0, -0.3),
+            pos=(0.45, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
             parent=self.ui_frame,
             text="Reset View",
             command=self._reset_camera_view,
-            pos=(0.8, 0, -0.3),
+            pos=(0.9, 0, -0.3),
             scale=0.3,
         )
 
@@ -1430,8 +1430,9 @@ def run_3d_viewer(battle_file: str):
     print("  F = Toggle FOV display")
     print("  Q/ESC = Quit")
     print("  Click bots to select them")
-    print("  Hold CTRL or ALT/Option + Mouse Drag to pan view")
-    print("  Hold CTRL or ALT/Option + Mouse Wheel or +/- keys to zoom")
+    print("\n  Camera Controls:")
+    print("    - Pan:  Hold CTRL or ALT/Option + Drag Mouse")
+    print("    - Zoom: Hold CTRL or ALT/Option + Use Mouse Wheel or +/- keys")
 
     app = Battle3DViewer(battle_data)
     app.run()
