@@ -551,17 +551,26 @@ class Battle3DViewer(ShowBase):
 
         interp_state["bots"] = interp_bots
 
-        # Interpolate projectiles by matching them based on their unique ID.
+        # Interpolate projectiles using velocities for smoother constant-speed motion.
         projectiles1 = {p["id"]: p for p in state1.get("projectiles", []) if "id" in p}
         projectiles2 = {p["id"]: p for p in state2.get("projectiles", []) if "id" in p}
         interp_projectiles = []
 
+        dt = max(0.0, time2 - time1)
         for proj_id, proj1 in projectiles1.items():
             if proj_id in projectiles2:
-                proj2 = projectiles2[proj_id]
                 interp_proj = proj1.copy()
-                interp_proj["x"] = proj1["x"] + (proj2["x"] - proj1["x"]) * interp
-                interp_proj["y"] = proj1["y"] + (proj2["y"] - proj1["y"]) * interp
+                if dt > 0:
+                    t = interp * dt
+                    vx = proj1.get("vx", 0.0)
+                    vy = proj1.get("vy", 0.0)
+                    interp_proj["x"] = proj1["x"] + vx * t
+                    interp_proj["y"] = proj1["y"] + vy * t
+                else:
+                    # Fallback to position lerp if no time delta
+                    proj2 = projectiles2[proj_id]
+                    interp_proj["x"] = proj1["x"] + (proj2["x"] - proj1["x"]) * interp
+                    interp_proj["y"] = proj1["y"] + (proj2["y"] - proj1["y"]) * interp
                 interp_projectiles.append(interp_proj)
             # If a projectile from state1 is not in state2, it has been removed
             # (e.g., hit a wall or expired), so we don't add it to the interpolated state.
