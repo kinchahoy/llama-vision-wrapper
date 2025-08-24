@@ -12,7 +12,6 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pygfx as gfx
-import pygfx.text as gfx_text
 import pylinalg as la
 from wgpu.gui.auto import WgpuCanvas, run
 
