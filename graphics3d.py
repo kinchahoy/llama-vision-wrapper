@@ -504,7 +504,7 @@ class Battle3DViewer(ShowBase):
             parent=self.ui_frame,
             text="Play",
             command=self._toggle_play,
-            pos=(-0.75, 0, -0.3),
+            pos=(-0.8, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
@@ -512,7 +512,7 @@ class Battle3DViewer(ShowBase):
             text="<",
             command=self._step_frame,
             extraArgs=[-1],
-            pos=(-0.25, 0, -0.3),
+            pos=(-0.4, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
@@ -520,14 +520,21 @@ class Battle3DViewer(ShowBase):
             text=">",
             command=self._step_frame,
             extraArgs=[1],
-            pos=(0.25, 0, -0.3),
+            pos=(0.0, 0, -0.3),
             scale=0.3,
         )
         DirectButton(
             parent=self.ui_frame,
             text="Reset",
             command=self._reset_sim,
-            pos=(0.75, 0, -0.3),
+            pos=(0.4, 0, -0.3),
+            scale=0.3,
+        )
+        DirectButton(
+            parent=self.ui_frame,
+            text="Reset View",
+            command=self._reset_camera_view,
+            pos=(0.8, 0, -0.3),
             scale=0.3,
         )
 
@@ -575,6 +582,7 @@ class Battle3DViewer(ShowBase):
         self.accept("arrow_left", self._step_frame, [-1])
         self.accept("arrow_right", self._step_frame, [1])
         self.accept("r", self._reset_sim)
+        self.accept("c", self._reset_camera_view)
         self.accept("f", self._toggle_fov)
         self.accept("escape", sys.exit)
         self.accept("q", sys.exit)
@@ -1319,6 +1327,13 @@ class Battle3DViewer(ShowBase):
         self.play_pause_btn["text"] = "Play"
         self.current_frame = 0
 
+    def _reset_camera_view(self):
+        """Reset camera position and target to default."""
+        self.camera_target = LPoint3f(0, 0, 0)
+        arena_diagonal = math.sqrt(self.arena_width**2 + self.arena_height**2)
+        self.cam.setPos(0, -arena_diagonal * 1.2, arena_diagonal * 1.1)
+        self.cam.lookAt(self.camera_target)
+
     def _toggle_fov(self):
         """Toggle the FOV display for the selected bot."""
         self.show_fov = not self.show_fov
@@ -1411,6 +1426,7 @@ def run_3d_viewer(battle_file: str):
     print("  SPACE = Play/Pause")
     print("  ←/→ = Step frame by frame")
     print("  R = Reset to start")
+    print("  C = Reset camera view")
     print("  F = Toggle FOV display")
     print("  Q/ESC = Quit")
     print("  Click bots to select them")
