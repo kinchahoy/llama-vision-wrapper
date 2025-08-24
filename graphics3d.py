@@ -140,8 +140,7 @@ class Battle3DViewer(ShowBase):
         floor = self.render.attachNewNode(cm.generate())
         floor.setPos(0, 0, 0)  # Floor at ground level (z=0)
         floor.setP(-90)  # Rotate to lie flat on XY plane
-        # Apply PBR shader first, then materials - make floor highly reflective
-        floor.set_shader_auto()
+        # Apply PBR materials - make floor highly reflective (no setShaderAuto for simplepbr)
         floor.set_shader_input("metallic", 0.8)  # High metallic for reflections
         floor.set_shader_input("roughness", 0.02)  # Very smooth for clear reflections
         floor.setColor(0.3, 0.3, 0.35, 1)  # Lighter metallic floor for better visibility
@@ -175,7 +174,7 @@ class Battle3DViewer(ShowBase):
             wall_node.setHpr(angle_deg, 0, 0)
 
             # Apply PBR materials after positioning - different colors for different wall types
-            wall_node.set_shader_auto()
+            # (no setShaderAuto for simplepbr)
             
             # First 4 walls are perimeter walls (outside boundary)
             if i < 4:
@@ -500,7 +499,7 @@ class Battle3DViewer(ShowBase):
                     cm.setFrame(-0.5, 0.5, -0.5, 0.5)
                     bot_model = NodePath(cm.generate())
                 
-                bot_model.set_shader_auto()
+                # No setShaderAuto for simplepbr - let simplepbr handle shading
                 bot_model.reparentTo(self.render)
                 bot_model.setTag("bot_id", str(bot_id))
                 self.bot_nodepaths[bot_id] = bot_model
@@ -542,7 +541,7 @@ class Battle3DViewer(ShowBase):
                 cm.setFrame(-0.5, 0.5, -0.5, 0.5)
                 proj_model = NodePath(cm.generate())
             
-            proj_model.set_shader_auto()
+            # No setShaderAuto for simplepbr - let simplepbr handle shading
             proj_model.reparentTo(self.render)
             proj_model.setPos(pos)
             proj_model.setScale(0.15)
