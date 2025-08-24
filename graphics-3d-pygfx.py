@@ -97,17 +97,17 @@ class Battle3DViewer:
         # Camera
         self.camera = gfx.PerspectiveCamera(70, 16 / 9)
         arena_diagonal = math.sqrt(self.arena_width**2 + self.arena_height**2)
-        self.camera.local.position.set(0, -arena_diagonal * 0.9, arena_diagonal * 0.9)
+        self.camera.local.position = (0, -arena_diagonal * 0.9, arena_diagonal * 0.9)
         self.camera.look_at(gfx.linalg.Vector3(0, 0, 0))
 
         # Lighting
         self.scene.add(gfx.AmbientLight(intensity=0.4))
         sun = gfx.DirectionalLight(intensity=0.8)
-        sun.local.position.set(-1, -2, 3)
+        sun.local.position = (-1, -2, 3)
         self.scene.add(sun)
 
         fill_light = gfx.DirectionalLight(intensity=0.4)
-        fill_light.local.position.set(1, 2, 1)
+        fill_light.local.position = (1, 2, 1)
         self.scene.add(fill_light)
 
         # Arena floor
@@ -140,7 +140,7 @@ class Battle3DViewer:
                 )
 
             wall = gfx.Mesh(wall_geom, wall_mat)
-            wall.local.position.set(center_x, center_y, wall_3d_height / 2)
+            wall.local.position = (center_x, center_y, wall_3d_height / 2)
             wall.local.rotation.set_from_euler(
                 gfx.linalg.Euler(0, 0, math.radians(angle_deg))
             )
@@ -544,7 +544,7 @@ class Battle3DViewer:
                     color=tuple(c + 0.4 for c in color)
                 )
                 heading_cone = gfx.Mesh(heading_geom, heading_mat)
-                heading_cone.local.position.set(0, 0.25, 0)  # In front of body
+                heading_cone.local.position = (0, 0.25, 0)  # In front of body
                 heading_cone.local.rotation.set_from_euler(
                     gfx.linalg.Euler(math.pi / 2, 0, 0)
                 )
@@ -554,13 +554,13 @@ class Battle3DViewer:
                 hb_bg_geom = gfx.plane_geometry(0.6, 0.06)
                 hb_bg_mat = gfx.MeshBasicMaterial(color=(0.2, 0.2, 0.2))
                 hb_bg = gfx.Mesh(hb_bg_geom, hb_bg_mat)
-                hb_bg.local.position.set(0, 0, 0.6)
+                hb_bg.local.position = (0, 0, 0.6)
                 bot_body.add(hb_bg)
 
                 hb_fill_geom = gfx.plane_geometry(0.6, 0.06)
                 hb_fill_mat = gfx.MeshBasicMaterial(color=(0, 1, 0))
                 hb_fill = gfx.Mesh(hb_fill_geom, hb_fill_mat)
-                hb_fill.local.position.set(0, 0, 0.001)  # Slightly above bg
+                hb_fill.local.position = (0, 0, 0.001)  # Slightly above bg
                 hb_bg.add(hb_fill)
 
                 # Bot ID label
@@ -568,7 +568,7 @@ class Battle3DViewer:
                     gfx.TextGeometry(str(bot_id), font_size=10, anchor="center"),
                     gfx.TextMaterial(color="#FFF"),
                 )
-                id_text.local.position.set(0, 0, 1.0)
+                id_text.local.position = (0, 0, 1.0)
                 bot_body.add(id_text)
 
                 self.bot_objects[bot_id] = {
@@ -582,7 +582,7 @@ class Battle3DViewer:
             # Update bot state
             bot_obj_group = self.bot_objects[bot_id]
             bot_body = bot_obj_group["body"]
-            bot_body.local.position.set(*pos)
+            bot_body.local.position = pos
             # Sim angle: 0 is +X. pygfx Z-up: rotation is around Z axis.
             bot_body.local.rotation.set_from_euler(
                 gfx.linalg.Euler(0, 0, math.radians(bot["theta"]))
@@ -628,7 +628,7 @@ class Battle3DViewer:
                 self.scene.add(proj_model)
 
             np = self.projectile_objects[proj_id]
-            np.local.position.set(*pos)
+            np.local.position = pos
 
     def _update_ui(self, state: Dict):
         """Update the text in the UI panels."""
@@ -774,7 +774,7 @@ class Battle3DViewer:
             self.playback_speed = max(0.1, self.playback_speed / 1.5)
 
     def _reset_camera_view(self):
-        self.camera.local.position.set(0, -self.arena_width * 1.2, self.arena_height * 1.1)
+        self.camera.local.position = (0, -self.arena_width * 1.2, self.arena_height * 1.1)
         self.camera.look_at(gfx.linalg.Vector3(0, 0, 0))
         self.camera_controls.target.set(0, 0, 0)
 
@@ -796,7 +796,7 @@ class Battle3DViewer:
                 self.scene.add(self.fov_object)
 
             bot = self.selected_bot
-            self.fov_object.local.position.set(bot["x"], bot["y"], 0.1)
+            self.fov_object.local.position = (bot["x"], bot["y"], 0.1)
             self.fov_object.local.rotation.set_from_euler(
                 gfx.linalg.Euler(0, 0, math.radians(bot["theta"]))
             )
