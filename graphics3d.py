@@ -167,10 +167,10 @@ class Battle3DViewer(ShowBase):
         for i, wall_def in enumerate(walls_data):
             center_x, center_y, width, height, angle_deg = wall_def
 
-            # Ensure minimum wall thickness for visibility
-            min_thickness = 0.3  # 30cm minimum thickness
-            wall_width = max(width, min_thickness)
-            wall_depth = max(height, min_thickness)
+            # Use the actual wall dimensions from battle simulation
+            # The battle sim already ensures walls have proper thickness (0.2m default)
+            wall_width = width
+            wall_depth = height
 
             # Create a procedural box for the wall
             # Note: wall_width and wall_depth are the wall's 2D dimensions in the XY plane
