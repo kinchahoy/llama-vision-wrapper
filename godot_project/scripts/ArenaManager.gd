@@ -88,45 +88,6 @@ func update_bots(state: Dictionary):
 			bot_nodes[bot_id].queue_free()
 		bot_nodes.erase(bot_id)
 	
-	# Update or create bots
-	for bot_id in current_bots.keys():
-		var bot = current_bots[bot_id]
-		var bot_node = bot_nodes.get(bot_id)
-		
-		if bot_node == null or not is_instance_valid(bot_node):
-			bot_node = create_bot(bot_id, bot.get("team", 0))
-			bot_nodes[bot_id] = bot_node
-		
-		# Direct position and rotation updates like the working 2D version
-		bot_node.position = Vector3(bot.get("x", 0.0), 0.5, -bot.get("y", 0.0))  # Negative Y to flip coordinate system
-		bot_node.rotation_degrees = Vector3(0, -bot.get("theta", 0.0) - 90, 0)  # Adjust rotation for coordinate flip
-		
-		# Update health
-		update_bot_health(bot_node, bot.get("hp", 100))
-
-func update_bots_smooth(state: Dictionary):
-	var current_bot_ids = {}
-	var current_bots = {}
-	
-	# Build lookup of current bots
-	for bot in state.get("bots", []):
-		if bot.get("alive", true):
-			var bot_id = bot.get("id")
-			if bot_id != null:
-				current_bot_ids[bot_id] = true
-				current_bots[bot_id] = bot
-	
-	# Remove dead or missing bots
-	var bots_to_remove = []
-	for bot_id in bot_nodes.keys():
-		if not bot_id in current_bot_ids:
-			bots_to_remove.append(bot_id)
-	
-	for bot_id in bots_to_remove:
-		if bot_nodes[bot_id] and is_instance_valid(bot_nodes[bot_id]):
-			bot_nodes[bot_id].queue_free()
-		bot_nodes.erase(bot_id)
-	
 	# Update or create bots with smooth movement
 	for bot_id in current_bots.keys():
 		var bot = current_bots[bot_id]
@@ -160,27 +121,6 @@ func update_bot_health(bot_node: Node3D, hp: float):
 		health_component.update_health(hp)
 
 func update_projectiles(state: Dictionary):
-	var current_projectiles = state.get("projectiles", [])
-	
-	# Ensure projectile pool is large enough
-	while projectile_nodes.size() < current_projectiles.size():
-		var new_proj_node = create_projectile(0) # Team will be set below
-		projectile_nodes.append(new_proj_node)
-
-	# Update visible projectiles
-	for i in range(projectile_nodes.size()):
-		var proj_node = projectile_nodes[i]
-		if i < current_projectiles.size():
-			var proj_data = current_projectiles[i]
-			
-			proj_node.position = Vector3(proj_data.get("x", 0.0), 0.5, -proj_data.get("y", 0.0))
-			proj_node.material_override = materials.get_projectile_material(proj_data.get("team", 0))
-			proj_node.visible = true
-		else:
-			# Hide unused pooled projectiles
-			proj_node.visible = false
-
-func update_projectiles_smooth(state: Dictionary):
 	var current_projectiles = state.get("projectiles", [])
 	
 	# Ensure projectile pool is large enough

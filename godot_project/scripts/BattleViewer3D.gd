@@ -23,11 +23,6 @@ var target_fps: float = 60  # Target smooth playback FPS
 # UI references
 @onready var play_button: Button = $VBoxContainer/BottomPanel/Toolbar/PlayButton
 @onready var timeline_slider: HSlider = $VBoxContainer/BottomPanel/Timeline/TimelineSlider
-@onready var fps_label: Label = $VBoxContainer/MainArea/LeftPanel/VBoxContainer/FPSLabel
-@onready var bot_info_label: RichTextLabel = $VBoxContainer/MainArea/LeftPanel/VBoxContainer/BotInfoLabel
-@onready var tactical_info_label: RichTextLabel = $VBoxContainer/MainArea/LeftPanel/VBoxContainer/TacticalInfoLabel
-@onready var battle_info_label: RichTextLabel = $VBoxContainer/MainArea/RightPanel/VBoxContainer/BattleInfoLabel
-@onready var events_label: RichTextLabel = $VBoxContainer/MainArea/RightPanel/VBoxContainer/EventsLabel
 
 # Components
 var arena_manager
@@ -56,12 +51,9 @@ func _ready():
 		add_child(camera_controller_script)
 		
 		# Setup components
-		if arena_manager and world_root:
-			arena_manager.setup(world_root)
-		if ui_manager:
-			ui_manager.setup_ui_styling(self)
-		if camera_controller_script and camera_controller and camera_3d and camera_controller_script.has_method("setup"):
-			camera_controller_script.setup(camera_controller, camera_3d)
+		arena_manager.setup(world_root)
+		ui_manager.setup(self)
+		camera_controller_script.setup(camera_controller, camera_3d)
 		
 		print("Components initialized successfully")
 	else:
@@ -104,7 +96,7 @@ func _on_battle_data_loaded():
 		arena_manager.setup_arena(get_metadata())
 	setup_timeline_slider()
 	if ui_manager:
-		ui_manager.update_battle_info(get_metadata())
+		ui_manager.update_all_ui(self)
 
 func get_timeline() -> Array:
 	return battle_data.get("timeline", [])
@@ -166,15 +158,26 @@ func handle_bot_selection(mouse_pos: Vector2):
 	if result and result.collider and result.collider.has_meta("bot_id"):
 		var bot_id = result.collider.get_meta("bot_id")
 		select_bot_by_id(bot_id)
+	else:
+		# Clicked on something else, deselect
+		select_bot_by_id(-1)
 
 func select_bot_by_id(bot_id: int):
-	var current_state = get_current_state()
-	for bot in current_state.get("bots", []):
-		if bot.get("id") == bot_id:
-			selected_bot = bot
-			if ui_manager:
-				ui_manager.update_bot_info(selected_bot)
-			break
+	if bot_id == -1:
+		selected_bot = {}
+	else:
+		var current_state = get_current_state()
+		var found = false
+		for bot in current_state.get("bots", []):
+			if bot.get("id") == bot_id:
+				selected_bot = bot
+				found = true
+				break
+		if not found:
+			selected_bot = {}
+	
+	if ui_manager:
+		ui_manager.update_selected_bot_info(self)
 
 func toggle_playback():
 	playing = not playing
@@ -210,11 +213,10 @@ func _process(delta):
 			playing = false
 			play_button.text = "▶ Play"
 	
-	update_simulation_smooth()
+	update_simulation_state()
 	
-	# Update FPS with null check
-	if ui_manager and fps_label:
-		ui_manager.update_fps(fps_label)
+	if ui_manager:
+		ui_manager.update_all_ui(self)
 
 func get_current_state() -> Dictionary:
 	var timeline = get_timeline()
@@ -325,17 +327,11 @@ func interpolate_states(state1: Dictionary, state2: Dictionary, t: float) -> Dic
 	
 	return interpolated
 
-func update_simulation():
-	var state = get_current_state()
+func update_simulation_state():
+	var state = get_interpolated_state()
 	if arena_manager and state:
 		arena_manager.update_bots(state)
 		arena_manager.update_projectiles(state)
-
-func update_simulation_smooth():
-	var state = get_interpolated_state()
-	if arena_manager and state:
-		arena_manager.update_bots_smooth(state)
-		arena_manager.update_projectiles_smooth(state)
 
 # Signal handlers
 func _on_play_button_pressed():
