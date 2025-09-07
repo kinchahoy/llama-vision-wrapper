@@ -724,7 +724,7 @@ class Battle3DViewer(ShowBase):
         self._update_fov_display()
 
         # Update FPS counter
-        fps = globalClock.getAverageFrameRate()
+        fps = self.taskMgr.globalClock.getAverageFrameRate()
         self.fps_text.setText(f"FPS: {fps:.1f}")
 
         return task.cont
