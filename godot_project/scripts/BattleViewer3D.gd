@@ -2,6 +2,7 @@ extends Control
 class_name BattleViewer3D
 
 # Battle state
+var battle_data: Dictionary = {}
 var current_frame: float = 0.0
 var playing: bool = false
 var playback_speed: float = 1
@@ -68,8 +69,12 @@ func _ready():
 		# Initialize with null checks
 		camera_controller_script = null
 	
-	# Connect to battle data
-	BattleData.battle_data_loaded.connect(_on_battle_data_loaded)
+	# Load battle data from command line argument
+	var args = OS.get_cmdline_user_args()
+	if not args.is_empty():
+		_load_battle_data(args[0])
+	else:
+		print("Error: No battle data file provided. Usage: godot -- -- /path/to/battle.json")
 	
 	# Connect timeline slider signals
 	timeline_slider.drag_ended.connect(_on_timeline_slider_drag_ended)
@@ -79,13 +84,33 @@ func _ready():
 	
 	print("BattleViewer3D ready!")
 
+func _load_battle_data(file_path: String):
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if not file:
+		print("Error: Could not open battle data file: ", file_path)
+		return
+
+	var json_string = file.get_as_text()
+	var json = JSON.new()
+	if json.parse(json_string) == OK:
+		self.battle_data = json.get_data()
+		_on_battle_data_loaded()
+	else:
+		print("Error parsing battle data: ", json.get_error_message())
+
 func _on_battle_data_loaded():
 	print("Battle data received, setting up arena...")
 	if arena_manager:
-		arena_manager.setup_arena(BattleData.get_metadata())
+		arena_manager.setup_arena(get_metadata())
 	setup_timeline_slider()
 	if ui_manager:
-		ui_manager.update_battle_info(BattleData.get_metadata())
+		ui_manager.update_battle_info(get_metadata())
+
+func get_timeline() -> Array:
+	return battle_data.get("timeline", [])
+
+func get_metadata() -> Dictionary:
+	return battle_data.get("metadata", {})
 
 func setup_lighting():
 	var lighting_manager_script = preload("res://scripts/LightingManager.gd")
@@ -99,7 +124,7 @@ func setup_lighting():
 		camera_3d.environment = environment
 
 func setup_timeline_slider():
-	var timeline = BattleData.get_timeline()
+	var timeline = get_timeline()
 	if timeline.size() > 0 and timeline_slider:
 		timeline_slider.max_value = timeline.size() - 1
 		timeline_slider.set_value_no_signal(0)
@@ -169,7 +194,7 @@ func reset_simulation():
 	timeline_slider.value = 0
 
 func _process(delta):
-	var timeline = BattleData.get_timeline()
+	var timeline = get_timeline()
 	if playing and not dragging_slider and timeline.size() > 0:
 		# Smoothly advance the timeline slider's value
 		var frames_per_second = 10.0  # Battle data logging rate
@@ -192,7 +217,7 @@ func _process(delta):
 		ui_manager.update_fps(fps_label)
 
 func get_current_state() -> Dictionary:
-	var timeline = BattleData.get_timeline()
+	var timeline = get_timeline()
 	if timeline.is_empty():
 		return {}
 	
@@ -202,7 +227,7 @@ func get_current_state() -> Dictionary:
 	return timeline[frame_idx]
 
 func get_interpolated_state() -> Dictionary:
-	var timeline = BattleData.get_timeline()
+	var timeline = get_timeline()
 	if timeline.is_empty():
 		return {}
 	

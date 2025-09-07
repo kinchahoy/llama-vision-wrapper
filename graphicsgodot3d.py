@@ -22,54 +22,22 @@ class GodotBattleViewer:
         self.battle_data = battle_data
         self.timeline = battle_data["timeline"]
         self.metadata = battle_data["metadata"]
-        self.temp_dir = None
+        self.temp_file_path = None
         self.godot_process = None
-        
-    def create_godot_project(self) -> str:
-        """Create a temporary Godot project with all necessary files."""
-        self.temp_dir = tempfile.mkdtemp(prefix="godot_battle_viewer_")
-        project_path = Path(self.temp_dir)
-        
-        print(f"Creating Godot project at: {project_path}")
-        
-        try:
-            # Copy the entire godot_project directory structure
-            source_project_dir = Path(__file__).parent / "godot_project"
-            
-            if not source_project_dir.exists():
-                raise RuntimeError(f"Godot project template not found at: {source_project_dir}")
-            
-            # Copy all files and directories
-            shutil.copytree(source_project_dir, project_path, dirs_exist_ok=True)
-            
-            # Save battle data as JSON for Godot to load
-            battle_json_path = project_path / "battle_data.json"
-            with open(battle_json_path, 'w', encoding='utf-8') as f:
-                json.dump(self.battle_data, f, indent=2)
-            
-            print(f"🎮 Created Godot project at: {project_path}")
-            return str(project_path)
-            
-        except Exception as e:
-            print(f"Error creating Godot project: {e}")
-            raise
     
-    def launch_godot(self, project_path: str) -> bool:
-        """Launch Godot with the generated project."""
+    def launch_godot(self, project_path: str, battle_data_path: str) -> bool:
+        """Launch Godot with the existing project and a battle data file."""
         godot_commands = ["godot4", "godot", "/usr/bin/godot4", "/usr/local/bin/godot4", "/snap/bin/godot4"]
         
         for cmd in godot_commands:
             try:
-                # Try to run Godot with the project path and auto-load battle data
-                env = os.environ.copy()
-                env["GODOT_BATTLE_DATA"] = str(Path(project_path) / "battle_data.json")
-                
+                # Try to run Godot with the project path and battle data file path
                 self.godot_process = subprocess.Popen([
                     cmd, 
-                    "--path", project_path,
+                    "--path", str(project_path),
                     "--", 
-                    str(Path(project_path) / "battle_data.json")
-                ], env=env)
+                    battle_data_path
+                ])
                 print(f"✨ Launched Godot with command: {cmd}")
                 return True
             except FileNotFoundError:
@@ -84,9 +52,16 @@ class GodotBattleViewer:
     def run(self):
         """Run the Godot battle viewer."""
         try:
-            project_path = self.create_godot_project()
+            # Use a temporary file for the battle data
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
+                json.dump(self.battle_data, f, indent=2)
+                self.temp_file_path = f.name
             
-            if not self.launch_godot(project_path):
+            project_path = Path(__file__).parent / "godot_project"
+            if not project_path.exists():
+                raise RuntimeError(f"Godot project not found at: {project_path}")
+
+            if not self.launch_godot(str(project_path), self.temp_file_path):
                 return False
             
             print("🚀 Godot Battle Viewer launched successfully!")
@@ -116,13 +91,12 @@ class GodotBattleViewer:
     
     def cleanup(self):
         """Clean up temporary files."""
-        if self.temp_dir and os.path.exists(self.temp_dir):
-            import shutil
+        if self.temp_file_path and os.path.exists(self.temp_file_path):
             try:
-                shutil.rmtree(self.temp_dir)
-                print(f"🧹 Cleaned up temporary files: {self.temp_dir}")
+                os.unlink(self.temp_file_path)
+                print(f"🧹 Cleaned up temporary file: {self.temp_file_path}")
             except Exception as e:
-                print(f"Warning: Could not clean up temp dir: {e}")
+                print(f"Warning: Could not clean up temp file: {e}")
 
 def run_godot_viewer(battle_file: str):
     """Launch Godot 4 viewer with a saved battle JSON file."""
