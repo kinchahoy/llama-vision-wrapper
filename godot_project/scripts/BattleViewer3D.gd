@@ -159,8 +159,16 @@ func step_frame(direction: int):
 	playing = false
 	play_button.text = "▶ Play"
 	var timeline = BattleData.get_timeline()
-	# Snap to the nearest integer frame before stepping
-	var new_frame = round(timeline_slider.value) + direction
+	
+	var current_val = timeline_slider.value
+	var new_frame
+	if direction > 0:
+		# Step forward to the next whole frame
+		new_frame = floor(current_val) + 1
+	else:
+		# Step backward to the previous whole frame
+		new_frame = ceil(current_val) - 1
+	
 	timeline_slider.value = clamp(new_frame, 0, timeline.size() - 1)
 
 func reset_simulation():
