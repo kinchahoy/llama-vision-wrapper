@@ -225,13 +225,13 @@ class Battle3DViewer(ShowBase):
 
         # Add ambient light for fill lighting (the main sun is created in _init_hq_rendering)
         alight = AmbientLight("ambient")
-        alight.setColor((0.3, 0.3, 0.35, 1))  # Moderate ambient
+        alight.setColor((0.15, 0.15, 0.18, 1))  # Lower ambient for better contrast
         alnp = self.render.attachNewNode(alight)
         self.render.setLight(alnp)
 
         # Add a second directional light from opposite side for better illumination
         dlight2 = DirectionalLight("fill_light")
-        dlight2.setColor((0.4, 0.4, 0.5, 1))  # Cooler fill light
+        dlight2.setColor((0.2, 0.2, 0.25, 1))  # Subtle fill to avoid washout
         dl2np = self.render.attachNewNode(dlight2)
         dl2np.setHpr(-135, -30, 0)  # Opposite side
         self.render.setLight(dl2np)
@@ -248,17 +248,11 @@ class Battle3DViewer(ShowBase):
         floor.setPos(0, 0, 0)  # Floor at ground level (z=0)
         floor.setP(-90)  # Rotate card to lie flat in the XY plane
 
-        # Apply PBR materials - make floor highly reflective
-        floor.set_shader_input(
-            "metallic", 1.0
-        )  # Maximum metallic for mirror-like reflections
-        floor.set_shader_input(
-            "roughness", 0.0
-        )  # Perfect smoothness for clear reflections
-        floor.set_shader_input(
-            "basecolor", (0.2, 0.2, 0.25, 1.0)
-        )  # Set base color via shader input
-        floor.setColor(0.2, 0.2, 0.25, 1)  # Dark metallic floor
+        # Apply PBR materials - tuned for clearer, higher-contrast look (less mirror-like)
+        floor.set_shader_input("metallic", 0.0)   # Non-metal floor
+        floor.set_shader_input("roughness", 0.8)  # Rougher surface to reduce glare
+        floor.set_shader_input("basecolor", (0.16, 0.16, 0.18, 1.0))
+        floor.setColor(0.16, 0.16, 0.18, 1)  # Slightly darker base color
 
         self._create_walls()
 
@@ -302,19 +296,17 @@ class Battle3DViewer(ShowBase):
 
             # First 4 walls are perimeter walls (outside boundary)
             if i < 4:
-                # Perimeter walls - metallic with moderate reflectivity
-                wall_node.set_shader_input("metallic", 0.8)
-                wall_node.set_shader_input("roughness", 0.1)
-                wall_node.set_shader_input("basecolor", (0.4, 0.4, 0.45, 1.0))
-                wall_node.setColor(
-                    0.4, 0.4, 0.45, 1
-                )  # Medium gray for better visibility
+                # Perimeter walls - more diffuse to avoid blown highlights
+                wall_node.set_shader_input("metallic", 0.2)
+                wall_node.set_shader_input("roughness", 0.4)
+                wall_node.set_shader_input("basecolor", (0.35, 0.35, 0.40, 1.0))
+                wall_node.setColor(0.35, 0.35, 0.40, 1)  # Medium gray
             else:
-                # Interior walls - brighter with higher reflectivity
-                wall_node.set_shader_input("metallic", 1.0)
-                wall_node.set_shader_input("roughness", 0.0)
-                wall_node.set_shader_input("basecolor", (0.6, 0.8, 0.9, 1.0))
-                wall_node.setColor(0.6, 0.8, 0.9, 1)  # Brighter light blue metallic
+                # Interior walls - slightly brighter with moderate reflectivity
+                wall_node.set_shader_input("metallic", 0.6)
+                wall_node.set_shader_input("roughness", 0.3)
+                wall_node.set_shader_input("basecolor", (0.55, 0.65, 0.80, 1.0))
+                wall_node.setColor(0.55, 0.65, 0.80, 1)  # Softer blue
 
     def _create_wall_geometry(self, width, height, wall_height):
         """Create a procedural box geometry for walls with correct face winding."""
@@ -543,6 +535,11 @@ class Battle3DViewer(ShowBase):
         except Exception:
             pass
 
+        # Enable proper slider dragging without fighting the update loop
+        self.slider_dragging = False
+        self.timeline_slider.bind(DGG.B1PRESS, lambda event: setattr(self, "slider_dragging", True))
+        self.timeline_slider.bind(DGG.B1RELEASE, lambda event: setattr(self, "slider_dragging", False))
+
         # Layout function to adapt to window resizes
         def layout():
             w = self.win.getXSize() if self.win else 1280
@@ -551,14 +548,14 @@ class Battle3DViewer(ShowBase):
             margin = 12
             spacing = 8
 
-            # Bottom bar spans full width (anchored to bottom of window)
-            self.ui_bar["frameSize"] = (0, w, -bar_h, 0)
-            self.ui_bar.setPos(0, 0, -h)
+            # Bottom bar spans full width at window bottom in pixel2d
+            self.ui_bar["frameSize"] = (0, w, 0, bar_h)
+            self.ui_bar.setPos(0, 0, 0)
 
             # Slider along top of the bar
             slider_h = 18
             slider_w = w - 2 * margin
-            self.timeline_slider.setPos(w / 2, 0, -margin - slider_h / 2)
+            self.timeline_slider.setPos(w / 2, 0, bar_h - margin - slider_h / 2)
             try:
                 self.timeline_slider["frameSize"] = (
                     -slider_w / 2,
@@ -570,7 +567,7 @@ class Battle3DViewer(ShowBase):
                 pass
 
             # Buttons row near bottom of the bar
-            y = -bar_h + margin + 18  # vertical center of buttons
+            y = margin + 18  # vertical center of buttons
             x = margin
 
             def place(btn, width, height=36):
@@ -770,8 +767,9 @@ class Battle3DViewer(ShowBase):
                 self.current_frame = len(self.timeline) - 1
                 self._toggle_play()
 
-        # Ensure slider is updated if frame changes
-        self.timeline_slider["value"] = self.current_frame
+        # Ensure slider is updated if frame changes and we're not dragging it
+        if not getattr(self, "slider_dragging", False):
+            self.timeline_slider["value"] = self.current_frame
 
         current_state = self._get_current_state()
 
@@ -1393,9 +1391,9 @@ class Battle3DViewer(ShowBase):
         else:
             self.events_text.setText("")
 
-    def _on_slider_move(self):
+    def _on_slider_move(self, value):
         """Handle timeline slider movement."""
-        self.current_frame = self.timeline_slider.getValue()
+        self.current_frame = float(value)
 
     def _toggle_play(self):
         """Toggle play/pause state."""
