@@ -48,7 +48,7 @@ func _setup_ui_styling(viewer: Control):
 
 # --- Update Functions ---
 
-func update_all_ui(viewer: BattleViewer3D):
+func update_all_ui(viewer: Control):
 	_update_fps()
 	_update_right_panel(viewer)
 	update_selected_bot_info(viewer)
@@ -57,7 +57,7 @@ func _update_fps():
 	if fps_label:
 		fps_label.text = "FPS: " + str(Engine.get_frames_per_second())
 
-func _update_right_panel(viewer: BattleViewer3D):
+func _update_right_panel(viewer: Control):
 	var state = viewer.get_current_state()
 	var metadata = viewer.get_metadata()
 	var summary = viewer.battle_data.get("summary", {})
@@ -109,7 +109,7 @@ func _update_right_panel(viewer: BattleViewer3D):
 	if events_label:
 		events_label.text = events_text
 
-func update_selected_bot_info(viewer: BattleViewer3D):
+func update_selected_bot_info(viewer: Control):
 	if viewer.selected_bot.is_empty():
 		bot_info_label.text = "[center][font_size=16]🎯 Click a bot to view details[/font_size][/center]"
 		tactical_info_label.text = ""
