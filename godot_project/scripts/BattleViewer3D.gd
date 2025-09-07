@@ -169,8 +169,8 @@ func reset_simulation():
 func _process(delta):
 	var timeline = BattleData.get_timeline()
 	if playing and timeline.size() > 0:
-		# Smooth playback: advance by fractional frames for 60fps interpolation
-		current_frame += 30.0 * playback_speed * delta  # 30fps timeline data interpolated to 60fps
+		# Smooth playback: advance by smaller increments for ultra-smooth interpolation
+		current_frame += 15.0 * playback_speed * delta  # Slower frame advance for smoother interpolation
 		if current_frame >= timeline.size() - 1:
 			current_frame = timeline.size() - 1
 			playing = false
