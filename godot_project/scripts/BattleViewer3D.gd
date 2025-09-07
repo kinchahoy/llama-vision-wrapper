@@ -4,13 +4,13 @@ class_name BattleViewer3D
 # Battle state
 var current_frame: float = 0.0
 var playing: bool = false
-var playback_speed: float = 1.0
+var playback_speed: float = 1
 var selected_bot: Dictionary = {}
 var dragging_slider: bool = false
 
 # Interpolation state for smooth playback
 var interpolation_factor: float = 0.0
-var target_fps: float = 120.0  # Target smooth playback FPS
+var target_fps: float = 60  # Target smooth playback FPS
 
 # Scene references
 @onready var viewport_3d: SubViewport = $VBoxContainer/MainArea/ViewportContainer/SubViewport
@@ -159,16 +159,8 @@ func step_frame(direction: int):
 	playing = false
 	play_button.text = "▶ Play"
 	var timeline = BattleData.get_timeline()
-	
-	var current_val = timeline_slider.value
-	var new_frame
-	if direction > 0:
-		# Step forward to the next whole frame
-		new_frame = floor(current_val) + 1
-	else:
-		# Step backward to the previous whole frame
-		new_frame = ceil(current_val) - 1
-	
+	# Snap to the nearest integer frame before stepping
+	var new_frame = round(timeline_slider.value) + direction
 	timeline_slider.value = clamp(new_frame, 0, timeline.size() - 1)
 
 func reset_simulation():
