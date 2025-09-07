@@ -553,14 +553,14 @@ class Battle3DViewer(ShowBase):
             margin = 12
             spacing = 8
 
-            # Bottom bar spans full width at window bottom in pixel2d
-            self.ui_bar["frameSize"] = (0, w, 0, bar_h)
+            # Bottom bar spans full width at window bottom in pixel2d (pixel origin top-left, z down)
+            self.ui_bar["frameSize"] = (0, w, -bar_h, 0)
             self.ui_bar.setPos(0, 0, 0)
 
             # Slider along top of the bar
             slider_h = 18
             slider_w = w - 2 * margin
-            self.timeline_slider.setPos(w / 2, 0, bar_h - margin - slider_h / 2)
+            self.timeline_slider.setPos(w / 2, 0, -margin - slider_h / 2)
             try:
                 self.timeline_slider["frameSize"] = (
                     -slider_w / 2,
@@ -572,7 +572,7 @@ class Battle3DViewer(ShowBase):
                 pass
 
             # Buttons row near bottom of the bar
-            y = margin + 18  # vertical center of buttons
+            y = -bar_h + margin + 18  # vertical center of buttons (pixel2d z is downward)
             x = margin
 
             def place(btn, width, height=36):
