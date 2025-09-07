@@ -743,14 +743,14 @@ func update_bot_info():
 	var vx = bot.get("vx", 0.0)
 	var vy = bot.get("vy", 0.0)
 	var speed = sqrt(vx * vx + vy * vy)
-	var signal = bot.get("signal", "none")
+	var signal_value = bot.get("signal", "none")
 	
 	var bot_text = "[font_size=18][color=lime]BOT " + str(bot.id) + " (Team " + str(bot.team) + ")[/color][/font_size]\n"
 	bot_text += "----------------------------------------\n"
 	bot_text += "[color=white]HP: " + str(bot.hp) + "\n"
 	bot_text += "Position: (" + str(bot.x) + ", " + str(bot.y) + ")\n"
 	bot_text += "Heading: " + str(int(heading)) + "°  Speed: " + str(speed) + "\n"
-	bot_text += "Signal: " + str(signal) + "[/color]"
+	bot_text += "Signal: " + str(signal_value) + "[/color]"
 	
 	if bot_info_label:
 		bot_info_label.text = bot_text

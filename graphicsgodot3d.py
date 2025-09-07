@@ -24,13 +24,15 @@ def _load_godot_files():
         battle_viewer_gd_path = godot_dir / "godot_battle_viewer_gd"
         battle_viewer_tscn_path = godot_dir / "godot_battle_viewer_tscn"
         
-        project_template = project_template_path.read_text() if project_template_path.exists() else ""
-        battle_viewer_gd = battle_viewer_gd_path.read_text() if battle_viewer_gd_path.exists() else ""
-        battle_viewer_tscn = battle_viewer_tscn_path.read_text() if battle_viewer_tscn_path.exists() else ""
+        project_template = project_template_path.read_text(encoding='utf-8') if project_template_path.exists() else ""
+        battle_viewer_gd = battle_viewer_gd_path.read_text(encoding='utf-8') if battle_viewer_gd_path.exists() else ""
+        battle_viewer_tscn = battle_viewer_tscn_path.read_text(encoding='utf-8') if battle_viewer_tscn_path.exists() else ""
         
         return project_template, battle_viewer_gd, battle_viewer_tscn
     except Exception as e:
         print(f"Warning: Could not load Godot template files: {e}")
+        import traceback
+        traceback.print_exc()
         return "", "", ""
 
 # Load the template files at module level
