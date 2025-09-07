@@ -40,18 +40,27 @@ func _ready():
 	var ui_manager_script = load("res://scripts/UIManager.gd")
 	var camera_controller_script_class = load("res://scripts/CameraController.gd")
 	
-	arena_manager = arena_manager_script.new()
-	ui_manager = ui_manager_script.new()
-	camera_controller_script = camera_controller_script_class.new()
-	
-	add_child(arena_manager)
-	add_child(ui_manager)
-	add_child(camera_controller_script)
-	
-	# Setup components
-	arena_manager.setup(world_root)
-	ui_manager.setup_ui_styling(self)
-	camera_controller_script.setup(camera_controller, camera_3d)
+	if arena_manager_script and ui_manager_script and camera_controller_script_class:
+		arena_manager = arena_manager_script.new()
+		ui_manager = ui_manager_script.new()
+		camera_controller_script = camera_controller_script_class.new()
+		
+		# Add as children to prevent garbage collection
+		add_child(arena_manager)
+		add_child(ui_manager)
+		add_child(camera_controller_script)
+		
+		# Setup components
+		if arena_manager and world_root:
+			arena_manager.setup(world_root)
+		if ui_manager:
+			ui_manager.setup_ui_styling(self)
+		if camera_controller_script and camera_controller and camera_3d:
+			camera_controller_script.setup(camera_controller, camera_3d)
+		
+		print("Components initialized successfully")
+	else:
+		print("Error: Failed to load component scripts")
 	
 	# Connect to battle data
 	BattleData.battle_data_loaded.connect(_on_battle_data_loaded)
@@ -63,9 +72,11 @@ func _ready():
 
 func _on_battle_data_loaded():
 	print("Battle data received, setting up arena...")
-	arena_manager.setup_arena(BattleData.get_metadata())
+	if arena_manager:
+		arena_manager.setup_arena(BattleData.get_metadata())
 	setup_timeline_slider()
-	ui_manager.update_battle_info(BattleData.get_metadata())
+	if ui_manager:
+		ui_manager.update_battle_info(BattleData.get_metadata())
 
 func setup_lighting():
 	var lighting_manager_script = load("res://scripts/LightingManager.gd")
@@ -120,7 +131,8 @@ func select_bot_by_id(bot_id: int):
 	for bot in current_state.get("bots", []):
 		if bot.get("id") == bot_id:
 			selected_bot = bot
-			ui_manager.update_bot_info(selected_bot)
+			if ui_manager:
+				ui_manager.update_bot_info(selected_bot)
 			break
 
 func toggle_playback():
@@ -151,7 +163,10 @@ func _process(delta):
 		timeline_slider.value = current_frame
 	
 	update_simulation()
-	ui_manager.update_fps(fps_label)
+	
+	# Update FPS with null check
+	if ui_manager and fps_label:
+		ui_manager.update_fps(fps_label)
 
 func get_current_state() -> Dictionary:
 	var timeline = BattleData.get_timeline()
@@ -164,8 +179,9 @@ func get_current_state() -> Dictionary:
 
 func update_simulation():
 	var state = get_current_state()
-	arena_manager.update_bots(state, bot_nodes)
-	arena_manager.update_projectiles(state, projectile_nodes)
+	if arena_manager and state:
+		arena_manager.update_bots(state, bot_nodes)
+		arena_manager.update_projectiles(state, projectile_nodes)
 
 # Signal handlers
 func _on_play_button_pressed():
