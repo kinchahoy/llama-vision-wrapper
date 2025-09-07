@@ -603,8 +603,8 @@ func create_bot(bot_id: int, team: int) -> Node3D:
 	body_node.material_override = bot_material_blue if team == 0 else bot_material_red
 	bot_container.add_child(body_node)
 	
-	# Direction indicator (cone)
-	var cone_mesh = ConeMesh.new()
+	# Direction indicator (cylinder as cone replacement)
+	var cone_mesh = CylinderMesh.new()
 	cone_mesh.top_radius = 0.0
 	cone_mesh.bottom_radius = 0.2
 	cone_mesh.height = 0.4
