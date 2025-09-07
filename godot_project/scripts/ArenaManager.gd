@@ -2,10 +2,11 @@ extends Node
 class_name ArenaManager
 
 var world_root: Node3D
-var materials: MaterialManager
+var materials
 
 func _ready():
-	materials = MaterialManager.new()
+	var material_manager_script = load("res://scripts/MaterialManager.gd")
+	materials = material_manager_script.new()
 
 func setup(world_node: Node3D):
 	world_root = world_node

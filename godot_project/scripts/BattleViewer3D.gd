@@ -61,6 +61,8 @@ func _ready():
 		print("Components initialized successfully")
 	else:
 		print("Error: Failed to load component scripts")
+		# Initialize with null checks
+		camera_controller_script = null
 	
 	# Connect to battle data
 	BattleData.battle_data_loaded.connect(_on_battle_data_loaded)
@@ -97,7 +99,8 @@ func setup_timeline_slider():
 		timeline_slider.step = 0.1
 
 func _input(event):
-	camera_controller_script.handle_input(event)
+	if camera_controller_script:
+		camera_controller_script.handle_input(event)
 	
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		handle_bot_selection(event.position)

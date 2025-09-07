@@ -1,7 +1,7 @@
 extends RefCounted
 class_name BotFactory
 
-func create_bot(bot_id: int, team: int, materials: MaterialManager) -> Node3D:
+func create_bot(bot_id: int, team: int, materials) -> Node3D:
 	var bot_container = Node3D.new()
 	
 	# Main bot body
@@ -27,7 +27,7 @@ func create_bot(bot_id: int, team: int, materials: MaterialManager) -> Node3D:
 	
 	return bot_container
 
-func create_bot_body(team: int, materials: MaterialManager) -> MeshInstance3D:
+func create_bot_body(team: int, materials) -> MeshInstance3D:
 	var body_mesh = SphereMesh.new()
 	body_mesh.radius = 0.5
 	body_mesh.height = 1.0
