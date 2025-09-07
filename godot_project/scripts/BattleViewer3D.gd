@@ -155,12 +155,19 @@ func handle_bot_selection(mouse_pos: Vector2):
 	var query = PhysicsRayQueryParameters3D.create(from, to)
 	var result = space_state.intersect_ray(query)
 	
-	if result and result.collider and result.collider.has_meta("bot_id"):
-		var bot_id = result.collider.get_meta("bot_id")
-		select_bot_by_id(bot_id)
-	else:
-		# Clicked on something else, deselect
-		select_bot_by_id(-1)
+	if result and result.collider:
+		var node = result.collider
+		while node:
+			if node.has_meta("bot_id"):
+				var bot_id = node.get_meta("bot_id")
+				select_bot_by_id(bot_id)
+				return # Found a bot, we are done
+			if node == world_root:
+				break
+			node = node.get_parent()
+	
+	# Clicked on something else, or empty space, deselect
+	select_bot_by_id(-1)
 
 func select_bot_by_id(bot_id: int):
 	if bot_id == -1:
