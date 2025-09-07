@@ -7,10 +7,9 @@ var playing: bool = false
 var playback_speed: float = 1.0
 var selected_bot: Dictionary = {}
 
-# Interpolation state
-var previous_state: Dictionary = {}
-var next_state: Dictionary = {}
+# Interpolation state for smooth playback
 var interpolation_factor: float = 0.0
+var target_fps: float = 120.0  # Target smooth playback FPS
 
 # Scene references
 @onready var viewport_3d: SubViewport = $VBoxContainer/MainArea/ViewportContainer/SubViewport
@@ -169,15 +168,19 @@ func reset_simulation():
 func _process(delta):
 	var timeline = BattleData.get_timeline()
 	if playing and timeline.size() > 0:
-		# Simple frame advance like the working 2D version
-		current_frame += 10.0 * playback_speed * delta  # 10Hz logging rate
+		# Smooth frame advance with interpolation
+		var frames_per_second = 10.0  # Battle data logging rate
+		var frame_advance = frames_per_second * playback_speed * delta
+		current_frame += frame_advance
+		
 		if current_frame >= timeline.size() - 1:
 			current_frame = timeline.size() - 1
 			playing = false
 			play_button.text = "▶ Play"
+		
 		timeline_slider.value = current_frame
 	
-	update_simulation()
+	update_simulation_smooth()
 	
 	# Update FPS with null check
 	if ui_manager and fps_label:
@@ -188,16 +191,102 @@ func get_current_state() -> Dictionary:
 	if timeline.is_empty():
 		return {}
 	
-	# Simple frame selection like the working 2D version
+	# Simple frame selection for non-interpolated access
 	var frame_idx = int(current_frame)
 	frame_idx = clamp(frame_idx, 0, timeline.size() - 1)
 	return timeline[frame_idx]
+
+func get_interpolated_state() -> Dictionary:
+	var timeline = BattleData.get_timeline()
+	if timeline.is_empty():
+		return {}
+	
+	var frame_idx = int(current_frame)
+	frame_idx = clamp(frame_idx, 0, timeline.size() - 1)
+	
+	# If we're at the last frame or not playing, return current frame
+	if frame_idx >= timeline.size() - 1 or not playing:
+		return timeline[frame_idx]
+	
+	# Get current and next frame for interpolation
+	var current_state = timeline[frame_idx]
+	var next_frame_idx = min(frame_idx + 1, timeline.size() - 1)
+	var next_state = timeline[next_frame_idx]
+	
+	# Calculate interpolation factor (0.0 to 1.0)
+	var t = current_frame - float(frame_idx)
+	
+	# Interpolate between states
+	return interpolate_states(current_state, next_state, t)
+
+func interpolate_states(state1: Dictionary, state2: Dictionary, t: float) -> Dictionary:
+	var interpolated = state1.duplicate(true)
+	
+	# Interpolate bot positions and rotations
+	if state1.has("bots") and state2.has("bots"):
+		var bots1 = state1["bots"]
+		var bots2 = state2["bots"]
+		var interpolated_bots = []
+		
+		for i in range(bots1.size()):
+			if i < bots2.size():
+				var bot1 = bots1[i]
+				var bot2 = bots2[i]
+				var interpolated_bot = bot1.duplicate()
+				
+				# Interpolate position
+				interpolated_bot["x"] = lerp(bot1.get("x", 0.0), bot2.get("x", 0.0), t)
+				interpolated_bot["y"] = lerp(bot1.get("y", 0.0), bot2.get("y", 0.0), t)
+				
+				# Interpolate rotation (handle angle wrapping)
+				var theta1 = bot1.get("theta", 0.0)
+				var theta2 = bot2.get("theta", 0.0)
+				interpolated_bot["theta"] = lerp_angle(deg_to_rad(theta1), deg_to_rad(theta2), t) * 180.0 / PI
+				
+				interpolated_bots.append(interpolated_bot)
+			else:
+				interpolated_bots.append(bots1[i])
+		
+		interpolated["bots"] = interpolated_bots
+	
+	# Interpolate projectile positions
+	if state1.has("projectiles") and state2.has("projectiles"):
+		var projs1 = state1["projectiles"]
+		var projs2 = state2["projectiles"]
+		var interpolated_projs = []
+		
+		# Match projectiles by ID or position proximity
+		for proj1 in projs1:
+			var matching_proj2 = null
+			for proj2 in projs2:
+				if proj1.has("id") and proj2.has("id") and proj1["id"] == proj2["id"]:
+					matching_proj2 = proj2
+					break
+			
+			if matching_proj2:
+				var interpolated_proj = proj1.duplicate()
+				interpolated_proj["x"] = lerp(proj1.get("x", 0.0), matching_proj2.get("x", 0.0), t)
+				interpolated_proj["y"] = lerp(proj1.get("y", 0.0), matching_proj2.get("y", 0.0), t)
+				interpolated_projs.append(interpolated_proj)
+			else:
+				# Projectile doesn't exist in next frame, keep current position
+				interpolated_projs.append(proj1)
+		
+		interpolated["projectiles"] = interpolated_projs
+	
+	return interpolated
 
 func update_simulation():
 	var state = get_current_state()
 	if arena_manager and state:
 		arena_manager.update_bots(state, bot_nodes)
 		arena_manager.update_projectiles(state, projectile_nodes)
+
+func update_simulation_smooth():
+	var state = get_interpolated_state()
+	if arena_manager and state:
+		arena_manager.update_bots_smooth(state, bot_nodes)
+		arena_manager.update_projectiles_smooth(state, projectile_nodes)
 
 # Signal handlers
 func _on_play_button_pressed():

@@ -91,6 +91,41 @@ func update_bots(state: Dictionary, bot_nodes: Dictionary):
 		# Update health
 		update_bot_health(bot_node, bot.hp)
 
+func update_bots_smooth(state: Dictionary, bot_nodes: Dictionary):
+	var current_bot_ids = {}
+	for bot in state.get("bots", []):
+		if bot.get("alive", true):
+			current_bot_ids[bot.id] = true
+	
+	# Remove dead bots
+	for bot_id in bot_nodes.keys():
+		if not bot_id in current_bot_ids:
+			bot_nodes[bot_id].queue_free()
+			bot_nodes.erase(bot_id)
+	
+	# Update or create bots with smooth movement
+	for bot in state.get("bots", []):
+		if not bot.get("alive", true):
+			continue
+		
+		var bot_id = bot.id
+		var bot_node = bot_nodes.get(bot_id)
+		
+		if bot_node == null:
+			bot_node = create_bot(bot_id, bot.team)
+			bot_nodes[bot_id] = bot_node
+		
+		# Smooth position and rotation updates using interpolated data
+		var target_pos = Vector3(bot.x, 0.5, -bot.y)
+		var target_rot = Vector3(0, -bot.theta - 90, 0)
+		
+		# Direct assignment of interpolated positions for crisp movement
+		bot_node.position = target_pos
+		bot_node.rotation_degrees = target_rot
+		
+		# Update health
+		update_bot_health(bot_node, bot.hp)
+
 func create_bot(bot_id: int, team: int) -> Node3D:
 	var bot_factory_script = preload("res://scripts/BotFactory.gd")
 	var bot_factory = bot_factory_script.new()
@@ -129,6 +164,34 @@ func update_projectiles(state: Dictionary, projectile_nodes: Dictionary):
 		
 		# Direct position updates like the working 2D version
 		proj_node.position = Vector3(proj.x, 0.5, -proj.y)  # Negative Y to match coordinate system
+
+func update_projectiles_smooth(state: Dictionary, projectile_nodes: Dictionary):
+	var current_proj_ids = {}
+	for proj in state.get("projectiles", []):
+		if proj.has("id"):
+			current_proj_ids[proj.id] = true
+	
+	# Remove expired projectiles
+	for proj_id in projectile_nodes.keys():
+		if not proj_id in current_proj_ids:
+			projectile_nodes[proj_id].queue_free()
+			projectile_nodes.erase(proj_id)
+	
+	# Update or create projectiles with smooth movement
+	for proj in state.get("projectiles", []):
+		if not proj.has("id"):
+			continue
+		
+		var proj_id = proj.id
+		var proj_node = projectile_nodes.get(proj_id)
+		
+		if proj_node == null:
+			proj_node = create_projectile(proj.get("team", 0))
+			projectile_nodes[proj_id] = proj_node
+		
+		# Direct assignment of interpolated positions for crisp movement
+		var target_pos = Vector3(proj.x, 0.5, -proj.y)
+		proj_node.position = target_pos
 
 func create_projectile(team: int) -> MeshInstance3D:
 	var proj_mesh = SphereMesh.new()
