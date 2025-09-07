@@ -6,6 +6,7 @@ var current_frame: float = 0.0
 var playing: bool = false
 var playback_speed: float = 1.0
 var selected_bot: Dictionary = {}
+var dragging_slider: bool = false
 
 # Interpolation state for smooth playback
 var interpolation_factor: float = 0.0
@@ -69,6 +70,9 @@ func _ready():
 	
 	# Connect to battle data
 	BattleData.battle_data_loaded.connect(_on_battle_data_loaded)
+	
+	# Connect timeline slider signals
+	timeline_slider.drag_ended.connect(_on_timeline_slider_drag_ended)
 	
 	# Setup lighting
 	setup_lighting()
@@ -156,33 +160,28 @@ func step_frame(direction: int):
 	play_button.text = "▶ Play"
 	var timeline = BattleData.get_timeline()
 	# Snap to the nearest integer frame before stepping
-	var new_frame = round(current_frame) + direction
-	current_frame = clamp(new_frame, 0, timeline.size() - 1)
-	timeline_slider.set_value_no_signal(current_frame)
+	var new_frame = round(timeline_slider.value) + direction
+	timeline_slider.value = clamp(new_frame, 0, timeline.size() - 1)
 
 func reset_simulation():
 	playing = false
 	play_button.text = "▶ Play"
-	current_frame = 0
-	timeline_slider.set_value_no_signal(0)
+	timeline_slider.value = 0
 
 func _process(delta):
 	var timeline = BattleData.get_timeline()
-	if playing and timeline.size() > 0:
-		# Smooth frame advance with interpolation
+	if playing and not dragging_slider and timeline.size() > 0:
+		# Smoothly advance the timeline slider's value
 		var frames_per_second = 10.0  # Battle data logging rate
 		var frame_advance = frames_per_second * playback_speed * delta
-		var new_frame = current_frame + frame_advance
+		var new_value = timeline_slider.value + frame_advance
 		
 		# Clamp to valid range
-		new_frame = clamp(new_frame, 0.0, float(timeline.size() - 1))
+		new_value = clamp(new_value, 0.0, float(timeline.size() - 1))
 		
-		# Only update if we're actually advancing
-		if new_frame != current_frame:
-			current_frame = new_frame
-			timeline_slider.set_value_no_signal(current_frame)
+		timeline_slider.value = new_value
 		
-		if current_frame >= timeline.size() - 1:
+		if timeline_slider.value >= timeline.size() - 1:
 			playing = false
 			play_button.text = "▶ Play"
 	
@@ -325,6 +324,10 @@ func _on_timeline_slider_value_changed(value: float):
 func _on_timeline_slider_drag_started():
 	playing = false
 	play_button.text = "▶ Play"
+	dragging_slider = true
+
+func _on_timeline_slider_drag_ended(value_changed: bool):
+	dragging_slider = false
 
 func _on_reset_button_pressed():
 	reset_simulation()
