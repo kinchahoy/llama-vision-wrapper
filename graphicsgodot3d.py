@@ -52,9 +52,9 @@ class GodotBattleViewer:
     def run(self):
         """Run the Godot battle viewer."""
         try:
-            # Use a temporary file for the battle data
+            # Use a temporary file for the battle data. No indentation for faster loading.
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
-                json.dump(self.battle_data, f, indent=2)
+                json.dump(self.battle_data, f)
                 self.temp_file_path = f.name
             
             project_path = Path(__file__).parent / "godot_project"

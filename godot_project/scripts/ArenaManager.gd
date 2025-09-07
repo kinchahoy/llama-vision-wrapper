@@ -9,12 +9,19 @@ var bot_pool: Array = []
 var projectile_nodes: Array = []
 var selected_bot_id: int = -1
 
+var projectile_mesh: SphereMesh
+
 func _ready():
 	var material_manager_script = preload("res://scripts/MaterialManager.gd")
 	materials = material_manager_script.new()
 	
 	var bot_factory_script = preload("res://scripts/BotFactory.gd")
 	bot_factory = bot_factory_script.new()
+	
+	# Cache projectile mesh for performance
+	projectile_mesh = SphereMesh.new()
+	projectile_mesh.radius = 0.15
+	projectile_mesh.height = 0.3
 
 func setup(world_node: Node3D):
 	world_root = world_node
@@ -198,12 +205,8 @@ func update_projectiles(state: Dictionary):
 			proj_node.visible = false
 
 func create_projectile(team: int) -> MeshInstance3D:
-	var proj_mesh = SphereMesh.new()
-	proj_mesh.radius = 0.15
-	proj_mesh.height = 0.3
-	
 	var proj_node = MeshInstance3D.new()
-	proj_node.mesh = proj_mesh
+	proj_node.mesh = projectile_mesh # Use cached mesh
 	proj_node.material_override = materials.get_projectile_material(team)
 	
 	world_root.add_child(proj_node)
