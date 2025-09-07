@@ -516,13 +516,13 @@ class Battle3DViewer(ShowBase):
 
         # Controls (left to right)
         self.play_pause_btn = make_btn("Play", self._toggle_play, width=120)
-        self.step_back_btn = make_btn("◀", self._step_frame, extra=[-1], width=48)
-        self.step_forward_btn = make_btn("▶", self._step_frame, extra=[1], width=48)
+        self.step_back_btn = make_btn("<", self._step_frame, extra=[-1], width=48)
+        self.step_forward_btn = make_btn(">", self._step_frame, extra=[1], width=48)
         self.reset_btn = make_btn("Reset", self._reset_sim, width=110)
         self.reset_view_btn = make_btn("Reset View", self._reset_camera_view, width=130)
         self.fov_btn = make_btn("FOV", self._toggle_fov, width=70)
         self.help_btn = make_btn("Help", self._toggle_help, width=80)
-        self.speed_down_btn = make_btn("−", self._change_playback_speed, extra=[-1], width=48)
+        self.speed_down_btn = make_btn("-", self._change_playback_speed, extra=[-1], width=48)
         self.speed_up_btn = make_btn("+", self._change_playback_speed, extra=[1], width=48)
 
         # Timeline slider (clean track with hidden arrow buttons)
@@ -551,14 +551,14 @@ class Battle3DViewer(ShowBase):
             margin = 12
             spacing = 8
 
-            # Bottom bar spans full width
-            self.ui_bar["frameSize"] = (0, w, 0, bar_h)
-            self.ui_bar.setPos(0, 0, 0)
+            # Bottom bar spans full width (anchored to bottom of window)
+            self.ui_bar["frameSize"] = (0, w, -bar_h, 0)
+            self.ui_bar.setPos(0, 0, -h)
 
             # Slider along top of the bar
             slider_h = 18
             slider_w = w - 2 * margin
-            self.timeline_slider.setPos(w / 2, 0, bar_h - margin - slider_h / 2)
+            self.timeline_slider.setPos(w / 2, 0, -margin - slider_h / 2)
             try:
                 self.timeline_slider["frameSize"] = (
                     -slider_w / 2,
@@ -569,8 +569,8 @@ class Battle3DViewer(ShowBase):
             except Exception:
                 pass
 
-            # Buttons row below the slider
-            y = margin + 18  # vertical center of buttons
+            # Buttons row near bottom of the bar
+            y = -bar_h + margin + 18  # vertical center of buttons
             x = margin
 
             def place(btn, width, height=36):
@@ -1522,7 +1522,7 @@ class Battle3DViewer(ShowBase):
         return (
             "[CONTROLS]\n"
             "Space: Play/Pause\n"
-            "←/→: Step frame\n"
+            "Left/Right: Step frame\n"
             "R: Reset battle\n"
             "C: Reset camera\n"
             "F: Toggle FOV view\n"
@@ -1530,7 +1530,7 @@ class Battle3DViewer(ShowBase):
             "Q / Esc: Quit\n\n"
             "[Camera]\n"
             "Right Mouse: Pan\n"
-            "Wheel / +/-: Zoom\n\n"
+            "Wheel or +/-: Zoom\n\n"
             "[Interaction]\n"
             "Click Bot: Select & show details\n"
         )
@@ -1553,7 +1553,7 @@ def run_3d_viewer(battle_file: str):
     print("Launching Panda3D viewer...")
     print("Controls:")
     print("  SPACE = Play/Pause")
-    print("  ←/→ = Step frame by frame")
+    print("  Left/Right = Step frame by frame")
     print("  R = Reset to start")
     print("  C = Reset camera view")
     print("  F = Toggle FOV display")
