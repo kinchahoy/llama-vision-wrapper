@@ -59,6 +59,7 @@ bbcode_enabled = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+mouse_filter = 1
 
 [node name="SubViewport" type="SubViewport" parent="VBoxContainer/MainArea/ViewportContainer"]
 handle_input_locally = false
