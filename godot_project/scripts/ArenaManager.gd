@@ -3,8 +3,6 @@ class_name ArenaManager
 
 var world_root: Node3D
 var materials
-var bot_tweens: Dictionary = {}
-var projectile_tweens: Dictionary = {}
 
 func _ready():
 	var material_manager_script = preload("res://scripts/MaterialManager.gd")
@@ -71,10 +69,6 @@ func update_bots(state: Dictionary, bot_nodes: Dictionary):
 	# Remove dead bots
 	for bot_id in bot_nodes.keys():
 		if not bot_id in current_bot_ids:
-			# Clean up tween
-			if bot_tweens.has(bot_id):
-				bot_tweens[bot_id].kill()
-				bot_tweens.erase(bot_id)
 			bot_nodes[bot_id].queue_free()
 			bot_nodes.erase(bot_id)
 	
@@ -90,37 +84,12 @@ func update_bots(state: Dictionary, bot_nodes: Dictionary):
 			bot_node = create_bot(bot_id, bot.team)
 			bot_nodes[bot_id] = bot_node
 		
-		# Smooth position and rotation updates
-		var target_pos = Vector3(bot.x, 0.5, -bot.y)  # Negative Y to flip coordinate system
-		var target_rot = Vector3(0, -bot.theta - 90, 0)  # Adjust rotation for coordinate flip
-		
-		# Use smooth tweening for position and rotation
-		smooth_move_bot(bot_id, bot_node, target_pos, target_rot)
+		# Direct position and rotation updates like the working 2D version
+		bot_node.position = Vector3(bot.x, 0.5, -bot.y)  # Negative Y to flip coordinate system
+		bot_node.rotation_degrees = Vector3(0, -bot.theta - 90, 0)  # Adjust rotation for coordinate flip
 		
 		# Update health
 		update_bot_health(bot_node, bot.hp)
-
-func smooth_move_bot(bot_id: int, bot_node: Node3D, target_pos: Vector3, target_rot: Vector3):
-	# Create or reuse tween for this bot
-	var tween = bot_tweens.get(bot_id)
-	if not tween or not tween.is_valid():
-		tween = create_tween()
-		tween.set_parallel(true)  # Allow multiple properties to tween simultaneously
-		bot_tweens[bot_id] = tween
-	else:
-		tween.kill()  # Stop current tweening
-		tween = create_tween()
-		tween.set_parallel(true)
-		bot_tweens[bot_id] = tween
-	
-	# Smooth position transition (very fast for 60fps feel)
-	var pos_distance = bot_node.position.distance_to(target_pos)
-	var pos_duration = min(0.033, pos_distance * 0.01)  # Max 33ms (2 frames at 60fps)
-	tween.tween_property(bot_node, "position", target_pos, pos_duration)
-	
-	# Smooth rotation transition
-	var rot_duration = min(0.033, 0.02)  # Very fast rotation
-	tween.tween_property(bot_node, "rotation_degrees", target_rot, rot_duration)
 
 func create_bot(bot_id: int, team: int) -> Node3D:
 	var bot_factory_script = preload("res://scripts/BotFactory.gd")
@@ -143,10 +112,6 @@ func update_projectiles(state: Dictionary, projectile_nodes: Dictionary):
 	# Remove expired projectiles
 	for proj_id in projectile_nodes.keys():
 		if not proj_id in current_proj_ids:
-			# Clean up tween
-			if projectile_tweens.has(proj_id):
-				projectile_tweens[proj_id].kill()
-				projectile_tweens.erase(proj_id)
 			projectile_nodes[proj_id].queue_free()
 			projectile_nodes.erase(proj_id)
 	
@@ -162,25 +127,8 @@ func update_projectiles(state: Dictionary, projectile_nodes: Dictionary):
 			proj_node = create_projectile(proj.get("team", 0))
 			projectile_nodes[proj_id] = proj_node
 		
-		# Smooth position updates for projectiles
-		var target_pos = Vector3(proj.x, 0.5, -proj.y)  # Negative Y to match coordinate system
-		smooth_move_projectile(proj_id, proj_node, target_pos)
-
-func smooth_move_projectile(proj_id: int, proj_node: Node3D, target_pos: Vector3):
-	# Create or reuse tween for this projectile
-	var tween = projectile_tweens.get(proj_id)
-	if not tween or not tween.is_valid():
-		tween = create_tween()
-		projectile_tweens[proj_id] = tween
-	else:
-		tween.kill()  # Stop current tweening
-		tween = create_tween()
-		projectile_tweens[proj_id] = tween
-	
-	# Very fast position transition for projectiles (they move quickly)
-	var pos_distance = proj_node.position.distance_to(target_pos)
-	var pos_duration = min(0.016, pos_distance * 0.005)  # Max 16ms (1 frame at 60fps)
-	tween.tween_property(proj_node, "position", target_pos, pos_duration)
+		# Direct position updates like the working 2D version
+		proj_node.position = Vector3(proj.x, 0.5, -proj.y)  # Negative Y to match coordinate system
 
 func create_projectile(team: int) -> MeshInstance3D:
 	var proj_mesh = SphereMesh.new()

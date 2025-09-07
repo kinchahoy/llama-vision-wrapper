@@ -169,8 +169,8 @@ func reset_simulation():
 func _process(delta):
 	var timeline = BattleData.get_timeline()
 	if playing and timeline.size() > 0:
-		# Smooth playback: advance by smaller increments for ultra-smooth interpolation
-		current_frame += 15.0 * playback_speed * delta  # Slower frame advance for smoother interpolation
+		# Simple frame advance like the working 2D version
+		current_frame += 10.0 * playback_speed * delta  # 10Hz logging rate
 		if current_frame >= timeline.size() - 1:
 			current_frame = timeline.size() - 1
 			playing = false
@@ -188,77 +188,10 @@ func get_current_state() -> Dictionary:
 	if timeline.is_empty():
 		return {}
 	
+	# Simple frame selection like the working 2D version
 	var frame_idx = int(current_frame)
 	frame_idx = clamp(frame_idx, 0, timeline.size() - 1)
-	
-	# Get interpolation factor (fractional part of current_frame)
-	interpolation_factor = current_frame - frame_idx
-	
-	# Get current and next frame states
-	previous_state = timeline[frame_idx]
-	var next_frame_idx = clamp(frame_idx + 1, 0, timeline.size() - 1)
-	next_state = timeline[next_frame_idx]
-	
-	# Return interpolated state
-	return get_interpolated_state(previous_state, next_state, interpolation_factor)
-
-func get_interpolated_state(state1: Dictionary, state2: Dictionary, factor: float) -> Dictionary:
-	var interpolated_state = state1.duplicate(true)
-	
-	# Interpolate bot positions and rotations
-	if state1.has("bots") and state2.has("bots"):
-		var bots1 = state1["bots"]
-		var bots2 = state2["bots"]
-		var interpolated_bots = []
-		
-		for i in range(bots1.size()):
-			if i < bots2.size():
-				var bot1 = bots1[i]
-				var bot2 = bots2[i]
-				var interpolated_bot = bot1.duplicate()
-				
-				# Interpolate position
-				interpolated_bot["x"] = lerp(bot1.get("x", 0.0), bot2.get("x", 0.0), factor)
-				interpolated_bot["y"] = lerp(bot1.get("y", 0.0), bot2.get("y", 0.0), factor)
-				
-				# Interpolate rotation (handle angle wrapping)
-				var angle1 = bot1.get("theta", 0.0)
-				var angle2 = bot2.get("theta", 0.0)
-				interpolated_bot["theta"] = lerp_angle(deg_to_rad(angle1), deg_to_rad(angle2), factor) * 180.0 / PI
-				
-				interpolated_bots.append(interpolated_bot)
-			else:
-				interpolated_bots.append(bots1[i])
-		
-		interpolated_state["bots"] = interpolated_bots
-	
-	# Interpolate projectile positions
-	if state1.has("projectiles") and state2.has("projectiles"):
-		var projs1 = state1["projectiles"]
-		var projs2 = state2["projectiles"]
-		var interpolated_projs = []
-		
-		# Match projectiles by ID for smooth interpolation
-		for proj1 in projs1:
-			var proj1_id = proj1.get("id", -1)
-			var found_match = false
-			
-			for proj2 in projs2:
-				if proj2.get("id", -1) == proj1_id:
-					var interpolated_proj = proj1.duplicate()
-					interpolated_proj["x"] = lerp(proj1.get("x", 0.0), proj2.get("x", 0.0), factor)
-					interpolated_proj["y"] = lerp(proj1.get("y", 0.0), proj2.get("y", 0.0), factor)
-					interpolated_projs.append(interpolated_proj)
-					found_match = true
-					break
-			
-			# If no match found, use original projectile (it might be new or about to disappear)
-			if not found_match:
-				interpolated_projs.append(proj1)
-		
-		interpolated_state["projectiles"] = interpolated_projs
-	
-	return interpolated_state
+	return timeline[frame_idx]
 
 func update_simulation():
 	var state = get_current_state()
