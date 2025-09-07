@@ -481,6 +481,10 @@ class Battle3DViewer(ShowBase):
             frameSize=(0, 0, 0, 0),  # sized in layout()
             pos=(0, 0, 0),
         )
+        # Ensure UI renders on top of 3D and isn't affected by depth buffer
+        self.ui_bar.setBin("fixed", 10)
+        self.ui_bar.setDepthWrite(False)
+        self.ui_bar.setDepthTest(False)
 
         # Helper to create consistently styled flat buttons
         def make_btn(text, cmd, extra=None, width=120, height=36):
@@ -599,6 +603,8 @@ class Battle3DViewer(ShowBase):
                 right_x -= width + spacing
 
         layout()
+        # Also perform layout on the next frame to ensure window/pixel2d metrics are initialized
+        self.taskMgr.doMethodLater(0, lambda task: (layout(), task.done), "ui_initial_layout")
         # Re-layout when window changes size
         self.accept("window-event", lambda win: layout())
 
