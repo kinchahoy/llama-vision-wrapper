@@ -13,7 +13,7 @@ func create_bot(bot_id: int, team: int, materials) -> Node3D:
 	body_node.add_child(cone_node)
 	
 	# Health component
-	var health_component_script = load("res://scripts/HealthBarComponent.gd")
+	var health_component_script = preload("res://scripts/HealthBarComponent.gd")
 	var health_component = health_component_script.new()
 	body_node.add_child(health_component)
 	bot_container.set_meta("health_component", health_component)

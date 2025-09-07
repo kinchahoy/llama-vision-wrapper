@@ -35,10 +35,10 @@ var projectile_nodes: Dictionary = {}
 func _ready():
 	print("BattleViewer3D initializing...")
 	
-	# Initialize components by loading scripts
-	var arena_manager_script = load("res://scripts/ArenaManager.gd")
-	var ui_manager_script = load("res://scripts/UIManager.gd")
-	var camera_controller_script_class = load("res://scripts/CameraController.gd")
+	# Initialize components by preloading scripts
+	var arena_manager_script = preload("res://scripts/ArenaManager.gd")
+	var ui_manager_script = preload("res://scripts/UIManager.gd")
+	var camera_controller_script_class = preload("res://scripts/CameraController.gd")
 	
 	if arena_manager_script and ui_manager_script and camera_controller_script_class:
 		arena_manager = arena_manager_script.new()
@@ -81,7 +81,7 @@ func _on_battle_data_loaded():
 		ui_manager.update_battle_info(BattleData.get_metadata())
 
 func setup_lighting():
-	var lighting_manager_script = load("res://scripts/LightingManager.gd")
+	var lighting_manager_script = preload("res://scripts/LightingManager.gd")
 	var lighting_manager = lighting_manager_script.new()
 	lighting.add_child(lighting_manager)
 	lighting_manager.setup_modern_lighting()
@@ -118,10 +118,16 @@ func _input(event):
 				get_tree().quit()
 
 func handle_bot_selection(mouse_pos: Vector2):
+	if not viewport_3d or not viewport_3d.world_3d or not camera_3d:
+		return
+		
 	var from = camera_3d.project_ray_origin(mouse_pos)
 	var to = from + camera_3d.project_ray_normal(mouse_pos) * 1000.0
 	
 	var space_state = viewport_3d.world_3d.direct_space_state
+	if not space_state:
+		return
+		
 	var query = PhysicsRayQueryParameters3D.create(from, to)
 	var result = space_state.intersect_ray(query)
 	

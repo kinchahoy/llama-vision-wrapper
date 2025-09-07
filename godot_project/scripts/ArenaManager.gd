@@ -2,10 +2,11 @@ extends Node
 class_name ArenaManager
 
 var world_root: Node3D
-var materials: MaterialManager
+var materials
 
 func _ready():
-	materials = MaterialManager.new()
+	var material_manager_script = preload("res://scripts/MaterialManager.gd")
+	materials = material_manager_script.new()
 
 func setup(world_node: Node3D):
 	world_root = world_node
@@ -91,7 +92,7 @@ func update_bots(state: Dictionary, bot_nodes: Dictionary):
 		update_bot_health(bot_node, bot.hp)
 
 func create_bot(bot_id: int, team: int) -> Node3D:
-	var bot_factory_script = load("res://scripts/BotFactory.gd")
+	var bot_factory_script = preload("res://scripts/BotFactory.gd")
 	var bot_factory = bot_factory_script.new()
 	var bot_node = bot_factory.create_bot(bot_id, team, materials)
 	world_root.add_child(bot_node)
