@@ -22,6 +22,7 @@ from typing import Dict, List, Tuple, Optional
 
 from direct.showbase.ShowBase import ShowBase
 from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText
+from direct.gui import DirectGuiGlobals as DGG
 from panda3d.core import (
     AmbientLight,
     DirectionalLight,
@@ -481,63 +482,128 @@ class Battle3DViewer(ShowBase):
 
     def _setup_ui(self):
         """Set up the DirectGUI elements for controls and info."""
-        # UI Panel
-        self.ui_frame = DirectFrame(
-            frameColor=(0.2, 0.2, 0.2, 0.8),
-            frameSize=(-1, 1, -1, 1),
-            pos=(0, 0, -0.85),
-            scale=0.15,
+        # Build a responsive bottom toolbar in pixel coordinates to avoid overlap on different aspect ratios.
+        self.ui_bar = DirectFrame(
+            parent=self.pixel2d,
+            frameColor=(0.12, 0.12, 0.14, 0.85),
+            frameSize=(0, 0, 0, 0),  # sized in layout()
+            pos=(0, 0, 0),
         )
 
-        # Timeline Slider
+        # Helper to create consistently styled flat buttons
+        def make_btn(text, cmd, extra=None, width=120, height=36):
+            btn = DirectButton(
+                parent=self.ui_bar,
+                text=text,
+                command=cmd,
+                extraArgs=extra or [],
+                relief=DGG.FLAT,
+                frameColor=(
+                    (0.20, 0.20, 0.24, 1.0),  # normal
+                    (0.30, 0.30, 0.34, 1.0),  # click
+                    (0.24, 0.24, 0.28, 1.0),  # rollover
+                    (0.10, 0.10, 0.12, 1.0),  # disabled
+                ),
+                text_fg=(1, 1, 1, 1),
+                text_scale=16,  # pixels (since parent is pixel2d)
+                text_shadow=(0, 0, 0, 0.8),
+                rolloverSound=None,
+                clickSound=None,
+            )
+            # Centered origin with explicit size (pixels)
+            btn["frameSize"] = (-width / 2, width / 2, -height / 2, height / 2)
+            return btn
+
+        # Controls (left to right)
+        self.play_pause_btn = make_btn("Play", self._toggle_play, width=120)
+        self.step_back_btn = make_btn("◀", self._step_frame, extra=[-1], width=48)
+        self.step_forward_btn = make_btn("▶", self._step_frame, extra=[1], width=48)
+        self.reset_btn = make_btn("Reset", self._reset_sim, width=110)
+        self.reset_view_btn = make_btn("Reset View", self._reset_camera_view, width=130)
+        self.fov_btn = make_btn("FOV", self._toggle_fov, width=70)
+        self.help_btn = make_btn("Help", self._toggle_help, width=80)
+        self.speed_down_btn = make_btn("−", self._change_playback_speed, extra=[-1], width=48)
+        self.speed_up_btn = make_btn("+", self._change_playback_speed, extra=[1], width=48)
+
+        # Timeline slider (clean track with hidden arrow buttons)
         self.timeline_slider = DirectSlider(
-            parent=self.ui_frame,
-            range=(0, len(self.timeline) - 1),
+            parent=self.ui_bar,
+            range=(0, max(1, len(self.timeline) - 1)),
             value=0,
             pageSize=1,
             command=self._on_slider_move,
-            pos=(0 * 4, 0, 0.5),
-            scale=(0.8, 1, 1),
+            relief=DGG.FLAT,
+            frameColor=(0.25, 0.25, 0.28, 1.0),
         )
+        try:
+            self.timeline_slider.incButton.hide()
+            self.timeline_slider.decButton.hide()
+            self.timeline_slider.thumb["frameColor"] = (0.80, 0.80, 0.85, 1.0)
+            self.timeline_slider.thumb["relief"] = DGG.FLAT
+        except Exception:
+            pass
 
-        # Control Buttons
-        self.play_pause_btn = DirectButton(
-            parent=self.ui_frame,
-            text="Play",
-            command=self._toggle_play,
-            pos=(-0.9 * 4, 0, -0.3),
-            scale=0.3,
-        )
-        DirectButton(
-            parent=self.ui_frame,
-            text="<",
-            command=self._change_playback_speed,
-            extraArgs=[-1],
-            pos=(-0.45 * 4, 0, -0.3),
-            scale=0.3,
-        )
-        DirectButton(
-            parent=self.ui_frame,
-            text=">",
-            command=self._change_playback_speed,
-            extraArgs=[1],
-            pos=(0.0 * 4, 0, -0.3),
-            scale=0.3,
-        )
-        DirectButton(
-            parent=self.ui_frame,
-            text="Reset",
-            command=self._reset_sim,
-            pos=(0.45 * 4, 0, -0.3),
-            scale=0.3,
-        )
-        DirectButton(
-            parent=self.ui_frame,
-            text="Reset View",
-            command=self._reset_camera_view,
-            pos=(0.9, 0 * 4, -0.3),
-            scale=0.3,
-        )
+        # Layout function to adapt to window resizes
+        def layout():
+            w = self.win.getXSize() if self.win else 1280
+            h = self.win.getYSize() if self.win else 720
+            bar_h = 90
+            margin = 12
+            spacing = 8
+
+            # Bottom bar spans full width
+            self.ui_bar["frameSize"] = (0, w, 0, bar_h)
+            self.ui_bar.setPos(0, 0, 0)
+
+            # Slider along top of the bar
+            slider_h = 18
+            slider_w = w - 2 * margin
+            self.timeline_slider.setPos(w / 2, 0, bar_h - margin - slider_h / 2)
+            try:
+                self.timeline_slider["frameSize"] = (
+                    -slider_w / 2,
+                    slider_w / 2,
+                    -slider_h / 2,
+                    slider_h / 2,
+                )
+            except Exception:
+                pass
+
+            # Buttons row below the slider
+            y = margin + 18  # vertical center of buttons
+            x = margin
+
+            def place(btn, width, height=36):
+                center_x = x + width / 2
+                btn.setPos(center_x, 0, y)
+                btn["frameSize"] = (-width / 2, width / 2, -height / 2, height / 2)
+
+            place(self.play_pause_btn, 120)
+            x += 120 + spacing
+            place(self.step_back_btn, 48)
+            x += 48 + spacing
+            place(self.step_forward_btn, 48)
+            x += 48 + spacing
+            place(self.reset_btn, 110)
+            x += 110 + spacing
+            place(self.reset_view_btn, 130)
+            x += 130 + spacing
+            place(self.fov_btn, 70)
+            x += 70 + spacing
+            place(self.help_btn, 80)
+            x += 80 + spacing
+
+            # Speed controls aligned right
+            right_x = w - margin
+            for btn, width in ((self.speed_up_btn, 48), (self.speed_down_btn, 48)):
+                center_x = right_x - width / 2
+                btn.setPos(center_x, 0, y)
+                btn["frameSize"] = (-width / 2, width / 2, -18, 18)
+                right_x -= width + spacing
+
+        layout()
+        # Re-layout when window changes size
+        self.accept("window-event", lambda win: layout())
 
         # Info Text (top-right HUD)
         self.info_text = OnscreenText(
