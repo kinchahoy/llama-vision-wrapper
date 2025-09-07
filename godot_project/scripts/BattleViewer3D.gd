@@ -183,7 +183,7 @@ func toggle_playback():
 func step_frame(direction: int):
 	playing = false
 	play_button.text = "▶ Play"
-	var timeline = BattleData.get_timeline()
+	var timeline = get_timeline()
 	# Snap to the nearest integer frame before stepping
 	var new_frame = round(timeline_slider.value) + direction
 	timeline_slider.value = clamp(new_frame, 0, timeline.size() - 1)
@@ -342,7 +342,7 @@ func _on_play_button_pressed():
 	toggle_playback()
 
 func _on_timeline_slider_value_changed(value: float):
-	var timeline = BattleData.get_timeline()
+	var timeline = get_timeline()
 	if timeline.size() > 0:
 		current_frame = clamp(value, 0.0, float(timeline.size() - 1))
 

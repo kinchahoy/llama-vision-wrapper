@@ -7,8 +7,6 @@ run/main_scene="res://scenes/BattleViewer.tscn"
 
 [autoload]
 
-BattleData="*res://scripts/BattleData.gd"
-
 [display]
 
 window/size/viewport_width=1400
