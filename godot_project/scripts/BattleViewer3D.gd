@@ -171,14 +171,19 @@ func _process(delta):
 		# Smooth frame advance with interpolation
 		var frames_per_second = 10.0  # Battle data logging rate
 		var frame_advance = frames_per_second * playback_speed * delta
-		current_frame += frame_advance
+		var new_frame = current_frame + frame_advance
+		
+		# Clamp to valid range
+		new_frame = clamp(new_frame, 0.0, float(timeline.size() - 1))
+		
+		# Only update if we're actually advancing
+		if new_frame != current_frame:
+			current_frame = new_frame
+			timeline_slider.value = current_frame
 		
 		if current_frame >= timeline.size() - 1:
-			current_frame = timeline.size() - 1
 			playing = false
 			play_button.text = "▶ Play"
-		
-		timeline_slider.value = current_frame
 	
 	update_simulation_smooth()
 	
@@ -293,7 +298,9 @@ func _on_play_button_pressed():
 	toggle_playback()
 
 func _on_timeline_slider_value_changed(value: float):
-	current_frame = value
+	var timeline = BattleData.get_timeline()
+	if timeline.size() > 0:
+		current_frame = clamp(value, 0.0, float(timeline.size() - 1))
 
 func _on_timeline_slider_drag_started():
 	playing = false

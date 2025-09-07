@@ -62,69 +62,85 @@ func create_wall(wall_def: Array):
 
 func update_bots(state: Dictionary, bot_nodes: Dictionary):
 	var current_bot_ids = {}
+	var current_bots = {}
+	
+	# Build lookup of current bots
 	for bot in state.get("bots", []):
 		if bot.get("alive", true):
-			current_bot_ids[bot.id] = true
+			var bot_id = bot.get("id")
+			if bot_id != null:
+				current_bot_ids[bot_id] = true
+				current_bots[bot_id] = bot
 	
-	# Remove dead bots
+	# Remove dead or missing bots
+	var bots_to_remove = []
 	for bot_id in bot_nodes.keys():
 		if not bot_id in current_bot_ids:
+			bots_to_remove.append(bot_id)
+	
+	for bot_id in bots_to_remove:
+		if bot_nodes[bot_id] and is_instance_valid(bot_nodes[bot_id]):
 			bot_nodes[bot_id].queue_free()
-			bot_nodes.erase(bot_id)
+		bot_nodes.erase(bot_id)
 	
 	# Update or create bots
-	for bot in state.get("bots", []):
-		if not bot.get("alive", true):
-			continue
-		
-		var bot_id = bot.id
+	for bot_id in current_bots.keys():
+		var bot = current_bots[bot_id]
 		var bot_node = bot_nodes.get(bot_id)
 		
-		if bot_node == null:
-			bot_node = create_bot(bot_id, bot.team)
+		if bot_node == null or not is_instance_valid(bot_node):
+			bot_node = create_bot(bot_id, bot.get("team", 0))
 			bot_nodes[bot_id] = bot_node
 		
 		# Direct position and rotation updates like the working 2D version
-		bot_node.position = Vector3(bot.x, 0.5, -bot.y)  # Negative Y to flip coordinate system
-		bot_node.rotation_degrees = Vector3(0, -bot.theta - 90, 0)  # Adjust rotation for coordinate flip
+		bot_node.position = Vector3(bot.get("x", 0.0), 0.5, -bot.get("y", 0.0))  # Negative Y to flip coordinate system
+		bot_node.rotation_degrees = Vector3(0, -bot.get("theta", 0.0) - 90, 0)  # Adjust rotation for coordinate flip
 		
 		# Update health
-		update_bot_health(bot_node, bot.hp)
+		update_bot_health(bot_node, bot.get("hp", 100))
 
 func update_bots_smooth(state: Dictionary, bot_nodes: Dictionary):
 	var current_bot_ids = {}
+	var current_bots = {}
+	
+	# Build lookup of current bots
 	for bot in state.get("bots", []):
 		if bot.get("alive", true):
-			current_bot_ids[bot.id] = true
+			var bot_id = bot.get("id")
+			if bot_id != null:
+				current_bot_ids[bot_id] = true
+				current_bots[bot_id] = bot
 	
-	# Remove dead bots
+	# Remove dead or missing bots
+	var bots_to_remove = []
 	for bot_id in bot_nodes.keys():
 		if not bot_id in current_bot_ids:
+			bots_to_remove.append(bot_id)
+	
+	for bot_id in bots_to_remove:
+		if bot_nodes[bot_id] and is_instance_valid(bot_nodes[bot_id]):
 			bot_nodes[bot_id].queue_free()
-			bot_nodes.erase(bot_id)
+		bot_nodes.erase(bot_id)
 	
 	# Update or create bots with smooth movement
-	for bot in state.get("bots", []):
-		if not bot.get("alive", true):
-			continue
-		
-		var bot_id = bot.id
+	for bot_id in current_bots.keys():
+		var bot = current_bots[bot_id]
 		var bot_node = bot_nodes.get(bot_id)
 		
-		if bot_node == null:
-			bot_node = create_bot(bot_id, bot.team)
+		if bot_node == null or not is_instance_valid(bot_node):
+			bot_node = create_bot(bot_id, bot.get("team", 0))
 			bot_nodes[bot_id] = bot_node
 		
 		# Smooth position and rotation updates using interpolated data
-		var target_pos = Vector3(bot.x, 0.5, -bot.y)
-		var target_rot = Vector3(0, -bot.theta - 90, 0)
+		var target_pos = Vector3(bot.get("x", 0.0), 0.5, -bot.get("y", 0.0))
+		var target_rot = Vector3(0, -bot.get("theta", 0.0) - 90, 0)
 		
 		# Direct assignment of interpolated positions for crisp movement
 		bot_node.position = target_pos
 		bot_node.rotation_degrees = target_rot
 		
 		# Update health
-		update_bot_health(bot_node, bot.hp)
+		update_bot_health(bot_node, bot.get("hp", 100))
 
 func create_bot(bot_id: int, team: int) -> Node3D:
 	var bot_factory_script = preload("res://scripts/BotFactory.gd")
@@ -140,57 +156,85 @@ func update_bot_health(bot_node: Node3D, hp: float):
 
 func update_projectiles(state: Dictionary, projectile_nodes: Dictionary):
 	var current_proj_ids = {}
+	var current_projectiles = {}
+	
+	# Build lookup of current projectiles - use position-based ID if no ID field
+	var proj_index = 0
 	for proj in state.get("projectiles", []):
+		var proj_id
 		if proj.has("id"):
-			current_proj_ids[proj.id] = true
+			proj_id = proj.get("id")
+		else:
+			# Create a unique ID based on position and index for projectiles without IDs
+			proj_id = "proj_%d_%.2f_%.2f" % [proj_index, proj.get("x", 0.0), proj.get("y", 0.0)]
+		
+		current_proj_ids[proj_id] = true
+		current_projectiles[proj_id] = proj
+		proj_index += 1
 	
 	# Remove expired projectiles
+	var projs_to_remove = []
 	for proj_id in projectile_nodes.keys():
 		if not proj_id in current_proj_ids:
+			projs_to_remove.append(proj_id)
+	
+	for proj_id in projs_to_remove:
+		if projectile_nodes[proj_id] and is_instance_valid(projectile_nodes[proj_id]):
 			projectile_nodes[proj_id].queue_free()
-			projectile_nodes.erase(proj_id)
+		projectile_nodes.erase(proj_id)
 	
 	# Update or create projectiles
-	for proj in state.get("projectiles", []):
-		if not proj.has("id"):
-			continue
-		
-		var proj_id = proj.id
+	for proj_id in current_projectiles.keys():
+		var proj = current_projectiles[proj_id]
 		var proj_node = projectile_nodes.get(proj_id)
 		
-		if proj_node == null:
+		if proj_node == null or not is_instance_valid(proj_node):
 			proj_node = create_projectile(proj.get("team", 0))
 			projectile_nodes[proj_id] = proj_node
 		
 		# Direct position updates like the working 2D version
-		proj_node.position = Vector3(proj.x, 0.5, -proj.y)  # Negative Y to match coordinate system
+		proj_node.position = Vector3(proj.get("x", 0.0), 0.5, -proj.get("y", 0.0))  # Negative Y to match coordinate system
 
 func update_projectiles_smooth(state: Dictionary, projectile_nodes: Dictionary):
 	var current_proj_ids = {}
+	var current_projectiles = {}
+	
+	# Build lookup of current projectiles - use position-based ID if no ID field
+	var proj_index = 0
 	for proj in state.get("projectiles", []):
+		var proj_id
 		if proj.has("id"):
-			current_proj_ids[proj.id] = true
+			proj_id = proj.get("id")
+		else:
+			# Create a unique ID based on position and index for projectiles without IDs
+			proj_id = "proj_%d_%.2f_%.2f" % [proj_index, proj.get("x", 0.0), proj.get("y", 0.0)]
+		
+		current_proj_ids[proj_id] = true
+		current_projectiles[proj_id] = proj
+		proj_index += 1
 	
 	# Remove expired projectiles
+	var projs_to_remove = []
 	for proj_id in projectile_nodes.keys():
 		if not proj_id in current_proj_ids:
+			projs_to_remove.append(proj_id)
+	
+	for proj_id in projs_to_remove:
+		if projectile_nodes[proj_id] and is_instance_valid(projectile_nodes[proj_id]):
 			projectile_nodes[proj_id].queue_free()
-			projectile_nodes.erase(proj_id)
+		projectile_nodes.erase(proj_id)
 	
 	# Update or create projectiles with smooth movement
-	for proj in state.get("projectiles", []):
-		if not proj.has("id"):
-			continue
-		
-		var proj_id = proj.id
+	for proj_id in current_projectiles.keys():
+		var proj = current_projectiles[proj_id]
 		var proj_node = projectile_nodes.get(proj_id)
 		
-		if proj_node == null:
+		if proj_node == null or not is_instance_valid(proj_node):
 			proj_node = create_projectile(proj.get("team", 0))
 			projectile_nodes[proj_id] = proj_node
 		
 		# Direct assignment of interpolated positions for crisp movement
-		var target_pos = Vector3(proj.x, 0.5, -proj.y)
+		var target_pos = Vector3(proj.get("x", 0.0), 0.5, -proj.get("y", 0.0))
 		proj_node.position = target_pos
 
 func create_projectile(team: int) -> MeshInstance3D:
