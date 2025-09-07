@@ -167,9 +167,9 @@ func handle_bot_selection(mouse_pos: Vector2):
 	if not viewport_3d:
 		print("DEBUG: viewport_3d is null.")
 		return
-	var world = viewport_3d.get_world_3d()
+	var world = world_root.get_world_3d()
 	if not world:
-		print("DEBUG: viewport_3d.get_world_3d() is null.")
+		print("DEBUG: world_root.get_world_3d() is null.")
 		return
 	if not camera_3d:
 		print("DEBUG: camera_3d is null.")
