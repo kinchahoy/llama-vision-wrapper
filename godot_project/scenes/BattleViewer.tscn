@@ -63,6 +63,7 @@ mouse_filter = 1
 
 [node name="SubViewport" type="SubViewport" parent="VBoxContainer/MainArea/ViewportContainer"]
 handle_input_locally = false
+own_world_3d = true
 size = Vector2i(760, 480)
 render_target_update_mode = 4
 
