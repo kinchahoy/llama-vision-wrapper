@@ -167,8 +167,9 @@ func handle_bot_selection(mouse_pos: Vector2):
 	if not viewport_3d:
 		print("DEBUG: viewport_3d is null.")
 		return
-	if not viewport_3d.world_3d:
-		print("DEBUG: viewport_3d.world_3d is null.")
+	var world = viewport_3d.get_world_3d()
+	if not world:
+		print("DEBUG: viewport_3d.get_world_3d() is null.")
 		return
 	if not camera_3d:
 		print("DEBUG: camera_3d is null.")
@@ -178,7 +179,7 @@ func handle_bot_selection(mouse_pos: Vector2):
 	var to = from + camera_3d.project_ray_normal(mouse_pos) * 1000.0
 	print("Raycast from: ", from, " to: ", to)
 	
-	var space_state = viewport_3d.world_3d.direct_space_state
+	var space_state = world.direct_space_state
 	if not space_state:
 		print("DEBUG: Missing direct_space_state.")
 		return
