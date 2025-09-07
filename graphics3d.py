@@ -538,13 +538,15 @@ class Battle3DViewer(ShowBase):
             scale=0.3,
         )
 
-        # Info Text
+        # Info Text (top-right HUD)
         self.info_text = OnscreenText(
             parent=self.a2dTopRight,
             text="",
             pos=(-0.05, -0.1),
             scale=0.05,
             align=TextNode.ARight,
+            mayChange=True,
+            fg=(1,1,1,1),
             shadow=(0, 0, 0, 0.7),
             shadowOffset=(0.004, -0.004),
         )
@@ -576,6 +578,34 @@ class Battle3DViewer(ShowBase):
             shadowOffset=(0.004, -0.004),
         )
 
+        # FPS counter (top-left corner)
+        self.fps_text = OnscreenText(
+            parent=self.a2dTopLeft,
+            text="FPS: 0",
+            pos=(0.05, -0.02),
+            scale=0.04,
+            align=TextNode.ALeft,
+            fg=(0,1,0,1),
+            mayChange=True,
+            shadow=(0,0,0,0.7),
+            shadowOffset=(0.002, -0.002),
+        )
+
+        # Help overlay (hidden by default, toggled with H)
+        self.help_visible = False
+        self.help_text = OnscreenText(
+            parent=self.a2dBottomLeft,
+            text=self._generate_help_text(),
+            pos=(0.05, 0.05),
+            scale=0.045,
+            align=TextNode.ALeft,
+            fg=(1,1,0.9,1),
+            mayChange=True,
+            shadow=(0,0,0,0.8),
+            shadowOffset=(0.003, -0.003),
+        )
+        self.help_text.hide()
+
     def _setup_controls(self):
         """Set up keyboard controls."""
         self.accept("space", self._toggle_play)
@@ -591,6 +621,7 @@ class Battle3DViewer(ShowBase):
         self.accept("wheel_down", self._handle_zoom, [-1.0])
         self.accept("equal", self._handle_zoom, [1.0])
         self.accept("minus", self._handle_zoom, [-1.0])
+        self.accept("h", self._toggle_help)
 
     def _setup_mouse_picking(self):
         """Set up the collision system for mouse picking."""
@@ -691,6 +722,11 @@ class Battle3DViewer(ShowBase):
         self._update_projectiles(current_state)
         self._update_ui(current_state)
         self._update_fov_display()
+
+        # Update FPS counter
+        fps = globalClock.getAverageFrameRate()
+        self.fps_text.setText(f"FPS: {fps:.1f}")
+
         return task.cont
 
     def _get_current_state(self) -> Dict:
@@ -1192,6 +1228,11 @@ class Battle3DViewer(ShowBase):
         info_lines.append(f"Overall Accuracy: {float(accuracy):.1%}")
         self.info_text.setText("\n".join(info_lines))
 
+        # Show winner prominently if battle is over
+        if state.get("time") >= meta.get("duration", 0):
+            winner_banner = f"🏆 Winner: {winner.upper()} 🏆"
+            self.info_text.setText(self.info_text.getText() + f"\n\n{winner_banner}")
+
         # Selected bot info with more details
         if self.selected_bot:
             bot = self.selected_bot
@@ -1400,6 +1441,32 @@ class Battle3DViewer(ShowBase):
         node.addGeom(geom)
 
         return node
+
+    def _toggle_help(self):
+        """Toggle help overlay visibility."""
+        self.help_visible = not self.help_visible
+        if self.help_visible:
+            self.help_text.show()
+        else:
+            self.help_text.hide()
+
+    def _generate_help_text(self) -> str:
+        """Generate the multi-line help text showing controls."""
+        return (
+            "[CONTROLS]\n"
+            "Space: Play/Pause\n"
+            "←/→: Step frame\n"
+            "R: Reset battle\n"
+            "C: Reset camera\n"
+            "F: Toggle FOV view\n"
+            "H: Toggle help overlay\n"
+            "Q / Esc: Quit\n\n"
+            "[Camera]\n"
+            "Right Mouse: Pan\n"
+            "Wheel / +/-: Zoom\n\n"
+            "[Interaction]\n"
+            "Click Bot: Select & show details\n"
+        )
 
 
 def run_3d_viewer(battle_file: str):
