@@ -13,12 +13,28 @@ import tempfile
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 
-# Godot project generation for dynamic scene creation
-GODOT_PROJECT_TEMPLATE = None # Moved to godot-specific/godot_project_template file for clarity
+# Load Godot project files from separate files
+def _load_godot_files():
+    """Load Godot project template files from the godot-specific directory."""
+    base_dir = Path(__file__).parent
+    godot_dir = base_dir / "godot-specific"
+    
+    try:
+        project_template_path = godot_dir / "godot_project_template"
+        battle_viewer_gd_path = godot_dir / "godot_battle_viewer_gd"
+        battle_viewer_tscn_path = godot_dir / "godot_battle_viewer_tscn"
+        
+        project_template = project_template_path.read_text() if project_template_path.exists() else ""
+        battle_viewer_gd = battle_viewer_gd_path.read_text() if battle_viewer_gd_path.exists() else ""
+        battle_viewer_tscn = battle_viewer_tscn_path.read_text() if battle_viewer_tscn_path.exists() else ""
+        
+        return project_template, battle_viewer_gd, battle_viewer_tscn
+    except Exception as e:
+        print(f"Warning: Could not load Godot template files: {e}")
+        return "", "", ""
 
-GODOT_BATTLE_VIEWER_GD = None # Moved to godot-specific/godot_battle_viewer_gd file for clarity
-
-GODOT_BATTLE_VIEWER_TSCN = None
+# Load the template files at module level
+GODOT_PROJECT_TEMPLATE, GODOT_BATTLE_VIEWER_GD, GODOT_BATTLE_VIEWER_TSCN = _load_godot_files()
 
 class GodotBattleViewer:
     """
@@ -36,6 +52,10 @@ class GodotBattleViewer:
         """Create a temporary Godot project with all necessary files."""
         self.temp_dir = tempfile.mkdtemp(prefix="godot_battle_viewer_")
         project_path = Path(self.temp_dir)
+        
+        # Validate that we have the required template files
+        if not GODOT_PROJECT_TEMPLATE or not GODOT_BATTLE_VIEWER_GD or not GODOT_BATTLE_VIEWER_TSCN:
+            raise RuntimeError("Missing Godot template files. Ensure godot-specific/ directory contains the required files.")
         
         # Create project.godot
         (project_path / "project.godot").write_text(GODOT_PROJECT_TEMPLATE)
@@ -73,9 +93,10 @@ func _ready():
         (project_path / "Global.gd").write_text(global_script)
         
         # Add global to project settings
-        project_config = GODOT_PROJECT_TEMPLATE + f'''
-		[autoload]
-		Global="*res://Global.gd"
+        project_config = GODOT_PROJECT_TEMPLATE + '''
+
+[autoload]
+Global="*res://Global.gd"
 '''
         (project_path / "project.godot").write_text(project_config)
         
@@ -84,15 +105,14 @@ func _ready():
     
     def launch_godot(self, project_path: str) -> bool:
         """Launch Godot with the generated project."""
-        godot_commands = ["godot4", "godot", "/usr/bin/godot4", "/usr/local/bin/godot4"]
+        godot_commands = ["godot4", "godot", "/usr/bin/godot4", "/usr/local/bin/godot4", "/snap/bin/godot4"]
         
         for cmd in godot_commands:
             try:
                 # Try to run Godot
                 self.godot_process = subprocess.Popen([
                     cmd, 
-                    "--path", project_path,
-                    "--"
+                    "--path", project_path
                 ])
                 print(f"✨ Launched Godot with command: {cmd}")
                 return True
@@ -100,7 +120,8 @@ func _ready():
                 continue
         
         print("❌ Error: Godot 4 not found. Please install Godot 4 and ensure it's in your PATH.")
-        print("   Try: sudo apt install godot (Ubuntu/Debian)")
+        print("   Try: sudo apt install godot4 (Ubuntu/Debian)")
+        print("   Or: sudo snap install godot-4")
         print("   Or download from: https://godotengine.org/download")
         return False
     
