@@ -15,6 +15,7 @@ var target_fps: float = 60  # Target smooth playback FPS
 
 # Scene references
 @onready var viewport_3d: SubViewport = $VBoxContainer/MainArea/ViewportContainer/SubViewport
+@onready var viewport_container: SubViewportContainer = $VBoxContainer/MainArea/ViewportContainer
 @onready var camera_controller: Node3D = $VBoxContainer/MainArea/ViewportContainer/SubViewport/CameraController
 @onready var camera_3d: Camera3D = $VBoxContainer/MainArea/ViewportContainer/SubViewport/CameraController/Camera3D
 @onready var world_root: Node3D = $VBoxContainer/MainArea/ViewportContainer/SubViewport/World
@@ -127,7 +128,11 @@ func _input(event):
 		camera_controller_script.handle_input(event)
 	
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		handle_bot_selection(event.position)
+		# We only process clicks within the 3D viewport area.
+		# This also transforms global mouse coordinates to be local to the viewport container,
+		# which is required for the raycast to work correctly.
+		if viewport_container.get_global_rect().has_point(event.position):
+			handle_bot_selection(viewport_container.to_local(event.position))
 	elif event is InputEventKey and event.pressed:
 		match event.keycode:
 			KEY_SPACE:
