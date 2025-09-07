@@ -98,8 +98,8 @@ func setup_timeline_slider():
 	var timeline = BattleData.get_timeline()
 	if timeline.size() > 0 and timeline_slider:
 		timeline_slider.max_value = timeline.size() - 1
-		timeline_slider.value = 0
-		timeline_slider.step = 0.1
+		timeline_slider.set_value_no_signal(0)
+		timeline_slider.step = 0
 
 func _input(event):
 	if camera_controller_script and camera_controller_script.has_method("handle_input"):
@@ -156,13 +156,13 @@ func step_frame(direction: int):
 	play_button.text = "▶ Play"
 	var timeline = BattleData.get_timeline()
 	current_frame = clamp(current_frame + direction, 0, timeline.size() - 1)
-	timeline_slider.value = current_frame
+	timeline_slider.set_value_no_signal(current_frame)
 
 func reset_simulation():
 	playing = false
 	play_button.text = "▶ Play"
 	current_frame = 0
-	timeline_slider.value = 0
+	timeline_slider.set_value_no_signal(0)
 
 func _process(delta):
 	var timeline = BattleData.get_timeline()
@@ -178,7 +178,7 @@ func _process(delta):
 		# Only update if we're actually advancing
 		if new_frame != current_frame:
 			current_frame = new_frame
-			timeline_slider.value = current_frame
+			timeline_slider.set_value_no_signal(current_frame)
 		
 		if current_frame >= timeline.size() - 1:
 			playing = false
