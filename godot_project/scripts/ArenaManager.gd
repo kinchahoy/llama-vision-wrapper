@@ -84,10 +84,13 @@ func update_bots(state: Dictionary, bot_nodes: Dictionary):
 			bot_node = create_bot(bot_id, bot.team)
 			bot_nodes[bot_id] = bot_node
 		
-		# Update position and rotation
-		# Map 2D battle coordinates to 3D: X->X, Y->Z, with Y=0.5 for height
-		bot_node.position = Vector3(bot.x, 0.5, -bot.y)  # Negative Y to flip coordinate system
-		bot_node.rotation_degrees = Vector3(0, -bot.theta - 90, 0)  # Adjust rotation for coordinate flip
+		# Smooth position and rotation updates
+		var target_pos = Vector3(bot.x, 0.5, -bot.y)  # Negative Y to flip coordinate system
+		var target_rot = Vector3(0, -bot.theta - 90, 0)  # Adjust rotation for coordinate flip
+		
+		# Use smooth interpolation for position and rotation
+		bot_node.position = target_pos
+		bot_node.rotation_degrees = target_rot
 		
 		# Update health
 		update_bot_health(bot_node, bot.hp)
@@ -128,7 +131,9 @@ func update_projectiles(state: Dictionary, projectile_nodes: Dictionary):
 			proj_node = create_projectile(proj.get("team", 0))
 			projectile_nodes[proj_id] = proj_node
 		
-		proj_node.position = Vector3(proj.x, 0.5, -proj.y)  # Negative Y to match coordinate system
+		# Smooth position updates for projectiles
+		var target_pos = Vector3(proj.x, 0.5, -proj.y)  # Negative Y to match coordinate system
+		proj_node.position = target_pos
 
 func create_projectile(team: int) -> MeshInstance3D:
 	var proj_mesh = SphereMesh.new()
