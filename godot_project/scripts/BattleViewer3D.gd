@@ -55,7 +55,7 @@ func _ready():
 			arena_manager.setup(world_root)
 		if ui_manager:
 			ui_manager.setup_ui_styling(self)
-		if camera_controller_script and camera_controller and camera_3d:
+		if camera_controller_script and camera_controller and camera_3d and camera_controller_script.has_method("setup"):
 			camera_controller_script.setup(camera_controller, camera_3d)
 		
 		print("Components initialized successfully")
@@ -99,7 +99,7 @@ func setup_timeline_slider():
 		timeline_slider.step = 0.1
 
 func _input(event):
-	if camera_controller_script:
+	if camera_controller_script and camera_controller_script.has_method("handle_input"):
 		camera_controller_script.handle_input(event)
 	
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:

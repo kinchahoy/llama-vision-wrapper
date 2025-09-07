@@ -20,7 +20,7 @@ func setup_materials():
 	bot_material_blue.emission_enabled = true
 	bot_material_blue.emission = Color(0.1, 0.3, 0.5, 1.0)
 	bot_material_blue.rim_enabled = true
-	bot_material_blue.rim = Color(0.4, 0.8, 1.0, 1.0)
+	bot_material_blue.rim = 0.8
 	bot_material_blue.rim_tint = 0.5
 	
 	bot_material_red = StandardMaterial3D.new()
@@ -30,7 +30,7 @@ func setup_materials():
 	bot_material_red.emission_enabled = true
 	bot_material_red.emission = Color(0.5, 0.1, 0.1, 1.0)
 	bot_material_red.rim_enabled = true
-	bot_material_red.rim = Color(1.0, 0.5, 0.3, 1.0)
+	bot_material_red.rim = 0.8
 	bot_material_red.rim_tint = 0.5
 	
 	# Projectile materials
