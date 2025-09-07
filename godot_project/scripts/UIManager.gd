@@ -8,6 +8,10 @@ var tactical_info_label: RichTextLabel
 var battle_info_label: RichTextLabel
 var events_label: RichTextLabel
 
+# Caching for performance
+var last_updated_frame: int = -1
+var last_selected_bot_id: int = -2 # Use -2 to distinguish from deselected (-1)
+
 # Called by BattleViewer3D._ready()
 func setup(viewer: Control):
 	# Get UI node references from viewer scene
@@ -50,8 +54,19 @@ func _setup_ui_styling(viewer: Control):
 
 func update_all_ui(viewer: Control):
 	_update_fps()
+	
+	var frame_idx = int(viewer.current_frame)
+	var selected_bot_id = viewer.selected_bot.get("id", -1)
+	
+	# PERFORMANCE: Only update expensive UI text if frame or selection has changed
+	if frame_idx == last_updated_frame and selected_bot_id == last_selected_bot_id:
+		return
+		
 	_update_right_panel(viewer)
 	update_selected_bot_info(viewer)
+	
+	last_updated_frame = frame_idx
+	last_selected_bot_id = selected_bot_id
 
 func _update_fps():
 	if fps_label:

@@ -3,13 +3,18 @@ class_name ArenaManager
 
 var world_root: Node3D
 var materials
+var bot_factory
 var bot_nodes: Dictionary = {}
+var bot_pool: Array = []
 var projectile_nodes: Array = []
 var selected_bot_id: int = -1
 
 func _ready():
 	var material_manager_script = preload("res://scripts/MaterialManager.gd")
 	materials = material_manager_script.new()
+	
+	var bot_factory_script = preload("res://scripts/BotFactory.gd")
+	bot_factory = bot_factory_script.new()
 
 func setup(world_node: Node3D):
 	world_root = world_node
@@ -89,50 +94,76 @@ func set_bot_selection(bot_id: int):
 
 func update_bots(state: Dictionary):
 	var current_bot_ids = {}
-	var current_bots = {}
 	
-	# Build lookup of current bots
-	for bot in state.get("bots", []):
-		if bot.get("alive", true):
-			var bot_id = bot.get("id")
-			if bot_id != null:
-				current_bot_ids[bot_id] = true
-				current_bots[bot_id] = bot
-	
-	# Remove dead or missing bots
-	var bots_to_remove = []
+	# Update existing bots and create new ones from pool or from scratch
+	for bot_data in state.get("bots", []):
+		if bot_data.get("alive", true):
+			var bot_id = bot_data.get("id")
+			current_bot_ids[bot_id] = true
+			
+			var bot_node = bot_nodes.get(bot_id)
+			if not is_instance_valid(bot_node):
+				bot_node = _get_bot_from_pool(bot_id, bot_data.get("team", 0))
+				bot_nodes[bot_id] = bot_node
+			
+			bot_node.visible = true
+			
+			# Update bot state
+			_update_bot_node(bot_node, bot_data)
+
+	# Deactivate bots that are no longer in the current state
+	var bots_to_deactivate = []
 	for bot_id in bot_nodes.keys():
-		if not bot_id in current_bot_ids:
-			bots_to_remove.append(bot_id)
-	
-	for bot_id in bots_to_remove:
-		if bot_nodes[bot_id] and is_instance_valid(bot_nodes[bot_id]):
-			bot_nodes[bot_id].queue_free()
-		bot_nodes.erase(bot_id)
-	
-	# Update or create bots with smooth movement
-	for bot_id in current_bots.keys():
-		var bot = current_bots[bot_id]
+		if not current_bot_ids.has(bot_id):
+			bots_to_deactivate.append(bot_id)
+
+	for bot_id in bots_to_deactivate:
 		var bot_node = bot_nodes.get(bot_id)
+		if is_instance_valid(bot_node):
+			bot_node.visible = false
+			bot_pool.append(bot_node)
+		bot_nodes.erase(bot_id)
+
+func _get_bot_from_pool(bot_id: int, team: int) -> Node3D:
+	if not bot_pool.is_empty():
+		var bot_node = bot_pool.pop_back()
 		
-		if bot_node == null or not is_instance_valid(bot_node):
-			bot_node = create_bot(bot_id, bot.get("team", 0))
-			bot_nodes[bot_id] = bot_node
+		# Re-initialize the pooled bot
+		bot_node.set_meta("bot_id", bot_id)
 		
-		# Smooth position and rotation updates using interpolated data
-		var target_pos = Vector3(bot.get("x", 0.0), 0.5, -bot.get("y", 0.0))
-		var target_rot = Vector3(0, -bot.get("theta", 0.0) - 90, 0)
+		var body_node = bot_node.get_node("Body")
+		body_node.material_override = materials.get_bot_material(team)
 		
-		# Direct assignment of interpolated positions for crisp movement
-		bot_node.position = target_pos
-		bot_node.rotation_degrees = target_rot
+		var dir_indicator = body_node.get_node("DirectionIndicator")
+		dir_indicator.material_override = materials.get_bot_material(team)
 		
-		# Update health
-		update_bot_health(bot_node, bot.get("hp", 100))
+		var label = body_node.get_node("IDLabel")
+		label.text = str(bot_id)
+		
+		# Reset health bar to full
+		var health_comp = bot_node.get_meta("health_component")
+		if health_comp:
+			health_comp.update_health(100)
+			
+		return bot_node
+	else:
+		# Pool is empty, create a new bot
+		return create_bot(bot_id, team)
+
+func _update_bot_node(bot_node: Node3D, bot_data: Dictionary):
+	# Smooth position and rotation updates using interpolated data
+	var bot = bot_data
+	var target_pos = Vector3(bot.get("x", 0.0), 0.5, -bot.get("y", 0.0))
+	var target_rot = Vector3(0, -bot.get("theta", 0.0) - 90, 0)
+	
+	# Direct assignment of interpolated positions for crisp movement
+	bot_node.position = target_pos
+	bot_node.rotation_degrees = target_rot
+	
+	# Update health
+	update_bot_health(bot_node, bot.get("hp", 100))
 
 func create_bot(bot_id: int, team: int) -> Node3D:
-	var bot_factory_script = preload("res://scripts/BotFactory.gd")
-	var bot_factory = bot_factory_script.new()
 	var bot_node = bot_factory.create_bot(bot_id, team, materials)
 	world_root.add_child(bot_node)
 	return bot_node
