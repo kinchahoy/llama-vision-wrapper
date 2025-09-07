@@ -7,6 +7,7 @@ var projectile_material_blue: StandardMaterial3D
 var projectile_material_red: StandardMaterial3D
 var wall_material: StandardMaterial3D
 var floor_material: StandardMaterial3D
+var selection_material: StandardMaterial3D
 
 func _init():
 	setup_materials()
@@ -59,6 +60,15 @@ func setup_materials():
 	floor_material.albedo_color = Color(0.15, 0.16, 0.20, 1.0)
 	floor_material.metallic = 0.1
 	floor_material.roughness = 0.8
+	
+	# Selection material
+	selection_material = StandardMaterial3D.new()
+	selection_material.albedo_color = Color(1.0, 1.0, 0.0, 0.7)
+	selection_material.emission_enabled = true
+	selection_material.emission = Color(1.5, 1.5, 0.0)
+	selection_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	selection_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	selection_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 func get_bot_material(team: int) -> StandardMaterial3D:
 	return bot_material_blue if team == 0 else bot_material_red
@@ -71,3 +81,6 @@ func get_wall_material() -> StandardMaterial3D:
 
 func get_floor_material() -> StandardMaterial3D:
 	return floor_material
+
+func get_selection_material() -> StandardMaterial3D:
+	return selection_material

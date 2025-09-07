@@ -130,6 +130,8 @@ func update_selected_bot_info(viewer: Control):
 	info_text += "\n[b]-- Current State --[/b]\n"
 	info_text += "Position: (%.1f, %.1f)\n" % [bot.get("x", 0.0), bot.get("y", 0.0)]
 	info_text += "Heading: %.0f°\n" % bot.get("theta", 0.0)
+	var speed = Vector2(bot.get("vx", 0.0), bot.get("vy", 0.0)).length()
+	info_text += "Speed: %.1f m/s\n" % speed
 	info_text += "Health: [color=green]%d[/color] HP\n" % bot.get("hp", 100)
 	
 	var bot_score = null

@@ -153,6 +153,7 @@ func handle_bot_selection(mouse_pos: Vector2):
 		return
 		
 	var query = PhysicsRayQueryParameters3D.create(from, to)
+	query.collide_with_areas = true
 	var result = space_state.intersect_ray(query)
 	
 	if result and result.collider:
@@ -170,6 +171,11 @@ func handle_bot_selection(mouse_pos: Vector2):
 	select_bot_by_id(-1)
 
 func select_bot_by_id(bot_id: int):
+	var current_selected_id = selected_bot.get("id", -1)
+	if bot_id == current_selected_id:
+		# If clicking the same bot, deselect it
+		bot_id = -1
+
 	if bot_id == -1:
 		selected_bot = {}
 	else:
@@ -183,6 +189,9 @@ func select_bot_by_id(bot_id: int):
 		if not found:
 			selected_bot = {}
 	
+	if arena_manager:
+		arena_manager.set_bot_selection(selected_bot.get("id", -1))
+
 	if ui_manager:
 		ui_manager.update_selected_bot_info(self)
 

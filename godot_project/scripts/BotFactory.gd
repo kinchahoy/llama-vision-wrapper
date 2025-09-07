@@ -1,12 +1,28 @@
 extends RefCounted
 class_name BotFactory
 
-func create_bot(bot_id: int, team: int, materials) -> Node3D:
-	var bot_container = Node3D.new()
+func create_bot(bot_id: int, team: int, materials) -> Area3D:
+	var bot_container = Area3D.new()
+	bot_container.collision_layer = 1
+	bot_container.collision_mask = 0
+	
+	# Collision shape for picking
+	var shape = SphereShape3D.new()
+	shape.radius = 0.6 # Slightly larger for easier clicking
+	var collision_shape = CollisionShape3D.new()
+	collision_shape.shape = shape
+	bot_container.add_child(collision_shape)
 	
 	# Main bot body
 	var body_node = create_bot_body(team, materials)
+	body_node.name = "Body"
 	bot_container.add_child(body_node)
+	
+	# Selection indicator
+	var selection_indicator = create_selection_indicator(materials)
+	selection_indicator.name = "SelectionIndicator"
+	selection_indicator.visible = false
+	body_node.add_child(selection_indicator)
 	
 	# Direction indicator
 	var cone_node = create_direction_indicator(materials.get_bot_material(team))
@@ -51,6 +67,19 @@ func create_direction_indicator(material: StandardMaterial3D) -> MeshInstance3D:
 	cone_node.rotation_degrees = Vector3(-90, 0, 0)
 	
 	return cone_node
+
+func create_selection_indicator(materials) -> MeshInstance3D:
+	var ring_mesh = TorusMesh.new()
+	ring_mesh.inner_radius = 0.6
+	ring_mesh.outer_radius = 0.7
+	
+	var indicator = MeshInstance3D.new()
+	indicator.mesh = ring_mesh
+	indicator.material_override = materials.get_selection_material()
+	indicator.rotation_degrees.x = 90
+	indicator.position.y = -0.45 # Relative to body center, near the floor
+	
+	return indicator
 
 func create_id_label(bot_id: int) -> Label3D:
 	var label = Label3D.new()

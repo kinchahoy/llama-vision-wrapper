@@ -5,6 +5,7 @@ var world_root: Node3D
 var materials
 var bot_nodes: Dictionary = {}
 var projectile_nodes: Array = []
+var selected_bot_id: int = -1
 
 func _ready():
 	var material_manager_script = preload("res://scripts/MaterialManager.gd")
@@ -64,6 +65,27 @@ func create_wall(wall_def: Array):
 	wall_node.rotation_degrees = Vector3(0, -angle_deg, 0)  # Negative angle to match coordinate flip
 	
 	world_root.add_child(wall_node)
+
+func set_bot_selection(bot_id: int):
+	# Deselect old bot
+	if selected_bot_id != -1 and is_instance_valid(bot_nodes.get(selected_bot_id)):
+		var old_bot_node = bot_nodes.get(selected_bot_id)
+		var body = old_bot_node.get_node_or_null("Body")
+		if body:
+			var indicator = body.find_child("SelectionIndicator", true, false)
+			if indicator:
+				indicator.visible = false
+	
+	selected_bot_id = bot_id
+	
+	# Select new bot
+	if selected_bot_id != -1 and is_instance_valid(bot_nodes.get(selected_bot_id)):
+		var new_bot_node = bot_nodes.get(selected_bot_id)
+		var body = new_bot_node.get_node_or_null("Body")
+		if body:
+			var indicator = body.find_child("SelectionIndicator", true, false)
+			if indicator:
+				indicator.visible = true
 
 func update_bots(state: Dictionary):
 	var current_bot_ids = {}
