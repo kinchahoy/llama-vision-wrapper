@@ -99,7 +99,7 @@ func setup_timeline_slider():
 	if timeline.size() > 0 and timeline_slider:
 		timeline_slider.max_value = timeline.size() - 1
 		timeline_slider.set_value_no_signal(0)
-		timeline_slider.step = 0
+		timeline_slider.step = 0.001 # Allow fractional values for smooth playback tracking
 
 func _input(event):
 	if camera_controller_script and camera_controller_script.has_method("handle_input"):
@@ -155,7 +155,9 @@ func step_frame(direction: int):
 	playing = false
 	play_button.text = "▶ Play"
 	var timeline = BattleData.get_timeline()
-	current_frame = clamp(current_frame + direction, 0, timeline.size() - 1)
+	# Snap to the nearest integer frame before stepping
+	var new_frame = round(current_frame) + direction
+	current_frame = clamp(new_frame, 0, timeline.size() - 1)
 	timeline_slider.set_value_no_signal(current_frame)
 
 func reset_simulation():
@@ -208,8 +210,9 @@ func get_interpolated_state() -> Dictionary:
 	var frame_idx = int(current_frame)
 	frame_idx = clamp(frame_idx, 0, timeline.size() - 1)
 	
-	# If we're at the last frame or not playing, return current frame
-	if frame_idx >= timeline.size() - 1 or not playing:
+	# If we're at the last frame, return the last frame. Otherwise, always interpolate
+	# to ensure smooth playback and scrubbing.
+	if frame_idx >= timeline.size() - 1:
 		return timeline[frame_idx]
 	
 	# Get current and next frame for interpolation
