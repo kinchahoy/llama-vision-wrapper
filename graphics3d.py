@@ -1391,9 +1391,15 @@ class Battle3DViewer(ShowBase):
         else:
             self.events_text.setText("")
 
-    def _on_slider_move(self, value):
+    def _on_slider_move(self, value=None):
         """Handle timeline slider movement."""
-        self.current_frame = float(value)
+        try:
+            if value is None:
+                value = self.timeline_slider.getValue()
+            self.current_frame = float(value)
+        except Exception:
+            # Fallback to current slider value if command didn't pass any
+            self.current_frame = float(self.timeline_slider.getValue())
 
     def _toggle_play(self):
         """Toggle play/pause state."""
