@@ -3,6 +3,8 @@ class_name ArenaManager
 
 var world_root: Node3D
 var materials
+var bot_nodes: Dictionary = {}
+var projectile_nodes: Array = []
 
 func _ready():
 	var material_manager_script = preload("res://scripts/MaterialManager.gd")
@@ -19,6 +21,9 @@ func setup_arena(metadata: Dictionary):
 	# Clear existing objects
 	for child in world_root.get_children():
 		child.queue_free()
+	
+	bot_nodes.clear()
+	projectile_nodes.clear()
 	
 	var arena_size = metadata.get("arena_size", [20, 20])
 	var arena_width = arena_size[0]
@@ -60,7 +65,7 @@ func create_wall(wall_def: Array):
 	
 	world_root.add_child(wall_node)
 
-func update_bots(state: Dictionary, bot_nodes: Dictionary):
+func update_bots(state: Dictionary):
 	var current_bot_ids = {}
 	var current_bots = {}
 	
@@ -99,7 +104,7 @@ func update_bots(state: Dictionary, bot_nodes: Dictionary):
 		# Update health
 		update_bot_health(bot_node, bot.get("hp", 100))
 
-func update_bots_smooth(state: Dictionary, bot_nodes: Dictionary):
+func update_bots_smooth(state: Dictionary):
 	var current_bot_ids = {}
 	var current_bots = {}
 	
@@ -154,88 +159,50 @@ func update_bot_health(bot_node: Node3D, hp: float):
 		var health_component = bot_node.get_meta("health_component")
 		health_component.update_health(hp)
 
-func update_projectiles(state: Dictionary, projectile_nodes: Dictionary):
-	var current_proj_ids = {}
-	var current_projectiles = {}
+func update_projectiles(state: Dictionary):
+	var current_projectiles = state.get("projectiles", [])
 	
-	# Build lookup of current projectiles - use position-based ID if no ID field
-	var proj_index = 0
-	for proj in state.get("projectiles", []):
-		var proj_id
-		if proj.has("id"):
-			proj_id = proj.get("id")
-		else:
-			# Create a unique ID based on position and index for projectiles without IDs
-			proj_id = "proj_%d_%.2f_%.2f" % [proj_index, proj.get("x", 0.0), proj.get("y", 0.0)]
-		
-		current_proj_ids[proj_id] = true
-		current_projectiles[proj_id] = proj
-		proj_index += 1
-	
-	# Remove expired projectiles
-	var projs_to_remove = []
-	for proj_id in projectile_nodes.keys():
-		if not proj_id in current_proj_ids:
-			projs_to_remove.append(proj_id)
-	
-	for proj_id in projs_to_remove:
-		if projectile_nodes[proj_id] and is_instance_valid(projectile_nodes[proj_id]):
-			projectile_nodes[proj_id].queue_free()
-		projectile_nodes.erase(proj_id)
-	
-	# Update or create projectiles
-	for proj_id in current_projectiles.keys():
-		var proj = current_projectiles[proj_id]
-		var proj_node = projectile_nodes.get(proj_id)
-		
-		if proj_node == null or not is_instance_valid(proj_node):
-			proj_node = create_projectile(proj.get("team", 0))
-			projectile_nodes[proj_id] = proj_node
-		
-		# Direct position updates like the working 2D version
-		proj_node.position = Vector3(proj.get("x", 0.0), 0.5, -proj.get("y", 0.0))  # Negative Y to match coordinate system
+	# Ensure projectile pool is large enough
+	while projectile_nodes.size() < current_projectiles.size():
+		var new_proj_node = create_projectile(0) # Team will be set below
+		projectile_nodes.append(new_proj_node)
 
-func update_projectiles_smooth(state: Dictionary, projectile_nodes: Dictionary):
-	var current_proj_ids = {}
-	var current_projectiles = {}
-	
-	# Build lookup of current projectiles - use position-based ID if no ID field
-	var proj_index = 0
-	for proj in state.get("projectiles", []):
-		var proj_id
-		if proj.has("id"):
-			proj_id = proj.get("id")
+	# Update visible projectiles
+	for i in range(projectile_nodes.size()):
+		var proj_node = projectile_nodes[i]
+		if i < current_projectiles.size():
+			var proj_data = current_projectiles[i]
+			
+			proj_node.position = Vector3(proj_data.get("x", 0.0), 0.5, -proj_data.get("y", 0.0))
+			proj_node.material_override = materials.get_projectile_material(proj_data.get("team", 0))
+			proj_node.visible = true
 		else:
-			# Create a unique ID based on position and index for projectiles without IDs
-			proj_id = "proj_%d_%.2f_%.2f" % [proj_index, proj.get("x", 0.0), proj.get("y", 0.0)]
-		
-		current_proj_ids[proj_id] = true
-		current_projectiles[proj_id] = proj
-		proj_index += 1
+			# Hide unused pooled projectiles
+			proj_node.visible = false
+
+func update_projectiles_smooth(state: Dictionary):
+	var current_projectiles = state.get("projectiles", [])
 	
-	# Remove expired projectiles
-	var projs_to_remove = []
-	for proj_id in projectile_nodes.keys():
-		if not proj_id in current_proj_ids:
-			projs_to_remove.append(proj_id)
-	
-	for proj_id in projs_to_remove:
-		if projectile_nodes[proj_id] and is_instance_valid(projectile_nodes[proj_id]):
-			projectile_nodes[proj_id].queue_free()
-		projectile_nodes.erase(proj_id)
-	
-	# Update or create projectiles with smooth movement
-	for proj_id in current_projectiles.keys():
-		var proj = current_projectiles[proj_id]
-		var proj_node = projectile_nodes.get(proj_id)
-		
-		if proj_node == null or not is_instance_valid(proj_node):
-			proj_node = create_projectile(proj.get("team", 0))
-			projectile_nodes[proj_id] = proj_node
-		
-		# Direct assignment of interpolated positions for crisp movement
-		var target_pos = Vector3(proj.get("x", 0.0), 0.5, -proj.get("y", 0.0))
-		proj_node.position = target_pos
+	# Ensure projectile pool is large enough
+	while projectile_nodes.size() < current_projectiles.size():
+		var new_proj_node = create_projectile(0) # Team will be set below
+		projectile_nodes.append(new_proj_node)
+
+	# Update visible projectiles
+	for i in range(projectile_nodes.size()):
+		var proj_node = projectile_nodes[i]
+		if i < current_projectiles.size():
+			var proj_data = current_projectiles[i]
+			
+			# Set interpolated position
+			var target_pos = Vector3(proj_data.get("x", 0.0), 0.5, -proj_data.get("y", 0.0))
+			proj_node.position = target_pos
+			
+			proj_node.material_override = materials.get_projectile_material(proj_data.get("team", 0))
+			proj_node.visible = true
+		else:
+			# Hide unused pooled projectiles
+			proj_node.visible = false
 
 func create_projectile(team: int) -> MeshInstance3D:
 	var proj_mesh = SphereMesh.new()

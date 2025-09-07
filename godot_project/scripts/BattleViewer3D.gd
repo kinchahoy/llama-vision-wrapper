@@ -33,8 +33,7 @@ var ui_manager
 var camera_controller_script
 
 # 3D objects
-var bot_nodes: Dictionary = {}
-var projectile_nodes: Dictionary = {}
+# Bot and projectile nodes are now managed by ArenaManager
 
 func _ready():
 	print("BattleViewer3D initializing...")
@@ -227,54 +226,72 @@ func get_interpolated_state() -> Dictionary:
 func interpolate_states(state1: Dictionary, state2: Dictionary, t: float) -> Dictionary:
 	var interpolated = state1.duplicate(true)
 	
-	# Interpolate bot positions and rotations
+	# Interpolate bot positions and rotations by matching IDs
 	if state1.has("bots") and state2.has("bots"):
-		var bots1 = state1["bots"]
-		var bots2 = state2["bots"]
-		var interpolated_bots = []
+		var bots1 = state1.get("bots", [])
+		var bots2_map = {}
+		for bot2 in state2.get("bots", []):
+			if bot2.has("id"):
+				bots2_map[bot2["id"]] = bot2
 		
-		for i in range(bots1.size()):
-			if i < bots2.size():
-				var bot1 = bots1[i]
-				var bot2 = bots2[i]
+		var interpolated_bots = []
+		for bot1 in bots1:
+			if bot1.has("id") and bots2_map.has(bot1["id"]):
+				var bot2 = bots2_map[bot1["id"]]
 				var interpolated_bot = bot1.duplicate()
 				
-				# Interpolate position
 				interpolated_bot["x"] = lerp(bot1.get("x", 0.0), bot2.get("x", 0.0), t)
 				interpolated_bot["y"] = lerp(bot1.get("y", 0.0), bot2.get("y", 0.0), t)
 				
-				# Interpolate rotation (handle angle wrapping)
 				var theta1 = bot1.get("theta", 0.0)
 				var theta2 = bot2.get("theta", 0.0)
 				interpolated_bot["theta"] = lerp_angle(deg_to_rad(theta1), deg_to_rad(theta2), t) * 180.0 / PI
 				
 				interpolated_bots.append(interpolated_bot)
 			else:
-				interpolated_bots.append(bots1[i])
+				interpolated_bots.append(bot1) # Bot probably died, don't interpolate
 		
 		interpolated["bots"] = interpolated_bots
-	
-	# Interpolate projectile positions
+
+	# Interpolate projectile positions by proximity matching
 	if state1.has("projectiles") and state2.has("projectiles"):
-		var projs1 = state1["projectiles"]
-		var projs2 = state2["projectiles"]
+		var projs1 = state1.get("projectiles", [])
+		var projs2 = state2.get("projectiles", []).duplicate() # Mutable copy for matching
 		var interpolated_projs = []
 		
-		# Match projectiles by ID or position proximity
+		# Max distance a projectile might travel in a log step (0.1s)
+		# Projectile speed is ~6m/s, so it moves ~0.6m. A 2m search radius is safe.
+		var search_radius_sq = 2.0 * 2.0
+		
 		for proj1 in projs1:
-			var matching_proj2 = null
-			for proj2 in projs2:
-				if proj1.has("id") and proj2.has("id") and proj1["id"] == proj2["id"]:
-					matching_proj2 = proj2
-					break
+			var best_match_proj2 = null
+			var best_match_idx = -1
+			var best_dist_sq = search_radius_sq
 			
-			if matching_proj2:
+			for i in range(projs2.size()):
+				var proj2 = projs2[i]
+				
+				# Basic check: projectiles should be from the same team if that info is available
+				if proj1.get("team", -1) != proj2.get("team", -1):
+					continue
+					
+				var dx = proj2.get("x", 0.0) - proj1.get("x", 0.0)
+				var dy = proj2.get("y", 0.0) - proj1.get("y", 0.0)
+				var dist_sq = dx*dx + dy*dy
+				
+				if dist_sq < best_dist_sq:
+					best_dist_sq = dist_sq
+					best_match_proj2 = proj2
+					best_match_idx = i
+
+			if best_match_proj2:
 				var interpolated_proj = proj1.duplicate()
-				interpolated_proj["x"] = lerp(proj1.get("x", 0.0), matching_proj2.get("x", 0.0), t)
-				interpolated_proj["y"] = lerp(proj1.get("y", 0.0), matching_proj2.get("y", 0.0), t)
+				interpolated_proj["x"] = lerp(proj1.get("x", 0.0), best_match_proj2.get("x", 0.0), t)
+				interpolated_proj["y"] = lerp(proj1.get("y", 0.0), best_match_proj2.get("y", 0.0), t)
 				interpolated_projs.append(interpolated_proj)
+				projs2.remove_at(best_match_idx) # Prevent re-matching
 			else:
-				# Projectile doesn't exist in next frame, keep current position
+				# Projectile likely expired, don't interpolate
 				interpolated_projs.append(proj1)
 		
 		interpolated["projectiles"] = interpolated_projs
@@ -284,14 +301,14 @@ func interpolate_states(state1: Dictionary, state2: Dictionary, t: float) -> Dic
 func update_simulation():
 	var state = get_current_state()
 	if arena_manager and state:
-		arena_manager.update_bots(state, bot_nodes)
-		arena_manager.update_projectiles(state, projectile_nodes)
+		arena_manager.update_bots(state)
+		arena_manager.update_projectiles(state)
 
 func update_simulation_smooth():
 	var state = get_interpolated_state()
 	if arena_manager and state:
-		arena_manager.update_bots_smooth(state, bot_nodes)
-		arena_manager.update_projectiles_smooth(state, projectile_nodes)
+		arena_manager.update_bots_smooth(state)
+		arena_manager.update_projectiles_smooth(state)
 
 # Signal handlers
 func _on_play_button_pressed():
