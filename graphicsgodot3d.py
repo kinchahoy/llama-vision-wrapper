@@ -6,59 +6,12 @@ Features rich graphics, modern UI, and advanced visual effects.
 
 import json
 import sys
-import math
 import os
 import subprocess
 import tempfile
-from typing import Dict, List, Tuple, Optional
+import shutil
+from typing import Dict
 from pathlib import Path
-
-# Load Godot project files from separate files
-def _load_godot_files():
-    """Load Godot project template files from the godot-specific directory."""
-    base_dir = Path(__file__).parent
-    godot_dir = base_dir / "godot-specific"
-    
-    # Define fallback minimal templates if files don't exist
-    fallback_project = """[application]
-config/name="Battle Viewer 3D"
-run/main_scene="res://BattleViewer.tscn"
-
-[rendering]
-renderer/rendering_method="forward_plus"
-"""
-    
-    fallback_gd = """extends Control
-func _ready():
-    print("Fallback GDScript loaded")
-"""
-    
-    fallback_tscn = """[gd_scene format=3]
-[node name="BattleViewer3D" type="Control"]
-"""
-    
-    try:
-        project_template_path = godot_dir / "godot_project_template"
-        battle_viewer_gd_path = godot_dir / "godot_battle_viewer_gd"
-        battle_viewer_tscn_path = godot_dir / "godot_battle_viewer_tscn"
-        
-        project_template = project_template_path.read_text(encoding='utf-8') if project_template_path.exists() else fallback_project
-        battle_viewer_gd = battle_viewer_gd_path.read_text(encoding='utf-8') if battle_viewer_gd_path.exists() else fallback_gd
-        battle_viewer_tscn = battle_viewer_tscn_path.read_text(encoding='utf-8') if battle_viewer_tscn_path.exists() else fallback_tscn
-        
-        print(f"Loaded project template: {len(project_template)} chars")
-        print(f"Loaded GDScript: {len(battle_viewer_gd)} chars")
-        print(f"Loaded scene: {len(battle_viewer_tscn)} chars")
-        
-        return project_template, battle_viewer_gd, battle_viewer_tscn
-    except Exception as e:
-        print(f"Error loading Godot template files: {e}")
-        import traceback
-        traceback.print_exc()
-        return fallback_project, fallback_gd, fallback_tscn
-
-# Load the template files at module level
-GODOT_PROJECT_TEMPLATE, GODOT_BATTLE_VIEWER_GD, GODOT_BATTLE_VIEWER_TSCN = _load_godot_files()
 
 class GodotBattleViewer:
     """
@@ -80,55 +33,19 @@ class GodotBattleViewer:
         print(f"Creating Godot project at: {project_path}")
         
         try:
-            # Create project.godot with validation
-            project_content = GODOT_PROJECT_TEMPLATE
-            if not project_content.strip():
-                raise RuntimeError("Empty project template")
-            (project_path / "project.godot").write_text(project_content, encoding='utf-8')
+            # Copy the entire godot_project directory structure
+            source_project_dir = Path(__file__).parent / "godot_project"
             
-            # Create main script with validation
-            gd_content = GODOT_BATTLE_VIEWER_GD
-            if not gd_content.strip():
-                raise RuntimeError("Empty GDScript template")
-            (project_path / "BattleViewer.gd").write_text(gd_content, encoding='utf-8')
+            if not source_project_dir.exists():
+                raise RuntimeError(f"Godot project template not found at: {source_project_dir}")
             
-            # Create main scene with validation
-            tscn_content = GODOT_BATTLE_VIEWER_TSCN
-            if not tscn_content.strip():
-                raise RuntimeError("Empty scene template")
-            (project_path / "BattleViewer.tscn").write_text(tscn_content, encoding='utf-8')
+            # Copy all files and directories
+            shutil.copytree(source_project_dir, project_path, dirs_exist_ok=True)
             
             # Save battle data as JSON for Godot to load
             battle_json_path = project_path / "battle_data.json"
             with open(battle_json_path, 'w', encoding='utf-8') as f:
                 json.dump(self.battle_data, f, indent=2)
-            
-            # Create a simple global script to pass battle data
-            global_script = '''extends Node
-
-var battle_data_path = "res://battle_data.json"
-
-func _ready():
-    print("Global script loaded, waiting for viewer...")
-    await get_tree().create_timer(1.0).timeout
-    var viewer = get_tree().get_first_node_in_group("battle_viewer")
-    if not viewer:
-        viewer = get_node_or_null("/root/BattleViewer3D")
-    if viewer and viewer.has_method("load_battle_data_from_file"):
-        print("Loading battle data...")
-        viewer.load_battle_data_from_file(battle_data_path)
-    else:
-        print("Warning: Could not find battle viewer node")
-'''
-            (project_path / "Global.gd").write_text(global_script, encoding='utf-8')
-            
-            # Add global to project settings
-            project_config = GODOT_PROJECT_TEMPLATE + '''
-
-[autoload]
-Global="*res://Global.gd"
-'''
-            (project_path / "project.godot").write_text(project_config, encoding='utf-8')
             
             print(f"🎮 Created Godot project at: {project_path}")
             return str(project_path)
@@ -143,11 +60,16 @@ Global="*res://Global.gd"
         
         for cmd in godot_commands:
             try:
-                # Try to run Godot
+                # Try to run Godot with the project path and auto-load battle data
+                env = os.environ.copy()
+                env["GODOT_BATTLE_DATA"] = str(Path(project_path) / "battle_data.json")
+                
                 self.godot_process = subprocess.Popen([
                     cmd, 
-                    "--path", project_path
-                ])
+                    "--path", project_path,
+                    "--", 
+                    str(Path(project_path) / "battle_data.json")
+                ], env=env)
                 print(f"✨ Launched Godot with command: {cmd}")
                 return True
             except FileNotFoundError:
