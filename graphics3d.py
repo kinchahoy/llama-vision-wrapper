@@ -23,6 +23,7 @@ from typing import Dict, List, Tuple, Optional
 from direct.showbase.ShowBase import ShowBase
 from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText
 from direct.gui import DirectGuiGlobals as DGG
+from direct.task import Task
 from panda3d.core import (
     AmbientLight,
     DirectionalLight,
@@ -604,7 +605,10 @@ class Battle3DViewer(ShowBase):
 
         layout()
         # Also perform layout on the next frame to ensure window/pixel2d metrics are initialized
-        self.taskMgr.doMethodLater(0, lambda task: (layout(), task.done), "ui_initial_layout")
+        def _ui_initial_layout(task):
+            layout()
+            return Task.done
+        self.taskMgr.doMethodLater(0, _ui_initial_layout, "ui_initial_layout")
         # Re-layout when window changes size
         self.accept("window-event", lambda win: layout())
 
