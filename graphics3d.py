@@ -66,7 +66,7 @@ def _init_hq_rendering(app):
             major = gsg.getDriverShaderVersionMajor()
             minor = gsg.getDriverShaderVersionMinor()
             supports_430 = (major, minor) >= (4, 3)
-        if sys.platform == "darwin" or not supports_430:
+        if sys.platform == "darwin" or not supports_430 or True:
             raise RuntimeError(
                 "complexpbr requires GLSL 4.3+; falling back to simplepbr on this driver"
             )
