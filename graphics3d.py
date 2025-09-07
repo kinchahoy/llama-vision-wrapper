@@ -11,8 +11,9 @@ loadPrcFileData("", "gl-version 4 1")  # macOS core profile unlocks modern GLSL
 loadPrcFileData("", "framebuffer-srgb true")  # linear/sRGB correct output
 loadPrcFileData("", "textures-power-2 none")
 loadPrcFileData("", "sync-video true")
-loadPrcFileData("", "gl-debug true")
-loadPrcFileData("", "notify-level-glgsg info")
+# Disable noisy GL debug / buffer warnings
+# loadPrcFileData("", "gl-debug true")
+# loadPrcFileData("", "notify-level-glgsg info")
 
 import math
 import json
