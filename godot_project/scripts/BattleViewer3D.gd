@@ -14,16 +14,16 @@ var interpolation_factor: float = 0.0
 var target_fps: float = 60  # Target smooth playback FPS
 
 # Scene references
-@onready var viewport_3d: SubViewport = $VBoxContainer/MainArea/ViewportContainer/SubViewport
-@onready var viewport_container: SubViewportContainer = $VBoxContainer/MainArea/ViewportContainer
-@onready var camera_controller: Node3D = $VBoxContainer/MainArea/ViewportContainer/SubViewport/CameraController
+var viewport_3d: SubViewport
+var viewport_container: SubViewportContainer
+var camera_controller: Node3D
 var camera_3d: Camera3D
-@onready var world_root: Node3D = $VBoxContainer/MainArea/ViewportContainer/SubViewport/World
-@onready var lighting: Node3D = $VBoxContainer/MainArea/ViewportContainer/SubViewport/Lighting
+var world_root: Node3D
+var lighting: Node3D
 
 # UI references
-@onready var play_button: Button = $VBoxContainer/BottomPanel/Toolbar/PlayButton
-@onready var timeline_slider: HSlider = $VBoxContainer/BottomPanel/Timeline/TimelineSlider
+var play_button: Button
+var timeline_slider: HSlider
 
 # Components
 var arena_manager
@@ -36,9 +36,15 @@ var camera_controller_script
 func _ready():
 	print("BattleViewer3D initializing...")
 	
-	# Get a reference to the camera node. Using get_node within _ready can be more
-	# robust than @onready in some complex initialization scenarios.
+	# Get node references. This is done in _ready to ensure the scene tree is fully loaded.
+	viewport_3d = get_node("VBoxContainer/MainArea/ViewportContainer/SubViewport")
+	viewport_container = get_node("VBoxContainer/MainArea/ViewportContainer")
+	camera_controller = get_node("VBoxContainer/MainArea/ViewportContainer/SubViewport/CameraController")
 	camera_3d = camera_controller.get_node("Camera3D")
+	world_root = get_node("VBoxContainer/MainArea/ViewportContainer/SubViewport/World")
+	lighting = get_node("VBoxContainer/MainArea/ViewportContainer/SubViewport/Lighting")
+	play_button = get_node("VBoxContainer/BottomPanel/Toolbar/PlayButton")
+	timeline_slider = get_node("VBoxContainer/BottomPanel/Timeline/TimelineSlider")
 	
 	# Initialize components by preloading scripts
 	var arena_manager_script = preload("res://scripts/ArenaManager.gd")
@@ -158,8 +164,14 @@ func _input(event):
 func handle_bot_selection(mouse_pos: Vector2):
 	print("--- Handling Bot Selection ---")
 	print("Mouse position (local to viewport): ", mouse_pos)
-	if not viewport_3d or not viewport_3d.world_3d or not camera_3d:
-		print("DEBUG: Missing viewport, world, or camera reference.")
+	if not viewport_3d:
+		print("DEBUG: viewport_3d is null.")
+		return
+	if not viewport_3d.world_3d:
+		print("DEBUG: viewport_3d.world_3d is null.")
+		return
+	if not camera_3d:
+		print("DEBUG: camera_3d is null.")
 		return
 		
 	var from = camera_3d.project_ray_origin(mouse_pos)
