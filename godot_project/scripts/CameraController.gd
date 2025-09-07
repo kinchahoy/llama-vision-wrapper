@@ -43,7 +43,7 @@ func update_camera_position():
 	
 	var offset = Vector3(
 		cos(v_rad) * sin(h_rad),
-		sin(v_rad),
+		-sin(v_rad),  # Negative to look down from above
 		cos(v_rad) * cos(h_rad)
 	) * camera_distance
 	
@@ -53,5 +53,5 @@ func update_camera_position():
 func reset_camera():
 	camera_target = Vector3.ZERO
 	camera_angle_h = 0.0
-	camera_angle_v = -45.0
+	camera_angle_v = 45.0  # Positive angle to look down from above
 	update_camera_position()

@@ -55,8 +55,8 @@ func create_wall(wall_def: Array):
 	var wall_node = MeshInstance3D.new()
 	wall_node.mesh = wall_mesh
 	wall_node.material_override = materials.get_wall_material()
-	wall_node.position = Vector3(center_x, 1.0, center_y)
-	wall_node.rotation_degrees = Vector3(0, angle_deg, 0)
+	wall_node.position = Vector3(center_x, 1.0, -center_y)  # Negative Y to match coordinate system
+	wall_node.rotation_degrees = Vector3(0, -angle_deg, 0)  # Negative angle to match coordinate flip
 	
 	world_root.add_child(wall_node)
 
@@ -85,8 +85,9 @@ func update_bots(state: Dictionary, bot_nodes: Dictionary):
 			bot_nodes[bot_id] = bot_node
 		
 		# Update position and rotation
-		bot_node.position = Vector3(bot.x, 0.5, bot.y)
-		bot_node.rotation_degrees = Vector3(0, bot.theta - 90, 0)
+		# Map 2D battle coordinates to 3D: X->X, Y->Z, with Y=0.5 for height
+		bot_node.position = Vector3(bot.x, 0.5, -bot.y)  # Negative Y to flip coordinate system
+		bot_node.rotation_degrees = Vector3(0, -bot.theta - 90, 0)  # Adjust rotation for coordinate flip
 		
 		# Update health
 		update_bot_health(bot_node, bot.hp)
@@ -127,7 +128,7 @@ func update_projectiles(state: Dictionary, projectile_nodes: Dictionary):
 			proj_node = create_projectile(proj.get("team", 0))
 			projectile_nodes[proj_id] = proj_node
 		
-		proj_node.position = Vector3(proj.x, 0.5, proj.y)
+		proj_node.position = Vector3(proj.x, 0.5, -proj.y)  # Negative Y to match coordinate system
 
 func create_projectile(team: int) -> MeshInstance3D:
 	var proj_mesh = SphereMesh.new()
