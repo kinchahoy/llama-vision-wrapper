@@ -722,9 +722,9 @@ func update_battle_info():
 	var winner = metadata.get("winner", "unknown")
 	var reason = metadata.get("reason", "unknown")
 	
-	var battle_text = "[font_size=18][color=cyan]BATTLE STATUS[/color][/font_size]\\n"
-	battle_text += "============================================\\n"
-	battle_text += "[color=white]" + time_info + "\\n" + frame_info + "\\n" + speed_info + "[/color]\\n"
+	var battle_text = "[font_size=18][color=cyan]BATTLE STATUS[/color][/font_size]\n"
+	battle_text += "============================================\n"
+	battle_text += "[color=white]" + time_info + "\n" + frame_info + "\n" + speed_info + "[/color]\n"
 	battle_text += "[color=yellow]Winner: " + str(winner) + " (" + str(reason) + ")[/color]"
 	
 	if battle_info_label:
@@ -745,11 +745,11 @@ func update_bot_info():
 	var speed = sqrt(vx * vx + vy * vy)
 	var signal = bot.get("signal", "none")
 	
-	var bot_text = "[font_size=18][color=lime]BOT " + str(bot.id) + " (Team " + str(bot.team) + ")[/color][/font_size]\\n"
-	bot_text += "----------------------------------------\\n"
-	bot_text += "[color=white]HP: " + str(bot.hp) + "\\n"
-	bot_text += "Position: (" + str(bot.x) + ", " + str(bot.y) + ")\\n"
-	bot_text += "Heading: " + str(int(heading)) + "°  Speed: " + str(speed) + "\\n"
+	var bot_text = "[font_size=18][color=lime]BOT " + str(bot.id) + " (Team " + str(bot.team) + ")[/color][/font_size]\n"
+	bot_text += "----------------------------------------\n"
+	bot_text += "[color=white]HP: " + str(bot.hp) + "\n"
+	bot_text += "Position: (" + str(bot.x) + ", " + str(bot.y) + ")\n"
+	bot_text += "Heading: " + str(int(heading)) + "°  Speed: " + str(speed) + "\n"
 	bot_text += "Signal: " + str(signal) + "[/color]"
 	
 	if bot_info_label:
