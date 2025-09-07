@@ -132,7 +132,8 @@ func _input(event):
 		# This also transforms global mouse coordinates to be local to the viewport container,
 		# which is required for the raycast to work correctly.
 		if viewport_container.get_global_rect().has_point(event.position):
-			handle_bot_selection(viewport_container.to_local(event.position))
+			var local_mouse_pos = event.position - viewport_container.get_global_rect().position
+			handle_bot_selection(local_mouse_pos)
 	elif event is InputEventKey and event.pressed:
 		match event.keycode:
 			KEY_SPACE:
