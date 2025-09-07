@@ -21,7 +21,7 @@ import sys
 from typing import Dict, List, Tuple, Optional
 
 from direct.showbase.ShowBase import ShowBase
-from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText
+from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText, DirectLabel
 from direct.gui import DirectGuiGlobals as DGG
 from direct.task import Task
 from panda3d.core import (
@@ -152,6 +152,9 @@ class Battle3DViewer(ShowBase):
         self.current_frame = 0
         self.playing = False
         self.playback_speed = 1.0
+        # Display region state for keeping 3D separate from UI panels
+        self._three_d_region = None
+        self._disabled_default_dr = False
 
         # Arena dimensions
         arena_size = self.metadata.get("arena_size", [20, 20])
@@ -540,6 +543,92 @@ class Battle3DViewer(ShowBase):
         except Exception:
             pass
 
+        # Panels to contain all text outside the 3D rendering area
+        self.left_panel = DirectFrame(
+            parent=self.pixel2d,
+            frameColor=(0.10, 0.10, 0.12, 0.90),
+            frameSize=(0, 0, 0, 0),  # sized in layout()
+            pos=(0, 0, 0),
+        )
+        self.left_panel.setBin("fixed", 10)
+        self.left_panel.setDepthWrite(False)
+        self.left_panel.setDepthTest(False)
+
+        self.right_panel = DirectFrame(
+            parent=self.pixel2d,
+            frameColor=(0.10, 0.10, 0.12, 0.90),
+            frameSize=(0, 0, 0, 0),  # sized in layout()
+            pos=(0, 0, 0),
+        )
+        self.right_panel.setBin("fixed", 10)
+        self.right_panel.setDepthWrite(False)
+        self.right_panel.setDepthTest(False)
+
+        # Text labels inside panels (use DirectLabel so we can update via ["text"])
+        self.info_text = DirectLabel(
+            parent=self.right_panel,
+            text="",
+            text_fg=(1, 1, 1, 1),
+            text_scale=16,
+            text_align=TextNode.ALeft,
+            frameColor=(0, 0, 0, 0),
+            text_wordwrap=None,
+            textMayChange=True,
+        )
+        self.events_text = DirectLabel(
+            parent=self.right_panel,
+            text="",
+            text_fg=(0.9, 0.9, 0.9, 1),
+            text_scale=14,
+            text_align=TextNode.ALeft,
+            frameColor=(0, 0, 0, 0),
+            text_wordwrap=None,
+            textMayChange=True,
+        )
+
+        self.fps_text = DirectLabel(
+            parent=self.left_panel,
+            text="FPS: 0",
+            text_fg=(0, 1, 0, 1),
+            text_scale=14,
+            text_align=TextNode.ALeft,
+            frameColor=(0, 0, 0, 0),
+            text_wordwrap=None,
+            textMayChange=True,
+        )
+        self.bot_info_text = DirectLabel(
+            parent=self.left_panel,
+            text="Click on a bot to select it",
+            text_fg=(1, 1, 1, 1),
+            text_scale=14,
+            text_align=TextNode.ALeft,
+            frameColor=(0, 0, 0, 0),
+            text_wordwrap=None,
+            textMayChange=True,
+        )
+        self.tactical_info_text = DirectLabel(
+            parent=self.left_panel,
+            text="",
+            text_fg=(1, 1, 1, 1),
+            text_scale=14,
+            text_align=TextNode.ALeft,
+            frameColor=(0, 0, 0, 0),
+            text_wordwrap=None,
+            textMayChange=True,
+        )
+        self.help_visible = False
+        self.help_text = DirectLabel(
+            parent=self.left_panel,
+            text=self._generate_help_text(),
+            text_fg=(1, 1, 0.9, 1),
+            text_scale=14,
+            text_align=TextNode.ALeft,
+            frameColor=(0, 0, 0, 0),
+            text_wordwrap=None,
+            textMayChange=True,
+        )
+        self.help_text.hide()
+
         # Enable proper slider dragging without fighting the update loop
         self.slider_dragging = False
         self.timeline_slider.bind(DGG.B1PRESS, lambda event: setattr(self, "slider_dragging", True))
@@ -553,14 +642,19 @@ class Battle3DViewer(ShowBase):
             margin = 12
             spacing = 8
 
-            # Bottom bar spans full width at window bottom in pixel2d (pixel origin top-left, z down)
-            self.ui_bar["frameSize"] = (0, w, -bar_h, 0)
+            # Reserve side panels (pixels)
+            left_w = 320
+            right_w = 320
+            panel_h = max(0, h - bar_h)
+
+            # Bottom toolbar spans full width at window bottom in pixel2d (origin bottom-left, z up)
+            self.ui_bar["frameSize"] = (0, w, 0, bar_h)
             self.ui_bar.setPos(0, 0, 0)
 
             # Slider along top of the bar
             slider_h = 18
-            slider_w = w - 2 * margin
-            self.timeline_slider.setPos(w / 2, 0, -margin - slider_h / 2)
+            slider_w = max(0, w - 2 * margin)
+            self.timeline_slider.setPos(w / 2, 0, bar_h - margin - slider_h / 2)
             try:
                 self.timeline_slider["frameSize"] = (
                     -slider_w / 2,
@@ -572,7 +666,7 @@ class Battle3DViewer(ShowBase):
                 pass
 
             # Buttons row near bottom of the bar
-            y = -bar_h + margin + 18  # vertical center of buttons (pixel2d z is downward)
+            y = margin + 18  # vertical center of buttons
             x = margin
 
             def place(btn, width, height=36):
@@ -603,6 +697,48 @@ class Battle3DViewer(ShowBase):
                 btn["frameSize"] = (-width / 2, width / 2, -18, 18)
                 right_x -= width + spacing
 
+            # Left and right panels (fill remaining height above bottom bar)
+            self.left_panel["frameSize"] = (0, left_w, 0, panel_h)
+            self.left_panel.setPos(0, 0, bar_h)
+
+            self.right_panel["frameSize"] = (0, right_w, 0, panel_h)
+            self.right_panel.setPos(max(0, w - right_w), 0, bar_h)
+
+            # Position texts inside panels
+            top_y = panel_h - 20
+            # Left panel texts
+            self.fps_text.setPos(12, 0, top_y)
+            self.bot_info_text.setPos(12, 0, max(0, top_y - 28))
+            self.tactical_info_text.setPos(12, 0, max(40, panel_h * 0.45))
+            self.help_text.setPos(12, 0, 12)
+
+            # Right panel texts
+            self.info_text.setPos(12, 0, top_y)
+            self.events_text.setPos(12, 0, 12)
+
+            # Configure the 3D display region to exclude the panels and bottom bar
+            if w > 0 and h > 0:
+                l = min(1.0, max(0.0, left_w / float(w)))
+                r = min(1.0, max(0.0, 1.0 - (right_w / float(w))))
+                b = min(1.0, max(0.0, bar_h / float(h)))
+                t = 1.0
+
+                if not self._disabled_default_dr:
+                    try:
+                        default_dr = self.win.getDisplayRegion(0)
+                        if default_dr:
+                            default_dr.setActive(False)
+                    except Exception:
+                        pass
+                    self._disabled_default_dr = True
+
+                if self._three_d_region is None:
+                    self._three_d_region = self.win.makeDisplayRegion(l, r, b, t)
+                    self._three_d_region.setSort(0)
+                    self._three_d_region.setCamera(self.cam)
+                else:
+                    self._three_d_region.setDimensions(l, r, b, t)
+
         layout()
         # Also perform layout on the next frame to ensure window/pixel2d metrics are initialized
         def _ui_initial_layout(task):
@@ -612,73 +748,8 @@ class Battle3DViewer(ShowBase):
         # Re-layout when window changes size
         self.accept("window-event", lambda win: layout())
 
-        # Info Text (top-right HUD)
-        self.info_text = OnscreenText(
-            parent=self.a2dTopRight,
-            text="",
-            pos=(-0.05, -0.1),
-            scale=0.05,
-            align=TextNode.ARight,
-            mayChange=True,
-            fg=(1,1,1,1),
-            shadow=(0, 0, 0, 0.7),
-            shadowOffset=(0.004, -0.004),
-        )
-        self.bot_info_text = OnscreenText(
-            parent=self.a2dTopLeft,
-            text="Click on a bot to select it",
-            pos=(0.05, -0.1),
-            scale=0.05,
-            align=TextNode.ALeft,
-            shadow=(0, 0, 0, 0.7),
-            shadowOffset=(0.004, -0.004),
-        )
-        self.tactical_info_text = OnscreenText(
-            parent=self.a2dTopLeft,
-            text="",
-            pos=(0.05, -0.4),
-            scale=0.04,
-            align=TextNode.ALeft,
-            shadow=(0, 0, 0, 0.7),
-            shadowOffset=(0.003, -0.003),
-        )
-        self.events_text = OnscreenText(
-            parent=self.a2dBottomRight,
-            text="",
-            pos=(-0.05, 0.1),
-            scale=0.05,
-            align=TextNode.ARight,
-            shadow=(0, 0, 0, 0.7),
-            shadowOffset=(0.004, -0.004),
-        )
-
-        # FPS counter (top-left corner)
-        self.fps_text = OnscreenText(
-            parent=self.a2dTopLeft,
-            text="FPS: 0",
-            pos=(0.05, -0.02),
-            scale=0.04,
-            align=TextNode.ALeft,
-            fg=(0,1,0,1),
-            mayChange=True,
-            shadow=(0,0,0,0.7),
-            shadowOffset=(0.002, -0.002),
-        )
-
-        # Help overlay (hidden by default, toggled with H)
-        self.help_visible = False
-        self.help_text = OnscreenText(
-            parent=self.a2dBottomLeft,
-            text=self._generate_help_text(),
-            pos=(0.05, 0.05),
-            scale=0.045,
-            align=TextNode.ALeft,
-            fg=(1,1,0.9,1),
-            mayChange=True,
-            shadow=(0,0,0,0.8),
-            shadowOffset=(0.003, -0.003),
-        )
-        self.help_text.hide()
+        # Text panels created above; positioned in layout()
+        # All text now lives inside left/right DirectFrame panels outside 3D area.
 
     def _setup_controls(self):
         """Set up keyboard controls."""
@@ -800,7 +871,7 @@ class Battle3DViewer(ShowBase):
 
         # Update FPS counter
         fps = self.taskMgr.globalClock.getAverageFrameRate()
-        self.fps_text.setText(f"FPS: {fps:.1f}")
+        self.fps_text["text"] = f"FPS: {fps:.1f}"
 
         return task.cont
 
@@ -1301,12 +1372,12 @@ class Battle3DViewer(ShowBase):
             )
         info_lines.append(f"Intensity: {float(intensity):.1f} shots/sec")
         info_lines.append(f"Overall Accuracy: {float(accuracy):.1%}")
-        self.info_text.setText("\n".join(info_lines))
+        self.info_text["text"] = "\n".join(info_lines)
 
         # Show winner prominently if battle is over
         if state.get("time") >= meta.get("duration", 0):
             winner_banner = f"🏆 Winner: {winner.upper()} 🏆"
-            self.info_text.setText(self.info_text.getText() + f"\n\n{winner_banner}")
+            self.info_text["text"] = self.info_text["text"] + f"\n\n{winner_banner}"
 
         # Selected bot info with more details
         if self.selected_bot:
@@ -1343,7 +1414,7 @@ class Battle3DViewer(ShowBase):
                 f"{signal_desc}",
                 f"Tactical: {friends_count}F, {enemies_count}E, {len(nearby_projectiles)}P, {len(visible_walls)}W",
             ]
-            self.bot_info_text.setText("\n".join(info))
+            self.bot_info_text["text"] = "\n".join(info)
 
             # Detailed tactical info
             tactical_lines = ["--- Tactical Situation ---"]
@@ -1373,12 +1444,12 @@ class Battle3DViewer(ShowBase):
                     tactical_lines.append(wall_text)
 
             if len(tactical_lines) > 1:
-                self.tactical_info_text.setText("\n".join(tactical_lines))
+                self.tactical_info_text["text"] = "\n".join(tactical_lines)
             else:
-                self.tactical_info_text.setText("")
+                self.tactical_info_text["text"] = ""
         else:
-            self.bot_info_text.setText("Click on a bot to select it")
-            self.tactical_info_text.setText("")
+            self.bot_info_text["text"] = "Click on a bot to select it"
+            self.tactical_info_text["text"] = ""
 
         # Recent events (last 5)
         events = state.get("events", [])
@@ -1397,9 +1468,9 @@ class Battle3DViewer(ShowBase):
                 else:
                     text = f"{et}: {event}"
                 lines.append(text)
-            self.events_text.setText("\n".join(lines))
+            self.events_text["text"] = "\n".join(lines)
         else:
-            self.events_text.setText("")
+            self.events_text["text"] = ""
 
     def _on_slider_move(self, value=None):
         """Handle timeline slider movement."""
