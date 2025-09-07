@@ -24,9 +24,9 @@ var selected_bot: Dictionary = {}
 @onready var events_label: RichTextLabel = $VBoxContainer/MainArea/RightPanel/VBoxContainer/EventsLabel
 
 # Components
-var arena_manager: ArenaManager
-var ui_manager: UIManager
-var camera_controller_script: CameraController
+var arena_manager
+var ui_manager
+var camera_controller_script
 
 # 3D objects
 var bot_nodes: Dictionary = {}
@@ -35,10 +35,14 @@ var projectile_nodes: Dictionary = {}
 func _ready():
 	print("BattleViewer3D initializing...")
 	
-	# Initialize components
-	arena_manager = ArenaManager.new()
-	ui_manager = UIManager.new()
-	camera_controller_script = CameraController.new()
+	# Initialize components by loading scripts
+	var arena_manager_script = load("res://scripts/ArenaManager.gd")
+	var ui_manager_script = load("res://scripts/UIManager.gd")
+	var camera_controller_script_class = load("res://scripts/CameraController.gd")
+	
+	arena_manager = arena_manager_script.new()
+	ui_manager = ui_manager_script.new()
+	camera_controller_script = camera_controller_script_class.new()
 	
 	add_child(arena_manager)
 	add_child(ui_manager)
@@ -64,7 +68,8 @@ func _on_battle_data_loaded():
 	ui_manager.update_battle_info(BattleData.get_metadata())
 
 func setup_lighting():
-	var lighting_manager = LightingManager.new()
+	var lighting_manager_script = load("res://scripts/LightingManager.gd")
+	var lighting_manager = lighting_manager_script.new()
 	lighting.add_child(lighting_manager)
 	lighting_manager.setup_modern_lighting()
 	
