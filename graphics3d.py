@@ -155,6 +155,7 @@ class Battle3DViewer(ShowBase):
         # Display region state for keeping 3D separate from UI panels
         self._three_d_region = None
         self._disabled_default_dr = False
+        self._initial_setup_done = False
 
         # Arena dimensions
         arena_size = self.metadata.get("arena_size", [20, 20])
@@ -477,36 +478,53 @@ class Battle3DViewer(ShowBase):
         return NodePath(node)
 
     def _setup_ui(self):
-        """Set up the DirectGUI elements for controls and info."""
-        # Build a responsive bottom toolbar in pixel coordinates to avoid overlap on different aspect ratios.
+        """Set up the DirectGUI elements for controls and info with modern styling."""
+        # Build a sleek bottom toolbar with gradient-like appearance
         self.ui_bar = DirectFrame(
             parent=self.pixel2d,
-            frameColor=(0.12, 0.12, 0.14, 0.85),
+            frameColor=(0.08, 0.08, 0.10, 0.95),
             frameSize=(0, 0, 0, 0),  # sized in layout()
             pos=(0, 0, 0),
+            relief=DGG.RIDGE,
+            borderWidth=(2, 2),
         )
         # Ensure UI renders on top of 3D and isn't affected by depth buffer
-        self.ui_bar.setBin("fixed", 10)
+        self.ui_bar.setBin("gui-popup", 10)
         self.ui_bar.setDepthWrite(False)
         self.ui_bar.setDepthTest(False)
 
-        # Helper to create consistently styled flat buttons
-        def make_btn(text, cmd, extra=None, width=120, height=36):
+        # Helper to create modern, polished buttons
+        def make_btn(text, cmd, extra=None, width=120, height=36, primary=False):
+            # Color scheme based on button importance
+            if primary:
+                colors = (
+                    (0.15, 0.45, 0.75, 1.0),  # normal - blue primary
+                    (0.12, 0.35, 0.60, 1.0),  # click - darker blue
+                    (0.18, 0.55, 0.85, 1.0),  # rollover - lighter blue
+                    (0.08, 0.25, 0.40, 1.0),  # disabled - muted blue
+                )
+                text_color = (1.0, 1.0, 1.0, 1.0)
+            else:
+                colors = (
+                    (0.22, 0.24, 0.28, 1.0),  # normal - dark gray
+                    (0.18, 0.20, 0.24, 1.0),  # click - darker
+                    (0.28, 0.30, 0.34, 1.0),  # rollover - lighter
+                    (0.12, 0.14, 0.16, 1.0),  # disabled - very dark
+                )
+                text_color = (0.95, 0.95, 0.95, 1.0)
+            
             btn = DirectButton(
                 parent=self.ui_bar,
                 text=text,
                 command=cmd,
                 extraArgs=extra or [],
-                relief=DGG.FLAT,
-                frameColor=(
-                    (0.20, 0.20, 0.24, 1.0),  # normal
-                    (0.30, 0.30, 0.34, 1.0),  # click
-                    (0.24, 0.24, 0.28, 1.0),  # rollover
-                    (0.10, 0.10, 0.12, 1.0),  # disabled
-                ),
-                text_fg=(1, 1, 1, 1),
-                text_scale=16,  # pixels (since parent is pixel2d)
-                text_shadow=(0, 0, 0, 0.8),
+                relief=DGG.RAISED,
+                frameColor=colors,
+                borderWidth=(1.5, 1.5),
+                text_fg=text_color,
+                text_scale=15,
+                text_shadow=(0.1, 0.1, 0.1, 0.7),
+                text_shadowOffset=(1, -1),
                 rolloverSound=None,
                 clickSound=None,
             )
@@ -514,117 +532,144 @@ class Battle3DViewer(ShowBase):
             btn["frameSize"] = (-width / 2, width / 2, -height / 2, height / 2)
             return btn
 
-        # Controls (left to right)
-        self.play_pause_btn = make_btn("Play", self._toggle_play, width=120)
-        self.step_back_btn = make_btn("<", self._step_frame, extra=[-1], width=48)
-        self.step_forward_btn = make_btn(">", self._step_frame, extra=[1], width=48)
-        self.reset_btn = make_btn("Reset", self._reset_sim, width=110)
-        self.reset_view_btn = make_btn("Reset View", self._reset_camera_view, width=130)
-        self.fov_btn = make_btn("FOV", self._toggle_fov, width=70)
-        self.help_btn = make_btn("Help", self._toggle_help, width=80)
-        self.speed_down_btn = make_btn("-", self._change_playback_speed, extra=[-1], width=48)
+        # Controls (left to right) with improved visual hierarchy
+        self.play_pause_btn = make_btn("▶ Play", self._toggle_play, width=120, primary=True)
+        self.step_back_btn = make_btn("◀", self._step_frame, extra=[-1], width=48)
+        self.step_forward_btn = make_btn("▶", self._step_frame, extra=[1], width=48)
+        self.reset_btn = make_btn("↺ Reset", self._reset_sim, width=110)
+        self.reset_view_btn = make_btn("🎥 View", self._reset_camera_view, width=120)
+        self.fov_btn = make_btn("👁 FOV", self._toggle_fov, width=80)
+        self.help_btn = make_btn("? Help", self._toggle_help, width=85)
+        self.speed_down_btn = make_btn("−", self._change_playback_speed, extra=[-1], width=48)
         self.speed_up_btn = make_btn("+", self._change_playback_speed, extra=[1], width=48)
 
-        # Timeline slider (clean track with hidden arrow buttons)
+        # Premium timeline slider with modern styling
         self.timeline_slider = DirectSlider(
             parent=self.ui_bar,
             range=(0, max(1, len(self.timeline) - 1)),
             value=0,
             pageSize=1,
             command=self._on_slider_move,
-            relief=DGG.FLAT,
-            frameColor=(0.25, 0.25, 0.28, 1.0),
+            relief=DGG.SUNKEN,
+            frameColor=(0.15, 0.15, 0.18, 1.0),
+            borderWidth=(1, 1),
         )
         try:
             self.timeline_slider.incButton.hide()
             self.timeline_slider.decButton.hide()
-            self.timeline_slider.thumb["frameColor"] = (0.80, 0.80, 0.85, 1.0)
-            self.timeline_slider.thumb["relief"] = DGG.FLAT
+            # Style the thumb with gradient-like appearance
+            self.timeline_slider.thumb["frameColor"] = (
+                (0.25, 0.55, 0.85, 1.0),  # normal - bright blue
+                (0.20, 0.45, 0.75, 1.0),  # click - darker
+                (0.30, 0.65, 0.95, 1.0),  # rollover - lighter
+                (0.15, 0.35, 0.55, 1.0),  # disabled - muted
+            )
+            self.timeline_slider.thumb["relief"] = DGG.RAISED
+            self.timeline_slider.thumb["borderWidth"] = (1, 1)
         except Exception:
             pass
 
-        # Panels to contain all text outside the 3D rendering area
+        # Modern side panels with sophisticated styling
         self.left_panel = DirectFrame(
             parent=self.pixel2d,
-            frameColor=(0.10, 0.10, 0.12, 0.90),
+            frameColor=(0.06, 0.08, 0.12, 0.92),
             frameSize=(0, 0, 0, 0),  # sized in layout()
             pos=(0, 0, 0),
+            relief=DGG.RIDGE,
+            borderWidth=(1, 1),
         )
-        self.left_panel.setBin("fixed", 10)
+        self.left_panel.setBin("gui-popup", 11)
         self.left_panel.setDepthWrite(False)
         self.left_panel.setDepthTest(False)
 
         self.right_panel = DirectFrame(
             parent=self.pixel2d,
-            frameColor=(0.10, 0.10, 0.12, 0.90),
+            frameColor=(0.06, 0.08, 0.12, 0.92),
             frameSize=(0, 0, 0, 0),  # sized in layout()
             pos=(0, 0, 0),
+            relief=DGG.RIDGE,
+            borderWidth=(1, 1),
         )
-        self.right_panel.setBin("fixed", 10)
+        self.right_panel.setBin("gui-popup", 11)
         self.right_panel.setDepthWrite(False)
         self.right_panel.setDepthTest(False)
 
-        # Text labels inside panels (use DirectLabel so we can update via ["text"])
+        # Enhanced text labels with improved typography and styling
         self.info_text = DirectLabel(
             parent=self.right_panel,
             text="",
-            text_fg=(1, 1, 1, 1),
-            text_scale=16,
+            text_fg=(0.95, 0.95, 1.0, 1.0),  # Slightly blue-tinted white
+            text_scale=17,
             text_align=TextNode.ALeft,
             frameColor=(0, 0, 0, 0),
             text_wordwrap=None,
+            text_shadow=(0.1, 0.1, 0.15, 0.5),
+            text_shadowOffset=(1, -1),
             textMayChange=True,
         )
         self.events_text = DirectLabel(
             parent=self.right_panel,
             text="",
-            text_fg=(0.9, 0.9, 0.9, 1),
+            text_fg=(0.85, 0.88, 0.92, 1.0),  # Muted light blue
             text_scale=14,
             text_align=TextNode.ALeft,
             frameColor=(0, 0, 0, 0),
             text_wordwrap=None,
+            text_shadow=(0.05, 0.05, 0.1, 0.4),
+            text_shadowOffset=(1, -1),
             textMayChange=True,
         )
 
+        # Left panel with enhanced styling
         self.fps_text = DirectLabel(
             parent=self.left_panel,
             text="FPS: 0",
-            text_fg=(0, 1, 0, 1),
-            text_scale=14,
+            text_fg=(0.2, 0.9, 0.3, 1.0),  # Bright green for performance metrics
+            text_scale=15,
             text_align=TextNode.ALeft,
             frameColor=(0, 0, 0, 0),
             text_wordwrap=None,
+            text_shadow=(0.0, 0.2, 0.0, 0.6),
+            text_shadowOffset=(1, -1),
             textMayChange=True,
         )
         self.bot_info_text = DirectLabel(
             parent=self.left_panel,
-            text="Click on a bot to select it",
-            text_fg=(1, 1, 1, 1),
-            text_scale=14,
+            text="🎯 Click on a bot to select it",
+            text_fg=(0.95, 0.95, 1.0, 1.0),
+            text_scale=16,
             text_align=TextNode.ALeft,
             frameColor=(0, 0, 0, 0),
             text_wordwrap=None,
+            text_shadow=(0.1, 0.1, 0.15, 0.5),
+            text_shadowOffset=(1, -1),
             textMayChange=True,
         )
         self.tactical_info_text = DirectLabel(
             parent=self.left_panel,
             text="",
-            text_fg=(1, 1, 1, 1),
+            text_fg=(0.88, 0.92, 0.98, 1.0),  # Light cyan for tactical info
             text_scale=14,
             text_align=TextNode.ALeft,
             frameColor=(0, 0, 0, 0),
             text_wordwrap=None,
+            text_shadow=(0.05, 0.1, 0.15, 0.4),
+            text_shadowOffset=(1, -1),
             textMayChange=True,
         )
         self.help_visible = False
         self.help_text = DirectLabel(
             parent=self.left_panel,
             text=self._generate_help_text(),
-            text_fg=(1, 1, 0.9, 1),
-            text_scale=14,
+            text_fg=(1.0, 0.95, 0.7, 1.0),  # Warm yellow for help text
+            text_scale=13,
             text_align=TextNode.ALeft,
-            frameColor=(0, 0, 0, 0),
+            frameColor=(0.05, 0.05, 0.08, 0.3),  # Subtle background for help
+            relief=DGG.SUNKEN,
+            borderWidth=(1, 1),
             text_wordwrap=None,
+            text_shadow=(0.1, 0.05, 0.0, 0.6),
+            text_shadowOffset=(1, -1),
             textMayChange=True,
         )
         self.help_text.hide()
@@ -634,27 +679,28 @@ class Battle3DViewer(ShowBase):
         self.timeline_slider.bind(DGG.B1PRESS, lambda event: setattr(self, "slider_dragging", True))
         self.timeline_slider.bind(DGG.B1RELEASE, lambda event: setattr(self, "slider_dragging", False))
 
-        # Layout function to adapt to window resizes
+        # Enhanced layout function with improved spacing and proportions
         def layout():
             w = self.win.getXSize() if self.win else 1280
             h = self.win.getYSize() if self.win else 720
-            bar_h = 90
-            margin = 12
-            spacing = 8
+            bar_h = 100  # Slightly taller for better proportions
+            margin = 16  # Increased margins for better breathing room
+            spacing = 12  # More generous spacing between elements
 
-            # Reserve side panels (pixels)
-            left_w = 320
-            right_w = 320
+            # Wider side panels for better information display
+            left_w = 360
+            right_w = 360
             panel_h = max(0, h - bar_h)
 
             # Bottom toolbar spans full width at window bottom in pixel2d (origin bottom-left, z up)
             self.ui_bar["frameSize"] = (0, w, 0, bar_h)
             self.ui_bar.setPos(0, 0, 0)
 
-            # Slider along top of the bar
-            slider_h = 18
-            slider_w = max(0, w - 2 * margin)
-            self.timeline_slider.setPos(w / 2, 0, bar_h - margin - slider_h / 2)
+            # Premium slider with better proportions
+            slider_h = 22  # Taller for easier interaction
+            slider_w = max(0, w - 4 * margin)  # More margin for cleaner look
+            slider_y = bar_h - margin - slider_h / 2 - 6  # Better positioning
+            self.timeline_slider.setPos(w / 2, 0, slider_y)
             try:
                 self.timeline_slider["frameSize"] = (
                     -slider_w / 2,
@@ -665,36 +711,36 @@ class Battle3DViewer(ShowBase):
             except Exception:
                 pass
 
-            # Buttons row near bottom of the bar
-            y = margin + 18  # vertical center of buttons
-            x = margin
+            # Button row with better vertical positioning
+            y = margin + 24  # Higher position for better balance
+            x = margin * 1.5  # More left margin
 
-            def place(btn, width, height=36):
+            def place(btn, width, height=40):  # Taller buttons
                 center_x = x + width / 2
                 btn.setPos(center_x, 0, y)
                 btn["frameSize"] = (-width / 2, width / 2, -height / 2, height / 2)
 
-            place(self.play_pause_btn, 120)
-            x += 120 + spacing
-            place(self.step_back_btn, 48)
-            x += 48 + spacing
-            place(self.step_forward_btn, 48)
-            x += 48 + spacing
-            place(self.reset_btn, 110)
-            x += 110 + spacing
-            place(self.reset_view_btn, 130)
+            # Main control buttons
+            place(self.play_pause_btn, 130, 42)  # Larger primary button
             x += 130 + spacing
-            place(self.fov_btn, 70)
-            x += 70 + spacing
-            place(self.help_btn, 80)
-            x += 80 + spacing
+            place(self.step_back_btn, 52)
+            x += 52 + spacing
+            place(self.step_forward_btn, 52)
+            x += 52 + spacing
+            place(self.reset_btn, 120)
+            x += 120 + spacing * 2  # Extra space before secondary buttons
+            place(self.reset_view_btn, 120)
+            x += 120 + spacing
+            place(self.fov_btn, 90)
+            x += 90 + spacing
+            place(self.help_btn, 95)
 
-            # Speed controls aligned right
-            right_x = w - margin
-            for btn, width in ((self.speed_up_btn, 48), (self.speed_down_btn, 48)):
+            # Speed controls aligned right with better spacing
+            right_x = w - margin * 1.5
+            for btn, width in ((self.speed_up_btn, 52), (self.speed_down_btn, 52)):
                 center_x = right_x - width / 2
                 btn.setPos(center_x, 0, y)
-                btn["frameSize"] = (-width / 2, width / 2, -18, 18)
+                btn["frameSize"] = (-width / 2, width / 2, -20, 20)
                 right_x -= width + spacing
 
             # Left and right panels (fill remaining height above bottom bar)
@@ -704,40 +750,38 @@ class Battle3DViewer(ShowBase):
             self.right_panel["frameSize"] = (0, right_w, 0, panel_h)
             self.right_panel.setPos(max(0, w - right_w), 0, bar_h)
 
-            # Position texts inside panels
-            top_y = panel_h - 20
-            # Left panel texts
-            self.fps_text.setPos(12, 0, top_y)
-            self.bot_info_text.setPos(12, 0, max(0, top_y - 28))
-            self.tactical_info_text.setPos(12, 0, max(40, panel_h * 0.45))
-            self.help_text.setPos(12, 0, 12)
+            # Enhanced text positioning with better spacing and hierarchy
+            text_margin = 20  # More generous margins
+            top_y = panel_h - text_margin
+            
+            # Left panel texts with improved spacing
+            self.fps_text.setPos(text_margin, 0, top_y)
+            self.bot_info_text.setPos(text_margin, 0, max(0, top_y - 35))
+            self.tactical_info_text.setPos(text_margin, 0, max(50, panel_h * 0.42))
+            self.help_text.setPos(text_margin, 0, text_margin)
 
-            # Right panel texts
-            self.info_text.setPos(12, 0, top_y)
-            self.events_text.setPos(12, 0, 12)
+            # Right panel texts with better spacing
+            self.info_text.setPos(text_margin, 0, top_y)
+            self.events_text.setPos(text_margin, 0, text_margin)
 
             # Configure the 3D display region to exclude the panels and bottom bar
-            if w > 0 and h > 0:
+            if w > 0 and h > 0 and not self._initial_setup_done:
                 l = min(1.0, max(0.0, left_w / float(w)))
                 r = min(1.0, max(0.0, 1.0 - (right_w / float(w))))
                 b = min(1.0, max(0.0, bar_h / float(h)))
                 t = 1.0
 
-                if not self._disabled_default_dr:
-                    try:
-                        default_dr = self.win.getDisplayRegion(0)
-                        if default_dr:
-                            default_dr.setActive(False)
-                    except Exception:
-                        pass
-                    self._disabled_default_dr = True
-
-                if self._three_d_region is None:
-                    self._three_d_region = self.win.makeDisplayRegion(l, r, b, t)
-                    self._three_d_region.setSort(0)
-                    self._three_d_region.setCamera(self.cam)
-                else:
-                    self._three_d_region.setDimensions(l, r, b, t)
+                # Simply modify the default display region dimensions
+                try:
+                    default_dr = self.win.getDisplayRegion(0)
+                    if default_dr:
+                        default_dr.setDimensions(l, r, b, t)
+                        default_dr.setSort(0)  # Normal sort order for 3D
+                        self._three_d_region = default_dr
+                        self._initial_setup_done = True
+                except Exception as e:
+                    print(f"Warning: Could not configure display region: {e}")
+                    self._initial_setup_done = True
 
         layout()
         # Also perform layout on the next frame to ensure window/pixel2d metrics are initialized
@@ -1483,9 +1527,9 @@ class Battle3DViewer(ShowBase):
             self.current_frame = float(self.timeline_slider.getValue())
 
     def _toggle_play(self):
-        """Toggle play/pause state."""
+        """Toggle play/pause state with enhanced button styling."""
         self.playing = not self.playing
-        self.play_pause_btn["text"] = "Pause" if self.playing else "Play"
+        self.play_pause_btn["text"] = "⏸ Pause" if self.playing else "▶ Play"
         if self.playing:
             self.playback_speed = 5.0
         else:
@@ -1494,7 +1538,7 @@ class Battle3DViewer(ShowBase):
     def _step_frame(self, direction: int):
         """Step forward or backward one frame."""
         self.playing = False
-        self.play_pause_btn["text"] = "Play"
+        self.play_pause_btn["text"] = "▶ Play"
         self.current_frame += direction
         self.current_frame = max(0, min(len(self.timeline) - 1, self.current_frame))
 
@@ -1508,7 +1552,7 @@ class Battle3DViewer(ShowBase):
     def _reset_sim(self):
         """Reset simulation to the first frame."""
         self.playing = False
-        self.play_pause_btn["text"] = "Play"
+        self.play_pause_btn["text"] = "▶ Play"
         self.current_frame = 0
 
     def _reset_camera_view(self):
@@ -1603,21 +1647,25 @@ class Battle3DViewer(ShowBase):
             self.help_text.hide()
 
     def _generate_help_text(self) -> str:
-        """Generate the multi-line help text showing controls."""
+        """Generate the multi-line help text showing controls with enhanced formatting."""
         return (
-            "[CONTROLS]\n"
-            "Space: Play/Pause\n"
-            "Left/Right: Step frame\n"
-            "R: Reset battle\n"
-            "C: Reset camera\n"
-            "F: Toggle FOV view\n"
-            "H: Toggle help overlay\n"
-            "Q / Esc: Quit\n\n"
-            "[Camera]\n"
-            "Right Mouse: Pan\n"
-            "Wheel or +/-: Zoom\n\n"
-            "[Interaction]\n"
-            "Click Bot: Select & show details\n"
+            "🎮 CONTROLS\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Space: ⏯ Play/Pause\n"
+            "← →: Step frame by frame\n"
+            "R: ↺ Reset battle to start\n"
+            "C: 🎥 Reset camera view\n"
+            "F: 👁 Toggle FOV display\n"
+            "H: 📖 Toggle this help\n"
+            "Q/Esc: ❌ Quit application\n\n"
+            "📹 CAMERA CONTROLS\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Right Click + Drag: Pan view\n"
+            "Mouse Wheel / +/−: Zoom in/out\n\n"
+            "🤖 INTERACTION\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Click Bot: 🎯 Select & view details\n"
+            "Selected Bot: Shows tactical info\n"
         )
 
 
@@ -1635,18 +1683,17 @@ def run_3d_viewer(battle_file: str):
         print(f"Error: Invalid JSON in '{battle_file}'")
         return
 
-    print("Launching Panda3D viewer...")
-    print("Controls:")
-    print("  SPACE = Play/Pause")
-    print("  Left/Right = Step frame by frame")
-    print("  R = Reset to start")
-    print("  C = Reset camera view")
-    print("  F = Toggle FOV display")
-    print("  Q/ESC = Quit")
-    print("  Click bots to select them")
-    print("\n  Camera Controls:")
-    print("    - Pan:  Right-click + Drag Mouse")
-    print("    - Zoom: Use Mouse Wheel or +/- keys")
+    print("🚀 Launching Premium Panda3D Battle Viewer...")
+    print("✨ Features: Modern UI, Enhanced Graphics, Tactical Analysis")
+    print("")
+    print("🎮 Quick Controls:")
+    print("  SPACE = ⏯ Play/Pause    |  R = ↺ Reset Battle")
+    print("  ← → = Step Frame       |  C = 🎥 Reset Camera")
+    print("  F = 👁 Toggle FOV       |  H = 📖 Help Overlay")
+    print("  Q/ESC = ❌ Quit         |  🤖 Click Bots = Select")
+    print("")
+    print("📹 Camera: Right-click + Drag = Pan  |  Wheel/+- = Zoom")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     app = Battle3DViewer(battle_data)
     app.run()
