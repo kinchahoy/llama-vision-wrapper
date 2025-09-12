@@ -10,7 +10,7 @@ Llama-Vision-Wrapper interactive setup
 
 from enum import Enum
 from pathlib import Path
-import os, typer, sh
+import os, typer, sh, shutil, sys
 
 # ─────────── paths ───────────
 HERE        = Path(__file__).resolve().parent
@@ -118,11 +118,46 @@ def setup(
     run(["cmake", str(GEN_SRC), "-B", str(GEN_BUILD)], dry=dry_run)
     run(["cmake", "--build", str(GEN_BUILD), "-j", str(jobs)], dry=dry_run)
 
-    # ── 5. sync venv ──────────────────────────────────────────────────────
+    # ── 5. Prepare Python package ───────────────────────────────────────
+    banner("Prepare Python package")
+    pkg_dir = HERE / "llama_vision_wrapper"
+    typer.echo(f"Target directory: {pkg_dir}")
+    if not dry_run:
+        if pkg_dir.exists():
+            shutil.rmtree(pkg_dir)
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").touch()
+        typer.echo("  - Created package directory and __init__.py")
+
+        shutil.copy(HERE / "cppyy-src" / "llama_cpp_wrapper.py", pkg_dir)
+        shutil.copy(HERE / "cppyy-src" / "cppyy-mtmd.py", pkg_dir / "cppyy_mtmd.py")
+        typer.echo("  - Copied Python source files")
+
+        lib_ext = "dylib" if sys.platform == "darwin" else "so"
+        lib_files = list((LLAMA_BUILD / "bin").glob(f"lib*.{lib_ext}"))
+        lib_files += list(GEN_BUILD.glob(f"lib*.{lib_ext}"))
+        for lib_path in lib_files:
+            shutil.copy(lib_path, pkg_dir)
+        typer.echo(f"  - Copied {len(lib_files)} compiled libraries")
+
+        include_dir = pkg_dir / "include"
+        header_src_dirs = [
+            LLAMA_SRC / "include",
+            LLAMA_SRC / "ggml" / "include",
+            LLAMA_SRC / "common",
+            LLAMA_SRC / "tools" / "mtmd",
+            GEN_SRC,
+        ]
+        for src_dir in header_src_dirs:
+            dest_dir = include_dir / src_dir.relative_to(HERE)
+            shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
+        typer.echo("  - Copied C++ header directories")
+
+    # ── 6. sync venv ──────────────────────────────────────────────────────
     banner("Sync virtual-env via uv")
     #run(["uv", "sync"], dry=dry_run)
 
-    # ── 6. optional examples ─────────────────────────────────────────────
+    # ── 7. optional examples ─────────────────────────────────────────────
     banner("Run example (optional)")
     ex = typer.prompt("Which example? (cppyy / cython / skip)", default="skip").lower()
     if ex == "cppyy":

@@ -12,19 +12,20 @@ from typing import Optional
 from contextlib import contextmanager
 
 # Configuration
-BASE_DIR = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)  # Go up from cpppy/ to project root
-LLAMA_CPP_DIR = f"{BASE_DIR}/llama.cpp"
+# The package directory, where libraries and headers are also located.
+PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+INCLUDE_DIR = os.path.join(PACKAGE_DIR, "include")
+
+# Paths for cppyy to find headers
 INCLUDE_DIRS = [
-    f"{LLAMA_CPP_DIR}/include",
-    f"{LLAMA_CPP_DIR}/ggml/include",
-    f"{LLAMA_CPP_DIR}/common",
-    f"{LLAMA_CPP_DIR}/tools/mtmd",
-    f"{BASE_DIR}/gen-helper",
+    f"{INCLUDE_DIR}/llama.cpp/include",
+    f"{INCLUDE_DIR}/llama.cpp/ggml/include",
+    f"{INCLUDE_DIR}/llama.cpp/common",
+    f"{INCLUDE_DIR}/llama.cpp/tools/mtmd",
+    f"{INCLUDE_DIR}/gen-helper",
 ]
-LLAMA_CPP_LIBS_DIR = f"{LLAMA_CPP_DIR}/build/bin"
-HELPER_LIB_DIR = f"{BASE_DIR}/gen-helper/build"
+# All libraries are in the package directory
+LIBS_DIR = PACKAGE_DIR
 
 # Dynamics libraries are different across linux and macos
 if sys.platform == "linux":
@@ -101,12 +102,7 @@ def initialize_cppyy():
 
         # Load required libraries
         for lib_name in REQUIRED_LIB_NAMES:
-            lib_dir = (
-                HELPER_LIB_DIR
-                if lib_name == f"libgeneration_helper.{LIB_EXT}"
-                else LLAMA_CPP_LIBS_DIR
-            )
-            lib_path = os.path.join(lib_dir, lib_name)
+            lib_path = os.path.join(LIBS_DIR, lib_name)
             if not os.path.exists(lib_path):
                 raise FileNotFoundError(
                     f"Required library '{lib_name}' not found at {lib_path}"
@@ -116,8 +112,7 @@ def initialize_cppyy():
 
         # Load optional libraries
         for lib_name in OPTIONAL_LIB_NAMES:
-            lib_dir = LLAMA_CPP_LIBS_DIR
-            lib_path = os.path.join(lib_dir, lib_name)
+            lib_path = os.path.join(LIBS_DIR, lib_name)
             if os.path.exists(lib_path):
                 try:
                     cppyy.load_library(lib_path)

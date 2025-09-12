@@ -1,13 +1,21 @@
 [project]
-name = "llama-vision-warpper"
+name = "llama-vision-wrapper"
 version = "0.1.0"
-description = "Python bindings for llama.cpp multimodal functionality using cppyy and Cython."
+description = "Python bindings for llama.cpp multimodal functionality using cppyy."
 requires-python = ">=3.12"
 dependencies = [
     "cppyy",
-    "Cython",
     "huggingface-hub",
     "setuptools>=80.9.0",
     "typer",
     "sh",
 ]
+
+[project.scripts]
+run-mtmd = "llama_vision_wrapper.cppyy_mtmd:main"
+
+[tool.setuptools]
+packages = ["llama_vision_wrapper"]
+
+[tool.setuptools.package-data]
+llama_vision_wrapper = ["*.so", "*.dylib", "include/**"]
