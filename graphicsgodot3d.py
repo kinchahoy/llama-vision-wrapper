@@ -60,7 +60,7 @@ class GodotBattleViewer:
             project_path = Path(__file__).parent / "godot_project"
             if not project_path.exists():
                 raise RuntimeError(f"Godot project not found at: {project_path}")
-
+            print("🔧 Preparing to launch Godot Battle Viewer...: ", sys.getsizeof(self.battle_data))
             if not self.launch_godot(str(project_path), self.temp_file_path):
                 return False
             
@@ -121,6 +121,6 @@ if __name__ == "__main__":
         print("Example: python graphicsgodot3d.py python_battle_42.json")
         sys.exit(1)
     
-    battle_file = sys.argv[1]
-    success = run_godot_viewer(battle_file)
-    sys.exit(0 if success else 1)
+    #battle_file = sys.argv[1]
+    #success = run_godot_viewer(battle_file)
+    #sys.exit(0 if success else 1)

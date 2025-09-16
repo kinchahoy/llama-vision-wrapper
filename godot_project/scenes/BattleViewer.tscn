@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://bqk2q5xwvuhg7"]
 
-[ext_resource type="Script" path="res://scripts/BattleViewer3D.gd" id="1_2k8vp"]
+[ext_resource type="Script" uid="uid://bta6cwykfl1vq" path="res://scripts/BattleViewer3D.gd" id="1_2k8vp"]
 
 [sub_resource type="Environment" id="Environment_1hx8v"]
 background_mode = 1
@@ -14,6 +14,8 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("1_2k8vp")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
@@ -21,6 +23,8 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="MainArea" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -39,6 +43,8 @@ offset_left = 16.0
 offset_top = 16.0
 offset_right = -16.0
 offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="FPSLabel" type="Label" parent="VBoxContainer/MainArea/LeftPanel/VBoxContainer"]
 layout_mode = 2
@@ -59,11 +65,10 @@ bbcode_enabled = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-mouse_filter = 1
 
 [node name="SubViewport" type="SubViewport" parent="VBoxContainer/MainArea/ViewportContainer"]
-handle_input_locally = false
 own_world_3d = true
+handle_input_locally = false
 size = Vector2i(760, 480)
 render_target_update_mode = 4
 
@@ -91,6 +96,8 @@ offset_left = 16.0
 offset_top = 16.0
 offset_right = -16.0
 offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="BattleInfoLabel" type="RichTextLabel" parent="VBoxContainer/MainArea/RightPanel/VBoxContainer"]
 layout_mode = 2
@@ -145,9 +152,9 @@ size_flags_horizontal = 3
 layout_mode = 2
 text = "❌ Quit"
 
-[connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/PlayButton" to="." method="_on_play_button_pressed"]
-[connection signal="value_changed" from="VBoxContainer/BottomPanel/Timeline/TimelineSlider" to="." method="_on_timeline_slider_value_changed"]
 [connection signal="drag_started" from="VBoxContainer/BottomPanel/Timeline/TimelineSlider" to="." method="_on_timeline_slider_drag_started"]
+[connection signal="value_changed" from="VBoxContainer/BottomPanel/Timeline/TimelineSlider" to="." method="_on_timeline_slider_value_changed"]
+[connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/PlayButton" to="." method="_on_play_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/StepBackButton" to="." method="_on_step_back_pressed"]
 [connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/StepForwardButton" to="." method="_on_step_forward_pressed"]
 [connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/ResetButton" to="." method="_on_reset_button_pressed"]
