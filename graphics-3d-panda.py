@@ -63,7 +63,7 @@ def _init_hq_rendering(app):
         # Only enable complexpbr when the driver supports GLSL 4.3+ and we're not on macOS.
         import sys
 
-        supports_430 = False
+        supports_430 = True
         gsg = getattr(app.win, "getGsg", lambda: None)()
         if gsg and hasattr(gsg, "getDriverShaderVersionMajor"):
             major = gsg.getDriverShaderVersionMajor()

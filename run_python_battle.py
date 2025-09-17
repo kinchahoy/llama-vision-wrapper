@@ -238,13 +238,22 @@ def run_interactive_viewer(battle_file: str, use_3d: bool = False, use_godot: bo
     if use_3d:
         import importlib.util
 
-        spec = importlib.util.spec_from_file_location("graphics3d", "graphics3d.py")
+        spec = importlib.util.spec_from_file_location(
+            "graphics3d", "graphics-3d-panda.py"
+        )
         graphics3d = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(graphics3d)
         graphics3d.run_3d_viewer(battle_file)
         return
 
-    from graphics import BattleViewer
+    import importlib.util
+
+    spec2d = importlib.util.spec_from_file_location(
+        "graphics2dsim", "graphics-2dsim.py"
+    )
+    graphics2dsim = importlib.util.module_from_spec(spec2d)
+    spec2d.loader.exec_module(graphics2dsim)
+    BattleViewer = graphics2dsim.BattleViewer
 
     print(f"\n=== Interactive Viewer: {battle_file} ===")
 
