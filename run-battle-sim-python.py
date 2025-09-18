@@ -5,11 +5,27 @@ Run battles using Python functions instead of DSL programs.
 
 import time
 import json
+import importlib.util
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from battle_sim import Arena
-from run_battle_sim_python import PythonFunctionRunner
 from llm_python_gen import PythonLLMController
+
+
+def _load_python_function_runner():
+    """Load PythonFunctionRunner from the hyphenated module path."""
+    module_path = Path(__file__).with_name("bot-runner-python.py")
+    spec = importlib.util.spec_from_file_location("bot_runner_python", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load PythonFunctionRunner from {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.PythonFunctionRunner
+
+
+PythonFunctionRunner = _load_python_function_runner()
 
 
 def run_python_battle(

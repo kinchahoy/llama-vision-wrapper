@@ -1,0 +1,45 @@
+"""Smoke test to ensure python battle runner produces expected summary data."""
+
+import importlib.util
+from pathlib import Path
+
+
+def _load_module(name: str, filename: str):
+    module_path = Path(__file__).resolve().parent.parent / filename
+    spec = importlib.util.spec_from_file_location(name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load module '{name}' from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_run_battle_module = _load_module("run_battle_sim_python", "run-battle-sim-python.py")
+
+
+def test_python_battle_summary_structure():
+    battle_data = _run_battle_module.run_python_battle(
+        seed=1,
+        max_duration=2.0,
+        arena_size=(10.0, 10.0),
+        bots_per_side=1,
+        verbose=False,
+    )
+
+    summary = battle_data["summary"]
+    metadata = battle_data["metadata"]
+
+    expected_summary_keys = {
+        "control_system",
+        "function_executions",
+        "function_timeouts",
+        "function_errors",
+        "avg_function_time_ms",
+        "bot_functions",
+    }
+    missing_keys = expected_summary_keys - summary.keys()
+    assert not missing_keys, f"Missing summary keys: {missing_keys}"
+
+    assert metadata["control_system"] == "python_functions"
+    assert metadata["winner"].startswith("team_")
+    assert metadata["duration"] <= 2.0

@@ -5,17 +5,15 @@ Compiles and executes LLM-generated Python functions via Numba JIT with timeout 
 
 import math
 import time
-import types
+import queue
 import numpy as np
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass
 import threading
-import signal
-from contextlib import contextmanager
 
 # Try to import numba, fall back to no JIT if unavailable
 try:
-    from numba import jit, types as nb_types
+    from numba import jit
 
     NUMBA_AVAILABLE = True
 except ImportError:
@@ -47,24 +45,6 @@ class TimeoutError(Exception):
     """Raised when function execution exceeds timeout."""
 
     pass
-
-
-@contextmanager
-def timeout_context(duration: float):
-    """Context manager for function execution timeout."""
-
-    def timeout_handler(signum, frame):
-        raise TimeoutError(f"Function execution exceeded {duration}s timeout")
-
-    # Set the signal handler
-    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(int(duration * 1000000) // 1000000 + 1)  # Convert to seconds, round up
-
-    try:
-        yield
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
 
 
 # Standard signal vocabulary for bot communication
@@ -112,6 +92,37 @@ class PythonFunctionRunner:
         self.max_execution_time = 0.01  # 10ms limit
         self.compile_cache = {}  # Cache compiled functions by source code hash
         self.allowed_signals = list(ALLOWED_SIGNALS.keys())
+
+    def _execute_with_timeout(
+        self, func: Callable, *args
+    ) -> Any:
+        """Execute function with a wall-clock timeout using a worker thread."""
+
+        result_queue: queue.Queue = queue.Queue(maxsize=1)
+
+        def target():
+            try:
+                result = func(*args)
+            except Exception as exc:  # noqa: BLE001 - propagate bot errors
+                result_queue.put((False, exc))
+            else:
+                result_queue.put((True, result))
+
+        worker = threading.Thread(target=target, daemon=True)
+        worker.start()
+
+        try:
+            success, payload = result_queue.get(timeout=self.max_execution_time)
+        except queue.Empty as exc:
+            raise TimeoutError(
+                f"Function execution exceeded {self.max_execution_time}s timeout"
+            ) from exc
+        finally:
+            worker.join(timeout=0)
+
+        if success:
+            return payload
+        raise payload
 
     def compile_bot_function(
         self, bot_id: int, source_code: str, force_recompile: bool = False
@@ -287,11 +298,12 @@ class PythonFunctionRunner:
         start_time = time.time()
 
         try:
-            # Execute function with timeout
-            with timeout_context(self.max_execution_time):
-                result = bot_func.compiled_func(
-                    visible_objects, move_history, self.allowed_signals
-                )
+            result = self._execute_with_timeout(
+                bot_func.compiled_func,
+                visible_objects,
+                move_history,
+                self.allowed_signals,
+            )
 
             execution_time = time.time() - start_time
             bot_func.last_execution_time = execution_time
