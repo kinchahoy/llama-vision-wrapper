@@ -7,22 +7,49 @@ import time
 import json
 import importlib.util
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from types import ModuleType
+from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING, Protocol, cast
 
 from battle_arena import Arena
 from llm_bot_controller import PythonLLMController
 
 
-def _load_python_function_runner():
-    """Load PythonFunctionRunner from the renamed runner module."""
-    module_path = Path(__file__).with_name("bot_runner_python.py")
-    spec = importlib.util.spec_from_file_location("bot_runner_python", module_path)
+class _RunnerModule(Protocol):
+    PythonFunctionRunner: Any
+
+
+class _GodotViewerModule(Protocol):
+    def run_godot_viewer(self, battle_file: str) -> None:
+        ...
+
+
+class _PandaViewerModule(Protocol):
+    def run_3d_viewer(self, battle_file: str) -> None:
+        ...
+
+
+class _Viewer2DModule(Protocol):
+    BattleViewer: Any
+
+
+def _load_module(module_name: str, file_name: str) -> ModuleType:
+    module_path = Path(__file__).with_name(file_name)
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
     if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load PythonFunctionRunner from {module_path}")
+        raise ImportError(f"Cannot load module {module_name} from {file_name}")
 
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.PythonFunctionRunner
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def _load_python_function_runner():
+    """Load PythonFunctionRunner from the renamed runner module."""
+    module = _load_module("bot_runner_python", "bot_runner_python.py")
+    runner_module = cast(_RunnerModule, module)
+    if not hasattr(runner_module, "PythonFunctionRunner"):
+        raise AttributeError("PythonFunctionRunner attribute not found in module")
+    return runner_module.PythonFunctionRunner
 
 
 PythonFunctionRunner = _load_python_function_runner()
@@ -31,11 +58,12 @@ PythonFunctionRunner = _load_python_function_runner()
 def run_python_battle(
     seed: int = 42,
     max_duration: float = 60.0,
-    spawn_config: Dict = None,
-    bot_functions: Dict[int, str] = None,
+    spawn_config: Optional[Dict[str, Any]] = None,
+    bot_functions: Optional[Dict[int, str]] = None,
     verbose: bool = True,
     arena_size: Optional[Tuple[float, float]] = None,
     bots_per_side: Optional[int] = None,
+    sim_unsafe: bool = False,
 ) -> Dict:
     """
     Run a complete battle simulation using Python functions for bot control.
@@ -57,7 +85,7 @@ def run_python_battle(
     arena = Arena(seed, spawn_config, arena_size, bots_per_side)
 
     # Create Python function runner and LLM controller
-    runner = PythonFunctionRunner()
+    runner = PythonFunctionRunner(sandbox_enabled=not sim_unsafe)
     llm = PythonLLMController(arena.BOT_COUNT)
 
     if verbose:
@@ -112,13 +140,10 @@ def run_python_battle(
                         continue
 
                     # Generate inputs for Python function
-                    visible_objects = llm.generate_visible_objects(arena, bot_id)
-                    move_history = llm.generate_move_history(arena, bot_id)
+                    observation = llm.build_observation(arena, bot_id)
 
                     # Execute bot function
-                    action = runner.execute_bot_function(
-                        bot_id, visible_objects, move_history
-                    )
+                    action = runner.execute_bot_function(bot_id, observation)
 
                     # Apply action to arena
                     if action:
@@ -128,6 +153,8 @@ def run_python_battle(
                         signal = action.get("signal")
                         if signal is not None and bot_id in arena.bot_data:
                             arena.bot_data[bot_id].signal = signal
+
+                    llm.record_bot_action(arena, bot_id, action, bool(action))
 
             # Handle firing for all bots
             for bot_id in range(arena.BOT_COUNT):
@@ -188,6 +215,7 @@ def run_python_battle(
             "control_system": "python_functions",
             "compilation_success": compilation_success,
             "runner_stats": runner.get_runner_stats(),
+            "sandbox_enabled": not sim_unsafe,
         },
         "timeline": arena.battle_log,
         "summary": _generate_python_battle_summary(arena, runner, llm),
@@ -234,6 +262,7 @@ def _generate_python_battle_summary(
             "avg_function_time_ms": round(runner_stats["avg_execution_time"] * 1000, 2),
             "bot_functions": bot_function_info,
             "numba_enabled": runner_stats["numba_available"],
+            "sandbox_enabled": runner_stats.get("sandbox_enabled", True),
         }
     )
 
@@ -245,34 +274,26 @@ def run_interactive_viewer(
 ):
     """Launch interactive viewer with a saved Python battle JSON file."""
     if use_godot:
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "viewer_3d_godot", "viewer_3d_godot.py"
+        godot_module = cast(
+            _GodotViewerModule,
+            _load_module("viewer_3d_godot", "viewer_3d_godot.py"),
         )
-        viewer_3d_godot = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(viewer_3d_godot)
-        viewer_3d_godot.run_godot_viewer(battle_file)
+        godot_module.run_godot_viewer(battle_file)
         return
 
     if use_3d:
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "viewer_3d_panda", "viewer_3d_panda.py"
+        panda_module = cast(
+            _PandaViewerModule,
+            _load_module("viewer_3d_panda", "viewer_3d_panda.py"),
         )
-        viewer_3d_panda = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(viewer_3d_panda)
-        viewer_3d_panda.run_3d_viewer(battle_file)
+        panda_module.run_3d_viewer(battle_file)
         return
 
-    import importlib.util
-
-    spec2d = importlib.util.spec_from_file_location(
-        "viewer_2d_pygame", "viewer_2d_pygame.py"
+    viewer_2d_module = cast(
+        _Viewer2DModule, _load_module("viewer_2d_pygame", "viewer_2d_pygame.py")
     )
-    viewer_2d_module = importlib.util.module_from_spec(spec2d)
-    spec2d.loader.exec_module(viewer_2d_module)
+    if not hasattr(viewer_2d_module, "BattleViewer"):
+        raise AttributeError("viewer_2d_pygame.BattleViewer is missing")
     BattleViewer = viewer_2d_module.BattleViewer
 
     print(f"\n=== Interactive Viewer: {battle_file} ===")
@@ -352,6 +373,11 @@ def main():
     parser.add_argument("--quiet", action="store_true", help="Minimal output")
     parser.add_argument("--3d", action="store_true", help="Use 3D viewer instead of 2D")
     parser.add_argument("--godot3d", action="store_true", help="Use Godot 4 3D viewer")
+    parser.add_argument(
+        "--sim-unsafe",
+        action="store_true",
+        help="Disable RestrictedPython sandbox for bot functions (unsafe, faster)",
+    )
 
     args = parser.parse_args()
 
@@ -382,6 +408,7 @@ def main():
         arena_size=arena_size,
         bots_per_side=args.bots_per_side,
         verbose=not args.quiet,
+        sim_unsafe=args.sim_unsafe,
     )
 
     # Save results
@@ -396,7 +423,7 @@ def main():
         summary = battle_data["summary"]
         metadata = battle_data["metadata"]
 
-        print(f"\n=== PYTHON BATTLE SUMMARY ===")
+        print("\n=== PYTHON BATTLE SUMMARY ===")
         print(f"Winner: {metadata['winner']} ({metadata['reason']})")
         print(f"Duration: {metadata['duration']}s")
         print(f"Total shots: {summary['total_shots']}")
@@ -404,7 +431,7 @@ def main():
         print(f"MVP: Bot {summary['mvp']['bot_id']} (score: {summary['mvp']['score']})")
         print(f"Function executions: {summary['function_executions']}")
         print(f"Average function time: {summary['avg_function_time_ms']:.2f}ms")
-        print(f"\nTo view this battle:")
+        print("\nTo view this battle:")
         print(f"  2D: uv run python battle_runner_cli.py viewer {output_file}")
         print(f"  3D: uv run python battle_runner_cli.py viewer {output_file} --3d")
         print(

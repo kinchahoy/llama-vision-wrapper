@@ -4,17 +4,22 @@ Generates Python functions for bot control instead of DSL programs.
 """
 
 import math
-import random
-from typing import Dict, List, Any, Tuple
+from collections import deque
+from typing import Any, Deque, Dict, List
 
 
 class PythonLLMController:
     """Generates Python functions for bot control and manages bot observations."""
 
+    MOVE_HISTORY_LIMIT = 12
+
     def __init__(self, bot_count: int = 4):
         self.bot_count = bot_count
         self.bot_function_sources = {}
         self.function_templates = self._load_function_templates()
+        self.move_history: Dict[int, Deque[Dict[str, Any]]] = {
+            bot_id: deque(maxlen=self.MOVE_HISTORY_LIMIT) for bot_id in range(bot_count)
+        }
 
         # Assign different function types to bots
         for bot_id in range(bot_count):
@@ -151,8 +156,7 @@ class PythonLLMController:
             ray_end_y = bot_y + math.sin(ray_angle) * max_range
 
             # Find closest intersection along this ray
-            closest_distance = float("inf")
-            closest_object = None
+            float("inf")
             ray_objects = []  # Collect all objects on this ray for proper occlusion handling
 
             # Check walls first (they block everything behind them)
@@ -306,200 +310,431 @@ class PythonLLMController:
 
         return unique_objects
 
-    def generate_move_history(self, arena, bot_id: int) -> List[Dict]:
-        """Generate move history for a bot (placeholder for now)."""
-        # For now, return empty history - could be enhanced to track actual moves
-        return []
+    def build_observation(self, arena, bot_id: int) -> Dict[str, Any]:
+        """Construct full observation payload for a bot."""
+        return {
+            "self": self._get_self_state(arena, bot_id),
+            "visible_objects": self.generate_visible_objects(arena, bot_id),
+            "move_history": self.generate_move_history(arena, bot_id),
+            "params": self._get_world_params(arena),
+        }
+
+    def generate_move_history(self, arena, bot_id: int) -> List[Dict[str, Any]]:
+        """Return recent move history for a bot."""
+        history = self.move_history.get(bot_id)
+        if not history:
+            return []
+        return [dict(entry) for entry in history]
+
+    def record_bot_action(self, arena, bot_id: int, action: Dict[str, Any], executed: bool):
+        """Record the latest action outcome for move history tracking."""
+        history = self.move_history.setdefault(
+            bot_id, deque(maxlen=self.MOVE_HISTORY_LIMIT)
+        )
+        entry: Dict[str, Any] = {
+            "tick": arena.tick,
+            "time": round(arena.time, 3),
+            "executed": bool(executed),
+        }
+
+        if action:
+            entry["action"] = action.get("action", "none")
+            entry["signal"] = action.get("signal", "none")
+            for key in ("target_x", "target_y", "angle", "direction"):
+                if key in action:
+                    entry[key] = action[key]
+        else:
+            entry["action"] = "none"
+            entry["signal"] = "none"
+
+        history.append(entry)
+
+    def _get_self_state(self, arena, bot_id: int) -> Dict[str, Any]:
+        """Assemble the observing bot's own state."""
+        bot_body = arena.bot_bodies.get(bot_id)
+        bot_data = arena.bot_data.get(bot_id)
+
+        if not bot_body or not bot_data:
+            return {
+                "id": bot_id,
+                "team": None,
+                "x": 0.0,
+                "y": 0.0,
+                "theta_deg": 0.0,
+                "vx": 0.0,
+                "vy": 0.0,
+                "hp": 0,
+                "cooldown_remaining": float("inf"),
+                "can_fire": False,
+                "time": round(arena.time, 3),
+                "tick": arena.tick,
+                "alive": False,
+            }
+
+        cooldown_remaining, can_fire = arena.get_fire_status(bot_id)
+        theta_deg = (math.degrees(bot_body.angle) + 360.0) % 360.0
+
+        return {
+            "id": bot_id,
+            "team": bot_data.team,
+            "x": float(bot_body.position[0]),
+            "y": float(bot_body.position[1]),
+            "theta_deg": theta_deg,
+            "vx": float(bot_body.velocity[0]),
+            "vy": float(bot_body.velocity[1]),
+            "hp": max(0, int(bot_data.hp)),
+            "cooldown_remaining": round(cooldown_remaining, 3),
+            "can_fire": bool(can_fire),
+            "time": round(arena.time, 3),
+            "tick": arena.tick,
+            "alive": arena._is_bot_alive(bot_id),
+            "signal": getattr(bot_data, "signal", "none"),
+        }
+
+    def _get_world_params(self, arena) -> Dict[str, Any]:
+        """Expose relevant arena configuration parameters."""
+        return {
+            "dt_physics": arena.DT_PHYSICS,
+            "dt_control": arena.DT_CONTROL,
+            "v_max": arena.V_MAX,
+            "v_rev_max": arena.V_REV_MAX,
+            "a_max": arena.A_MAX,
+            "omega_max_deg": math.degrees(arena.OMEGA_MAX),
+            "proj_speed": arena.PROJ_SPEED,
+            "proj_ttl": arena.PROJ_TTL,
+            "proj_damage": arena.PROJ_DAMAGE,
+            "fire_rate": arena.FIRE_RATE,
+            "fire_cooldown": arena.FIRE_COOLDOWN,
+            "fov_deg": math.degrees(arena.FOV_ANGLE),
+            "sense_range": arena.SENSE_RANGE,
+            "arena_width": arena.ARENA_SIZE[0],
+            "arena_height": arena.ARENA_SIZE[1],
+            "bots_per_side": arena.BOTS_PER_SIDE,
+        }
 
     def _get_aggressive_function(self) -> str:
         """Aggressive bot function that charges at enemies."""
         return '''
-def bot_function(visible_objects, move_history, allowed_signals):
+def bot_function(observation):
     """Aggressive bot that charges at nearest enemy and fires aggressively."""
-    
-    # Check for immediate threats (projectiles)
+    visible_objects = observation.get('visible_objects', [])
+    allowed_signals = observation.get('allowed_signals', [])
+    memory = observation.get('memory', {})
+    if not isinstance(memory, dict):
+        memory = {}
+
+    def choose_signal(candidate):
+        return candidate if candidate in allowed_signals else 'none'
+
+    # Immediate threat check
     for obj in visible_objects:
-        if obj.get('type') == 'projectile' and obj.get('distance', float('inf')) < 1.5:
-            # Emergency dodge
-            dodge_angle = (obj['angle'] + 90) % 360
-            return {'action': 'dodge', 'direction': dodge_angle, 'signal': 'retreating'}
-    
-    # Find nearest enemy
+        if obj.get('type') == 'projectile' and obj.get('distance', 999.0) < 1.5:
+            dodge_angle = (obj.get('angle', 0.0) + 90.0) % 360.0
+            memory.pop('last_enemy_id', None)
+            return {
+                'action': 'dodge',
+                'direction': dodge_angle,
+                'signal': choose_signal('retreating'),
+                'memory': memory,
+            }
+
     enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
     if not enemies:
-        # No enemies, search by rotating
-        return {'action': 'rotate', 'angle': 45.0, 'signal': 'ready'}
-    
-    # Sort enemies by distance
-    enemies.sort(key=lambda e: e.get('distance', float('inf')))
+        memory.pop('last_enemy_id', None)
+        return {
+            'action': 'rotate',
+            'angle': 45.0,
+            'signal': choose_signal('ready'),
+            'memory': memory,
+        }
+
+    enemies.sort(key=lambda e: e.get('distance', 999.0))
     target = enemies[0]
-    
-    distance = target['distance']
-    
+    memory['last_enemy_id'] = target.get('id')
+    distance = target.get('distance', 999.0)
+
     if distance < 2.0:
-        # Too close, dodge away
-        retreat_angle = (target['angle'] + 180) % 360
-        return {'action': 'dodge', 'direction': retreat_angle, 'signal': 'retreating'}
-    elif distance < 8.0:
-        # Good range for aggressive fire
-        return {'action': 'fire', 'target_x': target['x'], 'target_y': target['y'], 'signal': 'firing'}
-    else:
-        # Charge towards enemy
-        return {'action': 'move', 'target_x': target['x'], 'target_y': target['y'], 'signal': 'attacking'}
+        retreat_angle = (target.get('angle', 0.0) + 180.0) % 360.0
+        return {
+            'action': 'dodge',
+            'direction': retreat_angle,
+            'signal': choose_signal('retreating'),
+            'memory': memory,
+        }
+
+    can_fire = observation.get('self', {}).get('can_fire', False)
+    if distance < 8.0 and can_fire:
+        return {
+            'action': 'fire',
+            'target_x': target.get('x'),
+            'target_y': target.get('y'),
+            'signal': choose_signal('firing'),
+            'memory': memory,
+        }
+
+    return {
+        'action': 'move',
+        'target_x': target.get('x'),
+        'target_y': target.get('y'),
+        'signal': choose_signal('attacking'),
+        'memory': memory,
+    }
 '''
 
     def _get_defensive_function(self) -> str:
         """Defensive bot function that maintains distance."""
         return '''
-def bot_function(visible_objects, move_history, allowed_signals):
+def bot_function(observation):
     """Defensive bot that keeps distance and fires carefully."""
-    import math
-    
-    # Priority 1: Avoid projectiles
-    projectiles = [obj for obj in visible_objects if obj.get('type') == 'projectile']
-    for proj in projectiles:
-        if proj.get('distance', float('inf')) < 2.5:
-            # Calculate dodge direction perpendicular to projectile trajectory
-            proj_angle = math.radians(proj['angle'])
-            dodge_angle = math.degrees(proj_angle + math.pi/2)
-            return {'action': 'dodge', 'direction': dodge_angle, 'signal': 'moving_to_cover'}
-    
-    # Priority 2: Engage enemies at safe distance
+    visible_objects = observation.get('visible_objects', [])
+    allowed_signals = observation.get('allowed_signals', [])
+    self_state = observation.get('self', {})
+    memory = observation.get('memory', {})
+    if not isinstance(memory, dict):
+        memory = {}
+
+    def choose_signal(candidate):
+        return candidate if candidate in allowed_signals else 'none'
+
+    # Projectile avoidance
+    for proj in visible_objects:
+        if proj.get('type') == 'projectile' and proj.get('distance', 999.0) < 2.5:
+            dodge_angle = (proj.get('angle', 0.0) + 90.0) % 360.0
+            memory['last_threat'] = proj.get('id', -1)
+            return {
+                'action': 'dodge',
+                'direction': dodge_angle,
+                'signal': choose_signal('moving_to_cover'),
+                'memory': memory,
+            }
+
     enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
     if not enemies:
-        return {'action': 'rotate', 'angle': 0.0, 'signal': 'watching_flank'}
-    
-    # Find closest enemy
-    enemies.sort(key=lambda e: e.get('distance', float('inf')))
-    closest_enemy = enemies[0]
-    distance = closest_enemy['distance']
-    
+        memory.pop('last_enemy_distance', None)
+        return {
+            'action': 'rotate',
+            'angle': 0.0,
+            'signal': choose_signal('watching_flank'),
+            'memory': memory,
+        }
+
+    enemies.sort(key=lambda e: e.get('distance', 999.0))
+    target = enemies[0]
+    distance = target.get('distance', 999.0)
+    memory['last_enemy_distance'] = round(distance, 2)
+
     if distance < 6.0:
-        # Too close, retreat while firing
-        retreat_x = closest_enemy['x'] + 8 * math.cos(math.radians(closest_enemy['angle'] + 180))
-        retreat_y = closest_enemy['y'] + 8 * math.sin(math.radians(closest_enemy['angle'] + 180))
-        return {'action': 'move', 'target_x': retreat_x, 'target_y': retreat_y, 'signal': 'retreating'}
-    elif distance < 12.0:
-        # Perfect range, fire
-        return {'action': 'fire', 'target_x': closest_enemy['x'], 'target_y': closest_enemy['y'], 'signal': 'cover_fire'}
-    else:
-        # Move closer but cautiously
-        approach_distance = distance - 10.0  # Stay 10 units away
-        approach_angle = math.radians(closest_enemy['angle'])
-        approach_x = closest_enemy['x'] - approach_distance * math.cos(approach_angle)
-        approach_y = closest_enemy['y'] - approach_distance * math.sin(approach_angle)
-        return {'action': 'move', 'target_x': approach_x, 'target_y': approach_y, 'signal': 'advancing'}
+        retreat_angle = (target.get('angle', 0.0) + 180.0) % 360.0
+        retreat_radians = math.radians(retreat_angle)
+        retreat_distance = 8.0
+        retreat_x = self_state.get('x', 0.0) + retreat_distance * math.cos(retreat_radians)
+        retreat_y = self_state.get('y', 0.0) + retreat_distance * math.sin(retreat_radians)
+        return {
+            'action': 'move',
+            'target_x': retreat_x,
+            'target_y': retreat_y,
+            'signal': choose_signal('retreating'),
+            'memory': memory,
+        }
+
+    if distance < 12.0 and self_state.get('can_fire', False):
+        return {
+            'action': 'fire',
+            'target_x': target.get('x'),
+            'target_y': target.get('y'),
+            'signal': choose_signal('cover_fire'),
+            'memory': memory,
+        }
+
+    approach_distance = max(0.0, distance - 10.0)
+    approach_angle = math.radians(target.get('angle', 0.0))
+    offset_x = target.get('x', 0.0) - approach_distance * math.cos(approach_angle)
+    offset_y = target.get('y', 0.0) - approach_distance * math.sin(approach_angle)
+    return {
+        'action': 'move',
+        'target_x': offset_x,
+        'target_y': offset_y,
+        'signal': choose_signal('advancing'),
+        'memory': memory,
+    }
 '''
 
     def _get_balanced_function(self) -> str:
         """Balanced bot function with moderate aggression."""
         return '''
-def bot_function(visible_objects, move_history, allowed_signals):
+def bot_function(observation):
     """Balanced bot with adaptive tactics and team coordination."""
-    
-    # Count threats, allies, and cover
+    visible_objects = observation.get('visible_objects', [])
+    allowed_signals = observation.get('allowed_signals', [])
+    self_state = observation.get('self', {})
+    memory = observation.get('memory', {})
+    if not isinstance(memory, dict):
+        memory = {}
+
+    def choose_signal(candidate):
+        return candidate if candidate in allowed_signals else 'none'
+
     enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
-    projectiles = [obj for obj in visible_objects if obj.get('type') == 'projectile']
     friends = [obj for obj in visible_objects if obj.get('type') == 'friend']
     walls = [obj for obj in visible_objects if obj.get('type') == 'wall']
-    
-    # Check friend signals for coordination
+
     backup_needed = any(friend.get('signal') == 'need_backup' for friend in friends)
-    
-    # Emergency projectile avoidance
-    for proj in projectiles:
-        if proj.get('distance', float('inf')) < 2.0:
-            dodge_angle = (proj['angle'] + 90) % 360
-            return {'action': 'dodge', 'direction': dodge_angle, 'signal': 'moving_to_cover'}
-    
+
+    for proj in visible_objects:
+        if proj.get('type') == 'projectile' and proj.get('distance', 999.0) < 2.0:
+            dodge_angle = (proj.get('angle', 0.0) + 90.0) % 360.0
+            memory['last_dodge_angle'] = dodge_angle
+            return {
+                'action': 'dodge',
+                'direction': dodge_angle,
+                'signal': choose_signal('moving_to_cover'),
+                'memory': memory,
+            }
+
     if not enemies:
-        # No enemies - use walls for tactical positioning
         if walls and not backup_needed:
-            nearest_wall = min(walls, key=lambda w: w.get('distance', float('inf')))
-            if nearest_wall['distance'] > 3.0:
-                # Move towards wall for cover
-                return {'action': 'move', 'target_x': nearest_wall['x'], 'target_y': nearest_wall['y'], 'signal': 'positioning'}
-        
-        signal = 'regrouping' if backup_needed else 'ready'
-        return {'action': 'rotate', 'angle': 315.0, 'signal': signal}
-    
-    # Find best target (closest enemy)
-    enemies.sort(key=lambda e: e.get('distance', float('inf')))
+            nearest_wall = min(walls, key=lambda w: w.get('distance', 999.0))
+            if nearest_wall.get('distance', 999.0) > 3.0:
+                return {
+                    'action': 'move',
+                    'target_x': nearest_wall.get('x'),
+                    'target_y': nearest_wall.get('y'),
+                    'signal': choose_signal('positioning'),
+                    'memory': memory,
+                }
+
+        return {
+            'action': 'rotate',
+            'angle': 315.0,
+            'signal': choose_signal('regrouping' if backup_needed else 'ready'),
+            'memory': memory,
+        }
+
+    enemies.sort(key=lambda e: e.get('distance', 999.0))
     primary_target = enemies[0]
-    distance = primary_target['distance']
-    
-    # Adaptive behavior based on enemy count and distance
+    memory['last_enemy_id'] = primary_target.get('id')
+    distance = primary_target.get('distance', 999.0)
     enemy_count = len(enemies)
-    
+
     if enemy_count >= 2 and distance < 5.0:
-        # Multiple enemies close - retreat and call for backup
-        retreat_angle = (primary_target['angle'] + 180) % 360
-        return {'action': 'dodge', 'direction': retreat_angle, 'signal': 'need_backup'}
-    elif distance < 3.0:
-        # Single enemy too close - dodge
-        dodge_angle = (primary_target['angle'] + 90) % 360
-        return {'action': 'dodge', 'direction': dodge_angle, 'signal': 'retreating'}
-    elif distance < 10.0:
-        # Good firing range
-        signal = 'focus_fire' if backup_needed else 'firing'
-        return {'action': 'fire', 'target_x': primary_target['x'], 'target_y': primary_target['y'], 'signal': signal}
-    else:
-        # Move closer
-        signal = 'advancing' if backup_needed else 'attacking'
-        return {'action': 'move', 'target_x': primary_target['x'], 'target_y': primary_target['y'], 'signal': signal}
+        retreat_angle = (primary_target.get('angle', 0.0) + 180.0) % 360.0
+        return {
+            'action': 'dodge',
+            'direction': retreat_angle,
+            'signal': choose_signal('need_backup'),
+            'memory': memory,
+        }
+
+    if distance < 3.0:
+        dodge_angle = (primary_target.get('angle', 0.0) + 90.0) % 360.0
+        return {
+            'action': 'dodge',
+            'direction': dodge_angle,
+            'signal': choose_signal('retreating'),
+            'memory': memory,
+        }
+
+    if distance < 10.0 and self_state.get('can_fire', False):
+        return {
+            'action': 'fire',
+            'target_x': primary_target.get('x'),
+            'target_y': primary_target.get('y'),
+            'signal': choose_signal('focus_fire' if backup_needed else 'firing'),
+            'memory': memory,
+        }
+
+    return {
+        'action': 'move',
+        'target_x': primary_target.get('x'),
+        'target_y': primary_target.get('y'),
+        'signal': choose_signal('advancing' if backup_needed else 'attacking'),
+        'memory': memory,
+    }
 '''
 
     def _get_sniper_function(self) -> str:
         """Sniper bot function that prioritizes long-range combat."""
         return '''
-def bot_function(visible_objects, move_history, allowed_signals):
+def bot_function(observation):
     """Sniper bot that prefers long-range engagement and provides overwatch."""
-    import math
-    
-    # Immediate threat assessment
+    visible_objects = observation.get('visible_objects', [])
+    allowed_signals = observation.get('allowed_signals', [])
+    self_state = observation.get('self', {})
+    memory = observation.get('memory', {})
+    if not isinstance(memory, dict):
+        memory = {}
+
+    def choose_signal(candidate):
+        return candidate if candidate in allowed_signals else 'none'
+
     projectiles = [obj for obj in visible_objects if obj.get('type') == 'projectile']
     friends = [obj for obj in visible_objects if obj.get('type') == 'friend']
-    
+
     for proj in projectiles:
-        if proj.get('distance', float('inf')) < 1.8:
-            # Quick dodge
-            return {'action': 'dodge', 'direction': (proj['angle'] + 90) % 360, 'signal': 'moving_to_cover'}
-    
+        if proj.get('distance', 999.0) < 1.8:
+            dodge_angle = (proj.get('angle', 0.0) + 90.0) % 360.0
+            memory['last_dodge'] = dodge_angle
+            return {
+                'action': 'dodge',
+                'direction': dodge_angle,
+                'signal': choose_signal('moving_to_cover'),
+                'memory': memory,
+            }
+
     enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
     if not enemies:
-        # Check if friends need support
-        friends_in_combat = any(friend.get('signal') in ['need_backup', 'retreating'] for friend in friends)
-        signal = 'watching_flank' if friends_in_combat else 'holding_position'
-        return {'action': 'rotate', 'angle': 270.0, 'signal': signal}
-    
-    # Sort enemies by distance (prefer longer range targets)
-    enemies.sort(key=lambda e: e.get('distance', float('inf')))
-    
-    # Look for enemies at preferred range (8-15 units)
-    preferred_targets = [e for e in enemies if 8.0 <= e.get('distance', 0) <= 15.0]
-    
-    if preferred_targets:
-        # Fire at target in preferred range
+        friends_in_trouble = any(
+            friend.get('signal') in ('need_backup', 'retreating') for friend in friends
+        )
+        return {
+            'action': 'rotate',
+            'angle': 270.0,
+            'signal': choose_signal('watching_flank' if friends_in_trouble else 'holding_position'),
+            'memory': memory,
+        }
+
+    enemies.sort(key=lambda e: e.get('distance', 999.0))
+    preferred_targets = [e for e in enemies if 8.0 <= e.get('distance', 0.0) <= 15.0]
+
+    if preferred_targets and self_state.get('can_fire', False):
         target = preferred_targets[0]
-        return {'action': 'fire', 'target_x': target['x'], 'target_y': target['y'], 'signal': 'cover_fire'}
-    
+        memory['last_enemy_id'] = target.get('id')
+        return {
+            'action': 'fire',
+            'target_x': target.get('x'),
+            'target_y': target.get('y'),
+            'signal': choose_signal('cover_fire'),
+            'memory': memory,
+        }
+
     closest_enemy = enemies[0]
-    distance = closest_enemy['distance']
-    
+    distance = closest_enemy.get('distance', 999.0)
+    memory['last_enemy_id'] = closest_enemy.get('id')
+
     if distance < 8.0:
-        # Too close, back away to preferred range
-        retreat_distance = 12.0 - distance
-        retreat_angle = math.radians(closest_enemy['angle'] + 180)
-        retreat_x = closest_enemy['x'] + retreat_distance * math.cos(retreat_angle)
-        retreat_y = closest_enemy['y'] + retreat_distance * math.sin(retreat_angle)
-        return {'action': 'move', 'target_x': retreat_x, 'target_y': retreat_y, 'signal': 'retreating'}
-    else:
-        # Enemy too far, move to optimal range
-        optimal_distance = 10.0
-        approach_angle = math.radians(closest_enemy['angle'])
-        optimal_x = closest_enemy['x'] - optimal_distance * math.cos(approach_angle)
-        optimal_y = closest_enemy['y'] - optimal_distance * math.sin(approach_angle)
-        return {'action': 'move', 'target_x': optimal_x, 'target_y': optimal_y, 'signal': 'advancing'}
+        retreat_distance = max(0.0, 12.0 - distance)
+        retreat_angle = math.radians((closest_enemy.get('angle', 0.0) + 180.0) % 360.0)
+        retreat_x = self_state.get('x', 0.0) + retreat_distance * math.cos(retreat_angle)
+        retreat_y = self_state.get('y', 0.0) + retreat_distance * math.sin(retreat_angle)
+        return {
+            'action': 'move',
+            'target_x': retreat_x,
+            'target_y': retreat_y,
+            'signal': choose_signal('retreating'),
+            'memory': memory,
+        }
+
+    optimal_distance = 10.0
+    approach_angle = math.radians(closest_enemy.get('angle', 0.0))
+    optimal_x = closest_enemy.get('x', 0.0) - optimal_distance * math.cos(approach_angle)
+    optimal_y = closest_enemy.get('y', 0.0) - optimal_distance * math.sin(approach_angle)
+    return {
+        'action': 'move',
+        'target_x': optimal_x,
+        'target_y': optimal_y,
+        'signal': choose_signal('advancing'),
+        'memory': memory,
+    }
 '''
 
     def update_bot_function(self, bot_id: int, new_function_source: str):

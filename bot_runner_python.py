@@ -3,13 +3,16 @@ Python Function Runner for Battle Sim
 Compiles and executes LLM-generated Python functions via Numba JIT with timeout handling.
 """
 
+import copy
 import math
-import time
 import queue
-import numpy as np
-from typing import Dict, List, Any, Optional, Callable
-from dataclasses import dataclass
 import threading
+import time
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any, Callable, Dict, Optional
+
+import numpy as np
 
 # Try to import numba, fall back to no JIT if unavailable
 try:
@@ -26,6 +29,86 @@ except ImportError:
             return func
 
         return decorator
+
+
+try:
+    from RestrictedPython import compile_restricted
+
+    RESTRICTED_AVAILABLE = True
+except ImportError:
+    compile_restricted = None  # type: ignore[assignment]
+    RESTRICTED_AVAILABLE = False
+
+
+def _no_print(*args, **kwargs):
+    """Silence print output from restricted code."""
+    return None
+
+
+def _guarded_getattr(obj, name, default=None):
+    if isinstance(name, str) and name.startswith("_"):
+        raise AttributeError(name)
+    if default is None:
+        return getattr(obj, name)
+    return getattr(obj, name, default)
+
+
+def _guarded_getitem(obj, index):
+    return obj[index]
+
+
+def _guarded_getiter(obj):
+    return iter(obj)
+
+
+def _guarded_iter_unpack_sequence(obj, count):
+    iterator = iter(obj)
+    for _ in range(count):
+        yield next(iterator)
+
+
+def _guarded_unpack_sequence(obj, count):
+    iterator = iter(obj)
+    return tuple(next(iterator) for _ in range(count))
+
+
+def _write_guard(obj):
+    return obj
+
+
+class ScratchPad:
+    """Limited mutable scratch space for bot functions."""
+
+    __slots__ = ("_data", "_limit")
+
+    def __init__(self, limit: int = 16):
+        self._data: Dict[str, Any] = {}
+        self._limit = max(0, limit)
+
+    def set(self, key: str, value: Any) -> bool:
+        if not isinstance(key, str) or not key or len(key) > 32:
+            return False
+        if not isinstance(value, (int, float, bool, str)) and value is not None:
+            return False
+        if key not in self._data and len(self._data) >= self._limit:
+            return False
+        self._data[key] = value
+        return True
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
+
+    def delete(self, key: str) -> None:
+        self._data.pop(key, None)
+
+    def clear(self) -> None:
+        self._data.clear()
+
+    def items(self):  # pragma: no cover - inspection helper
+        return tuple(self._data.items())
+
+    def __repr__(self) -> str:
+        return f"ScratchPad(size={len(self._data)}, limit={self._limit})"
 
 
 @dataclass
@@ -78,10 +161,17 @@ ALLOWED_SIGNALS = {
 }
 
 
+def _noop_bot_function(*args: Any, **kwargs: Any) -> Any:
+    return None
+
+
 class PythonFunctionRunner:
     """Manages compilation and execution of LLM-generated Python bot functions."""
 
-    def __init__(self):
+    MEMORY_LIMIT = 16
+    SCRATCH_LIMIT = 16
+
+    def __init__(self, sandbox_enabled: bool = True):
         self.bot_functions: Dict[int, BotFunction] = {}
         self.execution_stats = {
             "total_executions": 0,
@@ -92,6 +182,8 @@ class PythonFunctionRunner:
         self.max_execution_time = 0.01  # 10ms limit
         self.compile_cache = {}  # Cache compiled functions by source code hash
         self.allowed_signals = list(ALLOWED_SIGNALS.keys())
+        self.bot_memory: Dict[int, Dict[str, Any]] = {}
+        self.sandbox_enabled = sandbox_enabled and RESTRICTED_AVAILABLE
 
     def _execute_with_timeout(
         self, func: Callable, *args
@@ -144,7 +236,8 @@ class PythonFunctionRunner:
             cached_func = self.compile_cache[code_hash]
             version = (
                 self.bot_functions.get(
-                    bot_id, BotFunction("", None, 0, 0, bot_id)
+                    bot_id,
+                    BotFunction("", _noop_bot_function, 0.0, 0, bot_id),
                 ).version
                 + 1
             )
@@ -155,6 +248,7 @@ class PythonFunctionRunner:
                 version=version,
                 bot_id=bot_id,
             )
+            self.bot_memory.pop(bot_id, None)
             return True
 
         start_time = time.time()
@@ -170,7 +264,8 @@ class PythonFunctionRunner:
             # Store compiled function
             version = (
                 self.bot_functions.get(
-                    bot_id, BotFunction("", None, 0, 0, bot_id)
+                    bot_id,
+                    BotFunction("", _noop_bot_function, 0.0, 0, bot_id),
                 ).version
                 + 1
             )
@@ -184,6 +279,7 @@ class PythonFunctionRunner:
 
             # Cache for reuse
             self.compile_cache[code_hash] = compiled_func
+            self.bot_memory.pop(bot_id, None)
 
             return True
 
@@ -202,59 +298,154 @@ class PythonFunctionRunner:
             Compiled function or None if compilation failed
         """
         try:
-            # Create a restricted namespace for execution
-            namespace = {
-                "math": math,
-                "np": np,
-                "__builtins__": {
-                    "len": len,
-                    "range": range,
-                    "min": min,
-                    "max": max,
-                    "abs": abs,
-                    "sum": sum,
-                    "round": round,
-                    "float": float,
-                    "int": int,
-                    "bool": bool,
-                    "str": str,
-                    "list": list,
-                    "dict": dict,
-                    "enumerate": enumerate,
-                    "zip": zip,
-                    "any": any,  # Allow any() builtin function
-                    "all": all,  # Allow all() builtin function as well
-                    "__import__": __import__,  # Allow imports for math module
-                },
-            }
+            if self.sandbox_enabled:
+                func = self._compile_with_restrictedpython(source_code)
+            else:
+                func = self._compile_with_legacy_exec(source_code)
 
-            # Execute the function definition
-            exec(source_code, namespace)
+            if func is None:
+                return None
 
-            # Find the bot function (should be named 'bot_function')
-            if "bot_function" not in namespace:
-                raise ValueError("Function must be named 'bot_function'")
-
-            func = namespace["bot_function"]
-
-            # Validate function signature
             self._validate_function_signature(func)
 
-            # Apply JIT compilation if available
-            if NUMBA_AVAILABLE:
+            if NUMBA_AVAILABLE and not self.sandbox_enabled:
                 try:
-                    # Create a JIT-compiled version
-                    jit_func = jit(nopython=False, cache=True)(func)
-                    return jit_func
+                    return jit(nopython=False, cache=True)(func)
                 except Exception as jit_error:
                     print(f"JIT compilation failed, using regular Python: {jit_error}")
                     return func
-            else:
-                return func
+
+            return func
 
         except Exception as e:
             print(f"Function compilation error: {e}")
             return None
+
+    def _compile_with_restrictedpython(self, source_code: str) -> Optional[Callable]:
+        if not RESTRICTED_AVAILABLE or compile_restricted is None:
+            return None
+
+        byte_code = compile_restricted(source_code, "<bot_function>", "exec")
+        restricted_globals = self._build_restricted_globals()
+        exec(byte_code, restricted_globals)
+        func = restricted_globals.get("bot_function")
+        if not callable(func):
+            raise ValueError("Function must define callable 'bot_function'")
+        return func
+
+    def _compile_with_legacy_exec(self, source_code: str) -> Optional[Callable]:
+        namespace: Dict[str, Any] = {
+            "math": math,
+            "np": np,
+            "__builtins__": {
+                "len": len,
+                "range": range,
+                "min": min,
+                "max": max,
+                "abs": abs,
+                "sum": sum,
+                "round": round,
+            "float": float,
+            "int": int,
+            "bool": bool,
+            "str": str,
+            "list": list,
+            "dict": dict,
+            "isinstance": isinstance,
+            "enumerate": enumerate,
+            "zip": zip,
+            "any": any,
+            "all": all,
+        },
+        }
+
+        exec(source_code, namespace)
+
+        func = namespace.get("bot_function")
+        if not callable(func):
+            raise ValueError("Function must be named 'bot_function'")
+        return func
+
+    def _build_restricted_globals(self) -> Dict[str, Any]:
+        safe_builtins = {
+            "abs": abs,
+            "min": min,
+            "max": max,
+            "sum": sum,
+            "len": len,
+            "range": range,
+            "enumerate": enumerate,
+            "zip": zip,
+            "sorted": sorted,
+            "round": round,
+            "float": float,
+            "int": int,
+            "bool": bool,
+            "str": str,
+            "list": list,
+            "dict": dict,
+            "set": set,
+            "tuple": tuple,
+            "any": any,
+            "all": all,
+            "isinstance": isinstance,
+        }
+
+        return {
+            "__builtins__": safe_builtins,
+            "math": math,
+            "np": np,
+            "_print_": _no_print,
+            "_getattr_": _guarded_getattr,
+            "_getitem_": _guarded_getitem,
+            "_getiter_": _guarded_getiter,
+            "_iter_unpack_sequence_": _guarded_iter_unpack_sequence,
+            "_unpack_sequence_": _guarded_unpack_sequence,
+            "_write_": _write_guard,
+            "ScratchPad": ScratchPad,
+        }
+
+    def _prepare_observation(self, bot_id: int, observation: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(observation, dict):
+            raise ValueError("Observation must be a dictionary")
+
+        payload = copy.deepcopy(observation)
+        payload["memory"] = copy.deepcopy(self.bot_memory.get(bot_id, {}))
+        payload["allowed_signals"] = tuple(self.allowed_signals)
+        payload["scratchpad"] = ScratchPad(self.SCRATCH_LIMIT)
+        return self._make_read_only(payload)
+
+    def _make_read_only(self, obj: Any) -> Any:
+        if isinstance(obj, dict):
+            frozen = {key: self._make_read_only(value) for key, value in obj.items()}
+            return MappingProxyType(frozen)
+        if isinstance(obj, list):
+            return tuple(self._make_read_only(value) for value in obj)
+        if isinstance(obj, set):
+            return frozenset(self._make_read_only(value) for value in obj)
+        if isinstance(obj, tuple):
+            return tuple(self._make_read_only(value) for value in obj)
+        if isinstance(obj, ScratchPad):
+            return obj
+        return obj
+
+    def _sanitize_memory(self, memory: Any) -> Dict[str, Any]:
+        if not isinstance(memory, dict):
+            return {}
+
+        sanitized: Dict[str, Any] = {}
+        for key, value in memory.items():
+            if len(sanitized) >= self.MEMORY_LIMIT:
+                break
+            if not isinstance(key, str) or not key or len(key) > 32:
+                continue
+
+            if isinstance(value, (int, float, bool)) or value is None:
+                sanitized[key] = value
+            elif isinstance(value, str):
+                sanitized[key] = value[:64]
+
+        return sanitized
 
     def _validate_function_signature(self, func: Callable):
         """Validate that function has correct signature."""
@@ -263,30 +454,25 @@ class PythonFunctionRunner:
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
 
-        if len(params) != 3:
+        if len(params) != 1:
             raise ValueError(
-                f"Function must have exactly 3 parameters, got {len(params)}: {params}"
+                f"Function must accept a single 'observation' parameter, got {len(params)}: {params}"
             )
 
-        if (
-            params[0] != "visible_objects"
-            or params[1] != "move_history"
-            or params[2] != "allowed_signals"
-        ):
+        if params[0] != "observation":
             raise ValueError(
-                f"Function parameters must be 'visible_objects', 'move_history', and 'allowed_signals', got: {params}"
+                "Function parameter must be named 'observation' to receive world state"
             )
 
     def execute_bot_function(
-        self, bot_id: int, visible_objects: List[Dict], move_history: List[Dict]
+        self, bot_id: int, observation: Dict[str, Any]
     ) -> Optional[Dict]:
         """
         Execute a bot's compiled function with timeout protection.
 
         Args:
             bot_id: Bot identifier
-            visible_objects: List of visible objects
-            move_history: List of recent moves
+            observation: Full observation payload for the bot
 
         Returns:
             Action dictionary or None if execution failed
@@ -298,11 +484,10 @@ class PythonFunctionRunner:
         start_time = time.time()
 
         try:
+            observation_payload = self._prepare_observation(bot_id, observation)
             result = self._execute_with_timeout(
                 bot_func.compiled_func,
-                visible_objects,
-                move_history,
-                self.allowed_signals,
+                observation_payload,
             )
 
             execution_time = time.time() - start_time
@@ -313,7 +498,13 @@ class PythonFunctionRunner:
             self._update_avg_execution_time(execution_time)
 
             # Validate and sanitize result
-            sanitized_result = self._validate_and_sanitize_action(result)
+            sanitized_result, sanitized_memory = self._validate_and_sanitize_action(result)
+
+            if sanitized_memory:
+                self.bot_memory[bot_id] = sanitized_memory
+            elif bot_id in self.bot_memory:
+                del self.bot_memory[bot_id]
+
             return sanitized_result
 
         except TimeoutError:
@@ -330,7 +521,9 @@ class PythonFunctionRunner:
             print(f"Bot {bot_id} function execution error: {e}")
             return None
 
-    def _validate_and_sanitize_action(self, action: Any) -> Optional[Dict]:
+    def _validate_and_sanitize_action(
+        self, action: Any
+    ) -> tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
         """
         Validate and sanitize action output from bot function.
 
@@ -338,14 +531,20 @@ class PythonFunctionRunner:
             action: Raw action from bot function
 
         Returns:
-            Sanitized action dictionary or None if invalid
+            Tuple of (sanitized action or None, sanitized memory dict)
         """
+        sanitized_memory: Dict[str, Any] = {}
+
+        if isinstance(action, dict) and "memory" in action:
+            sanitized_memory = self._sanitize_memory(action.get("memory"))
+            action = {k: v for k, v in action.items() if k != "memory"}
+
         if not isinstance(action, dict):
-            return None
+            return None, sanitized_memory
 
         action_type = action.get("action")
         if action_type not in ["move", "fire", "rotate", "dodge"]:
-            return None
+            return None, sanitized_memory
 
         sanitized = {"action": action_type}
 
@@ -368,7 +567,7 @@ class PythonFunctionRunner:
                 sanitized["target_x"] = float(target_x)
                 sanitized["target_y"] = float(target_y)
             else:
-                return None
+                return None, sanitized_memory
 
         elif action_type == "fire":
             target_x = action.get("target_x")
@@ -379,23 +578,23 @@ class PythonFunctionRunner:
                 sanitized["target_x"] = float(target_x)
                 sanitized["target_y"] = float(target_y)
             else:
-                return None
+                return None, sanitized_memory
 
         elif action_type == "rotate":
             angle = action.get("angle")
             if isinstance(angle, (int, float)):
                 sanitized["angle"] = float(angle) % 360  # Normalize to 0-360
             else:
-                return None
+                return None, sanitized_memory
 
         elif action_type == "dodge":
             direction = action.get("direction")
             if isinstance(direction, (int, float)):
                 sanitized["direction"] = float(direction) % 360  # Normalize to 0-360
             else:
-                return None
+                return None, sanitized_memory
 
-        return sanitized
+        return sanitized, sanitized_memory
 
     def _update_avg_execution_time(self, execution_time: float):
         """Update running average of execution times."""
@@ -429,17 +628,20 @@ class PythonFunctionRunner:
         stats["bot_count"] = len(self.bot_functions)
         stats["cache_size"] = len(self.compile_cache)
         stats["numba_available"] = NUMBA_AVAILABLE
+        stats["sandbox_enabled"] = self.sandbox_enabled
         return stats
 
     def clear_bot_function(self, bot_id: int):
         """Remove a bot's compiled function."""
         if bot_id in self.bot_functions:
             del self.bot_functions[bot_id]
+        self.bot_memory.pop(bot_id, None)
 
     def clear_all_functions(self):
         """Clear all compiled functions and cache."""
         self.bot_functions.clear()
         self.compile_cache.clear()
+        self.bot_memory.clear()
         self.execution_stats = {
             "total_executions": 0,
             "total_timeouts": 0,
@@ -450,71 +652,95 @@ class PythonFunctionRunner:
 
 # Example bot functions for testing
 EXAMPLE_AGGRESSIVE_FUNCTION = '''
-def bot_function(visible_objects, move_history, allowed_signals):
+def bot_function(observation):
     """Aggressive bot that charges at nearest enemy."""
-    import math
-    
-    # Find nearest enemy
-    nearest_enemy = None
-    min_distance = float('inf')
-    
-    for obj in visible_objects:
-        if obj.get('type') == 'enemy' and obj.get('distance', float('inf')) < min_distance:
-            min_distance = obj['distance']
-            nearest_enemy = obj
-    
-    # If enemy found, move towards them and fire
-    if nearest_enemy:
-        if min_distance < 3.0:
-            # Too close, dodge
-            return {'action': 'dodge', 'direction': nearest_enemy['angle'] + 90, 'signal': 'retreating'}
-        elif min_distance < 8.0:
-            # In range, fire
-            return {'action': 'fire', 'target_x': nearest_enemy['x'], 'target_y': nearest_enemy['y'], 'signal': 'firing'}
-        else:
-            # Move closer
-            return {'action': 'move', 'target_x': nearest_enemy['x'], 'target_y': nearest_enemy['y'], 'signal': 'attacking'}
-    
-    # No enemies, search
-    return {'action': 'rotate', 'angle': 45.0, 'signal': 'ready'}
+    visible_objects = observation.get('visible_objects', [])
+    allowed_signals = observation.get('allowed_signals', [])
+
+    def choose(signal):
+        return signal if signal in allowed_signals else 'none'
+
+    enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
+    if not enemies:
+        return {'action': 'rotate', 'angle': 45.0, 'signal': choose('ready'), 'memory': {}}
+
+    enemies.sort(key=lambda e: e.get('distance', 999.0))
+    target = enemies[0]
+
+    if target.get('distance', 999.0) < 3.0:
+        dodge_angle = (target.get('angle', 0.0) + 90.0) % 360.0
+        return {'action': 'dodge', 'direction': dodge_angle, 'signal': choose('retreating'), 'memory': {}}
+
+    if observation.get('self', {}).get('can_fire', False):
+        return {
+            'action': 'fire',
+            'target_x': target.get('x'),
+            'target_y': target.get('y'),
+            'signal': choose('firing'),
+            'memory': {'last_enemy_id': target.get('id')},
+        }
+
+    return {
+        'action': 'move',
+        'target_x': target.get('x'),
+        'target_y': target.get('y'),
+        'signal': choose('attacking'),
+        'memory': {'last_enemy_id': target.get('id')},
+    }
 '''
 
 EXAMPLE_DEFENSIVE_FUNCTION = '''
-def bot_function(visible_objects, move_history, allowed_signals):
+def bot_function(observation):
     """Defensive bot that keeps distance and fires accurately."""
-    import math
-    
-    # Check for incoming projectiles
-    for obj in visible_objects:
-        if obj.get('type') == 'projectile' and obj.get('distance', float('inf')) < 2.0:
-            # Dodge incoming projectile
-            return {'action': 'dodge', 'direction': obj['angle'] + 90, 'signal': 'moving_to_cover'}
-    
-    # Find enemies
+    visible_objects = observation.get('visible_objects', [])
+    allowed_signals = observation.get('allowed_signals', [])
+
+    def choose(signal):
+        return signal if signal in allowed_signals else 'none'
+
+    for proj in visible_objects:
+        if proj.get('type') == 'projectile' and proj.get('distance', 999.0) < 2.0:
+            dodge_angle = (proj.get('angle', 0.0) + 90.0) % 360.0
+            return {'action': 'dodge', 'direction': dodge_angle, 'signal': choose('moving_to_cover'), 'memory': {}}
+
     enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
-    
-    if enemies:
-        # Sort by distance
-        enemies.sort(key=lambda e: e.get('distance', float('inf')))
-        target = enemies[0]
-        
-        distance = target.get('distance', float('inf'))
-        
-        if distance < 5.0:
-            # Too close, back away
-            retreat_angle = (target['angle'] + 180) % 360
-            retreat_x = target['x'] + 10 * math.cos(math.radians(retreat_angle))
-            retreat_y = target['y'] + 10 * math.sin(math.radians(retreat_angle))
-            return {'action': 'move', 'target_x': retreat_x, 'target_y': retreat_y, 'signal': 'retreating'}
-        elif distance < 12.0:
-            # Good range, fire
-            return {'action': 'fire', 'target_x': target['x'], 'target_y': target['y'], 'signal': 'cover_fire'}
-        else:
-            # Move closer but cautiously
-            approach_x = target['x'] + 2 * math.cos(math.radians(target['angle'] + 180))
-            approach_y = target['y'] + 2 * math.sin(math.radians(target['angle'] + 180))
-            return {'action': 'move', 'target_x': approach_x, 'target_y': approach_y, 'signal': 'advancing'}
-    
-    # No enemies visible, rotate to search
-    return {'action': 'rotate', 'angle': 90.0, 'signal': 'watching_flank'}
+    if not enemies:
+        return {'action': 'rotate', 'angle': 90.0, 'signal': choose('watching_flank'), 'memory': {}}
+
+    enemies.sort(key=lambda e: e.get('distance', 999.0))
+    target = enemies[0]
+    distance = target.get('distance', 999.0)
+
+    if distance < 5.0:
+        retreat_angle = (target.get('angle', 0.0) + 180.0) % 360.0
+        retreat_radians = math.radians(retreat_angle)
+        retreat_x = observation.get('self', {}).get('x', 0.0) + 10.0 * math.cos(retreat_radians)
+        retreat_y = observation.get('self', {}).get('y', 0.0) + 10.0 * math.sin(retreat_radians)
+        return {
+            'action': 'move',
+            'target_x': retreat_x,
+            'target_y': retreat_y,
+            'signal': choose('retreating'),
+            'memory': {},
+        }
+
+    if distance < 12.0 and observation.get('self', {}).get('can_fire', False):
+        return {
+            'action': 'fire',
+            'target_x': target.get('x'),
+            'target_y': target.get('y'),
+            'signal': choose('cover_fire'),
+            'memory': {},
+        }
+
+    approach_angle = math.radians(target.get('angle', 0.0))
+    approach_x = target.get('x', 0.0) - 2.0 * math.cos(approach_angle)
+    approach_y = target.get('y', 0.0) - 2.0 * math.sin(approach_angle)
+    return {
+        'action': 'move',
+        'target_x': approach_x,
+        'target_y': approach_y,
+        'signal': choose('advancing'),
+        'memory': {},
+    }
 '''

@@ -8,7 +8,7 @@ import json
 import math
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, cast
 
 import numpy as np
 import pygfx as gfx
@@ -16,13 +16,12 @@ import pylinalg as la
 from wgpu.gui.auto import WgpuCanvas, run
 
 # Import visibility system to use same logic as 2D viewer
+PythonLLMController: Any
 try:
-    from llm_bot_controller import PythonLLMController
+    from llm_bot_controller import PythonLLMController as _PythonLLMController
+    PythonLLMController = cast(Any, _PythonLLMController)
 except ImportError:
-    try:
-        from python_llm import PythonLLMController  # Backward compatibility
-    except ImportError:
-        PythonLLMController = None
+    PythonLLMController = cast(object, None)
 
 
 class Battle3DViewer:
@@ -410,7 +409,6 @@ class Battle3DViewer:
             return self._get_visible_objects_fallback(selected_bot, current_state)
 
         # Create a mock arena compatible with the LLM visibility API
-        from battle_arena import Arena
 
         class MockArena:
             def __init__(self, viewer, current_state):
@@ -632,7 +630,7 @@ class Battle3DViewer:
                     color=color, roughness=0.15, metalness=0.6
                 )
                 bot_body = gfx.Mesh(bot_geom, bot_mat)
-                bot_body.bot_id = bot_id  # For picking
+                setattr(bot_body, "bot_id", bot_id)  # For picking
                 self.scene.add(bot_body)
 
                 # Heading indicator

@@ -9,7 +9,6 @@ import sys
 import os
 import subprocess
 import tempfile
-import shutil
 from typing import Dict
 from pathlib import Path
 

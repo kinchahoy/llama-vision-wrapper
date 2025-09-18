@@ -3,11 +3,12 @@ LLM Battle Simulator - Core Arena and Physics with pymunk
 Handles 2v2 battles with robust physics and deterministic simulation.
 """
 
+import importlib
 import math
 import time
-import json
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
 import pymunk
-from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 
 
@@ -38,6 +39,12 @@ class ProjectileData:
     ttl: float
 
 
+if TYPE_CHECKING:
+    _DSLExecutor = Any
+    _DSLParser = Any
+    _LLMController = Any
+
+
 class Arena:
     """2v2 Battle Arena with pymunk physics simulation."""
 
@@ -62,6 +69,7 @@ class Arena:
     PROJ_TTL = 5.0  # seconds
     PROJ_DAMAGE = 25  # HP
     FIRE_RATE = 8.0  # Hz (shots per second)
+    FIRE_COOLDOWN = 1.0  # seconds enforced between shots regardless of fire rate
 
     # Perception configuration
     FOV_ANGLE = math.radians(120)  # 120° field of view
@@ -75,7 +83,7 @@ class Arena:
     def __init__(
         self,
         seed: int = 42,
-        spawn_config: Dict = None,
+        spawn_config: Optional[Dict[str, Any]] = None,
         arena_size: Optional[Tuple[float, float]] = None,
         bots_per_side: Optional[int] = None,
     ):
@@ -187,7 +195,7 @@ class Arena:
                 continue
 
             body = self.bot_bodies[bot_id]
-            bot_data = self.bot_data[bot_id]
+            self.bot_data[bot_id]
 
             # Apply acceleration toward target velocity
             current_vel = body.velocity
@@ -409,7 +417,7 @@ class Arena:
 
         # Check 1-second fire rate limit
         time_since_last = self.time - bot_data.last_fire_time
-        min_time_between = 1.0  # 1 second minimum between shots
+        min_time_between = self.FIRE_COOLDOWN
 
         if time_since_last < min_time_between:
             return False
@@ -532,6 +540,22 @@ class Arena:
                 return True
 
         return False
+
+    def get_fire_status(self, bot_id: int) -> Tuple[float, bool]:
+        """Return (cooldown_remaining, can_fire) for the specified bot."""
+        if bot_id not in self.bot_data:
+            return float("inf"), False
+
+        bot_data = self.bot_data[bot_id]
+        cooldown_remaining = max(
+            0.0, self.FIRE_COOLDOWN - (self.time - bot_data.last_fire_time)
+        )
+        can_fire = (
+            self._is_bot_alive(bot_id)
+            and cooldown_remaining <= 0.0
+            and not self._check_friendly_fire_risk(bot_id)
+        )
+        return cooldown_remaining, can_fire
 
     def _resolve_target_bearing(self, bot_id: int, target_bearing: float) -> float:
         """Convert absolute bearing to target heading with predictive aiming."""
@@ -1011,7 +1035,7 @@ class Arena:
             for bot_id, body in list(self.bot_bodies.items()):
                 try:
                     self.space.remove(body, *body.shapes)
-                except:
+                except Exception:
                     pass  # Ignore removal errors
 
             # Remove wall bodies
@@ -1019,20 +1043,20 @@ class Arena:
                 for wall_body, wall_shape in self.wall_bodies:
                     try:
                         self.space.remove(wall_body, wall_shape)
-                    except:
+                    except Exception:
                         pass  # Ignore removal errors
 
             # Clear the space without using iteration callbacks
             self.space = None
-        except:
+        except Exception:
             pass  # Ignore all cleanup errors when profiling
 
 
 def run_battle_simulation(
     seed: int = 42,
     max_duration: float = 60.0,
-    spawn_config: Dict = None,
-    bot_programs: Dict = None,
+    spawn_config: Optional[Dict[str, Any]] = None,
+    bot_programs: Optional[Dict[str, Any]] = None,
     verbose: bool = True,
     arena_size: Optional[Tuple[float, float]] = None,
     bots_per_side: Optional[int] = None,
@@ -1046,8 +1070,12 @@ def run_battle_simulation(
         bot_programs: Custom bot program assignments
         verbose: Whether to print progress
     """
-    from dsl_parser import DSLParser, DSLExecutor
-    from llm import LLMController
+    dsl_module = importlib.import_module("dsl_parser")
+    llm_module = importlib.import_module("llm")
+
+    DSLParser = getattr(dsl_module, "DSLParser")
+    DSLExecutor = getattr(dsl_module, "DSLExecutor")
+    LLMController = getattr(llm_module, "LLMController")
 
     arena = Arena(seed, spawn_config, arena_size, bots_per_side)
     dsl_parser = DSLParser()

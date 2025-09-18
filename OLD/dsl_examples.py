@@ -4,7 +4,6 @@ This replaces the old function-based DSL system.
 """
 
 # Import the new DSL components
-from dsl_parser import DSLParser, DSLExecutor, DSLRule, MockLLMResponse
 
 # Backward compatibility - these are now text strings instead of function lists
 AGGRESSIVE_PROGRAM_TEXT = """

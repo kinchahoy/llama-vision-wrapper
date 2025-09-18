@@ -3,7 +3,36 @@ Panda3D Battle Viewer
 Interactive 3D visualization of battle simulations using the Panda3D engine.
 """
 
-from panda3d.core import loadPrcFileData
+import json
+import math
+import sys
+from typing import Any, Dict, cast
+
+from direct.showbase.ShowBase import ShowBase
+from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, DirectLabel
+from direct.gui import DirectGuiGlobals as DGG
+from direct.task import Task
+from panda3d.core import (  # ty: ignore[unresolved-import]
+    AmbientLight,
+    DirectionalLight,
+    NodePath,
+    TextNode,
+    LPoint3f,
+    CardMaker,
+    CollisionTraverser,
+    CollisionHandlerQueue,
+    CollisionRay,
+    CollisionNode,
+    GeomNode,
+    Geom,
+    GeomVertexData,
+    GeomVertexFormat,
+    GeomVertexWriter,
+    GeomTriangles,
+    Vec3,
+    AntialiasAttrib,
+    loadPrcFileData,
+)
 
 # Force OpenGL core profile (mac wants this), and linear workflow.
 loadPrcFileData("", "load-display pandagl")
@@ -15,47 +44,13 @@ loadPrcFileData("", "sync-video true")
 # loadPrcFileData("", "gl-debug true")
 # loadPrcFileData("", "notify-level-glgsg info")
 
-import math
-import json
-import sys
-from typing import Dict, List, Tuple, Optional
-
-from direct.showbase.ShowBase import ShowBase
-from direct.gui.DirectGui import DirectFrame, DirectSlider, DirectButton, OnscreenText, DirectLabel
-from direct.gui import DirectGuiGlobals as DGG
-from direct.task import Task
-from panda3d.core import (
-    AmbientLight,
-    DirectionalLight,
-    NodePath,
-    TextNode,
-    LPoint3f,
-    LVecBase3f,
-    LineSegs,
-    CardMaker,
-    CollisionTraverser,
-    CollisionHandlerQueue,
-    CollisionRay,
-    CollisionNode,
-    GeomNode,
-    BitMask32,
-    Geom,
-    GeomVertexData,
-    GeomVertexFormat,
-    GeomVertexWriter,
-    GeomTriangles,
-    Vec3,
-    AntialiasAttrib,
-)
-
 # Import visibility system to use same logic as 2D viewer
+PythonLLMController: Any
 try:
-    from llm_bot_controller import PythonLLMController
+    from llm_bot_controller import PythonLLMController as _PythonLLMController
+    PythonLLMController = cast(Any, _PythonLLMController)
 except ImportError:
-    try:
-        from python_llm import PythonLLMController  # Backward compatibility
-    except ImportError:
-        PythonLLMController = None
+    PythonLLMController = cast(object, None)
 
 
 def _init_hq_rendering(app):
@@ -769,16 +764,18 @@ class Battle3DViewer(ShowBase):
 
             # Configure the 3D display region to exclude the panels and bottom bar
             if w > 0 and h > 0 and not self._initial_setup_done:
-                l = min(1.0, max(0.0, left_w / float(w)))
-                r = min(1.0, max(0.0, 1.0 - (right_w / float(w))))
-                b = min(1.0, max(0.0, bar_h / float(h)))
-                t = 1.0
+                left_ratio = min(1.0, max(0.0, left_w / float(w)))
+                right_ratio = min(1.0, max(0.0, 1.0 - (right_w / float(w))))
+                bottom_ratio = min(1.0, max(0.0, bar_h / float(h)))
+                top_ratio = 1.0
 
                 # Simply modify the default display region dimensions
                 try:
                     default_dr = self.win.getDisplayRegion(0)
                     if default_dr:
-                        default_dr.setDimensions(l, r, b, t)
+                        default_dr.setDimensions(
+                            left_ratio, right_ratio, bottom_ratio, top_ratio
+                        )
                         default_dr.setSort(0)  # Normal sort order for 3D
                         self._three_d_region = default_dr
                         self._initial_setup_done = True
@@ -1017,7 +1014,6 @@ class Battle3DViewer(ShowBase):
             return self._get_visible_objects_fallback(selected_bot, current_state)
 
         # Create a mock arena compatible with the LLM visibility API
-        from battle_arena import Arena
 
         class MockArena:
             def __init__(self, viewer, current_state):
@@ -1699,7 +1695,8 @@ def run_3d_viewer(battle_file: str):
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     app = Battle3DViewer(battle_data)
-    app.run()
+    run_fn = getattr(app, "run")
+    run_fn()
 
 
 if __name__ == "__main__":

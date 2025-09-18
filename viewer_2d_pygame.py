@@ -3,19 +3,19 @@ Pygame Battle Viewer with Timeline Scrubbing
 Interactive visualization of battle simulations with playback controls.
 """
 
-import pygame
-import math
 import json
-from typing import Dict, List, Tuple, Optional
+import math
+from typing import Any, Dict, List, Optional, Tuple, cast
+
+import pygame
 
 # Import visibility system to use same logic as bot programs
+PythonLLMController: Any
 try:
-    from llm_bot_controller import PythonLLMController
+    from llm_bot_controller import PythonLLMController as _PythonLLMController
+    PythonLLMController = cast(Any, _PythonLLMController)
 except ImportError:
-    try:
-        from python_llm import PythonLLMController  # Backward compatibility
-    except ImportError:
-        PythonLLMController = None
+    PythonLLMController = cast(object, None)
 
 
 class BattleViewer:
@@ -665,7 +665,7 @@ class BattleViewer:
             f"Function: {personality}_combat_v{version}", (x + 5, y + 30), self.WHITE
         )
         self._draw_text(
-            f"LLM Generated: Python Function", (x + 5, y + 50), color=(150, 150, 255)
+            "LLM Generated: Python Function", (x + 5, y + 50), color=(150, 150, 255)
         )
 
         # Current signal with description
@@ -848,7 +848,6 @@ class BattleViewer:
         # We need to reconstruct arena state from the logged state.
         # Create a minimal mock that provides the necessary interface.
         # Pass `self` (the viewer instance) to access metadata.
-        from battle_arena import Arena
 
         class MockArena:
             def __init__(self, viewer, current_state):
@@ -1102,7 +1101,7 @@ class BattleViewer:
         self,
         text: str,
         pos: Tuple[int, int],
-        color: Tuple[int, int, int] = None,
+        color: Optional[Tuple[int, int, int]] = None,
         center: bool = False,
     ):
         """Draw text at position."""
