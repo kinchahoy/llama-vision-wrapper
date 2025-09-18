@@ -1,11 +1,16 @@
 """Smoke test to ensure python battle runner produces expected summary data."""
 
+import sys
 import importlib.util
 from pathlib import Path
 
 
 def _load_module(name: str, filename: str):
-    module_path = Path(__file__).resolve().parent.parent / filename
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+    module_path = project_root / filename
     spec = importlib.util.spec_from_file_location(name, module_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load module '{name}' from {module_path}")
@@ -14,7 +19,7 @@ def _load_module(name: str, filename: str):
     return module
 
 
-_run_battle_module = _load_module("run_battle_sim_python", "run-battle-sim-python.py")
+_run_battle_module = _load_module("battle_runner_cli", "battle_runner_cli.py")
 
 
 def test_python_battle_summary_structure():
