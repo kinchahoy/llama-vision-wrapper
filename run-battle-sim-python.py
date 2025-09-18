@@ -8,8 +8,8 @@ import json
 from typing import Dict, Optional, Tuple
 
 from battle_sim import Arena
-from python_runner import PythonFunctionRunner
-from python_llm import PythonLLMController
+from run_battle_sim_python import PythonFunctionRunner
+from llm_python_gen import PythonLLMController
 
 
 def run_python_battle(
@@ -224,17 +224,21 @@ def _generate_python_battle_summary(
     return python_summary
 
 
-def run_interactive_viewer(battle_file: str, use_3d: bool = False, use_godot: bool = False):
+def run_interactive_viewer(
+    battle_file: str, use_3d: bool = False, use_godot: bool = False
+):
     """Launch interactive viewer with a saved Python battle JSON file."""
     if use_godot:
         import importlib.util
 
-        spec = importlib.util.spec_from_file_location("graphicsgodot3d", "graphicsgodot3d.py")
+        spec = importlib.util.spec_from_file_location(
+            "graphicsgodot3d", "graphics-3d-godot.py"
+        )
         graphicsgodot3d = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(graphicsgodot3d)
         graphicsgodot3d.run_godot_viewer(battle_file)
         return
-        
+
     if use_3d:
         import importlib.util
 
@@ -249,7 +253,7 @@ def run_interactive_viewer(battle_file: str, use_3d: bool = False, use_godot: bo
     import importlib.util
 
     spec2d = importlib.util.spec_from_file_location(
-        "graphics2dsim", "graphics-2dsim.py"
+        "graphics2dsim", "graphics-2d-simple.py"
     )
     graphics2dsim = importlib.util.module_from_spec(spec2d)
     spec2d.loader.exec_module(graphics2dsim)
@@ -302,7 +306,9 @@ def main():
             print("Examples:")
             print("  uv run python run_python_battle.py viewer battle_output.json")
             print("  uv run python run_python_battle.py viewer battle_output.json --3d")
-            print("  uv run python run_python_battle.py viewer battle_output.json --godot3d")
+            print(
+                "  uv run python run_python_battle.py viewer battle_output.json --godot3d"
+            )
         return
 
     import argparse
@@ -335,7 +341,11 @@ def main():
 
     if args.command == "viewer":
         if args.battle_file:
-            run_interactive_viewer(args.battle_file, getattr(args, "3d", False), getattr(args, "godot3d", False))
+            run_interactive_viewer(
+                args.battle_file,
+                getattr(args, "3d", False),
+                getattr(args, "godot3d", False),
+            )
         else:
             print("Error: viewer command requires a battle JSON file")
             print(
@@ -381,7 +391,9 @@ def main():
         print(f"\nTo view this battle:")
         print(f"  2D: uv run python run_python_battle.py viewer {output_file}")
         print(f"  3D: uv run python run_python_battle.py viewer {output_file} --3d")
-        print(f"  Godot: uv run python run_python_battle.py viewer {output_file} --godot3d")
+        print(
+            f"  Godot: uv run python run_python_battle.py viewer {output_file} --godot3d"
+        )
 
 
 if __name__ == "__main__":
