@@ -45,6 +45,13 @@ func _ready():
 	lighting = get_node("VBoxContainer/MainArea/ViewportContainer/SubViewport/Lighting")
 	play_button = get_node("VBoxContainer/BottomPanel/Toolbar/PlayButton")
 	timeline_slider = get_node("VBoxContainer/BottomPanel/Timeline/TimelineSlider")
+
+	# Ensure the viewport container stretches; avoid manual SubViewport sizing when stretched
+	if viewport_container:
+		viewport_container.stretch = true
+		viewport_container.stretch_shrink = 1
+		# If stretch is disabled in editor, fall back to manual sync on container resize
+		viewport_container.resized.connect(_sync_subviewport_size)
 	
 	# Initialize components by preloading scripts
 	var arena_manager_script = preload("res://scripts/ArenaManager.gd")
@@ -86,6 +93,13 @@ func _ready():
 	setup_lighting()
 	
 	print("BattleViewer3D ready!")
+
+func _sync_subviewport_size() -> void:
+	# Only apply manual size when the container is NOT stretching the SubViewport
+	if viewport_container and viewport_3d and not viewport_container.stretch:
+		var sz := Vector2i((viewport_container as Control).size)
+		if viewport_3d.size != sz:
+			viewport_3d.size = sz
 
 func _load_battle_data(file_path: String):
 	var file = FileAccess.open(file_path, FileAccess.READ)

@@ -68,8 +68,8 @@ class Arena:
     PROJ_SPEED = 6.0  # m/s
     PROJ_TTL = 5.0  # seconds
     PROJ_DAMAGE = 25  # HP
-    FIRE_RATE = 8.0  # Hz (shots per second)
-    FIRE_COOLDOWN = 1.0  # seconds enforced between shots regardless of fire rate
+    FIRE_RATE = 2.0  # Hz (shots per second)
+    FIRE_COOLDOWN = 2.0  # seconds enforced between shots regardless of fire rate
 
     # Perception configuration
     FOV_ANGLE = math.radians(120)  # 120° field of view
@@ -236,7 +236,7 @@ class Arena:
         self.time += dt
 
     def step_control(self):
-        """Single control step at 120Hz. This is where DSL gets executed."""
+        """Single control step. This is where DSL gets executed."""
         # Initialize control arrays if not present for legacy compatibility
         if not hasattr(self, "target_vx"):
             self.target_vx = [0.0] * self.BOT_COUNT
@@ -1098,8 +1098,11 @@ def run_battle_simulation(
         # Physics step (240Hz)
         arena.step_physics()
 
-        # Control step (120Hz)
-        if arena.physics_tick % 2 == 0:  # 240Hz -> 120Hz
+        # Calculate physics steps per control step
+        physics_steps_per_control = int(x=arena.DT_PHYSICS / arena.DT_CONTROL)
+        assert physics_steps_per_control == 2
+        # Control step (X Hz)
+        if (arena.physics_tick % physics_steps_per_control) == 0:
             arena.step_control()
 
             # Execute DSL for each bot
