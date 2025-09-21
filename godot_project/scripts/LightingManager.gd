@@ -39,6 +39,21 @@ func setup_environment():
 	environment.glow_intensity = 1.0
 	environment.glow_strength = 0.8
 	environment.glow_bloom = 0.1
+
+	# Screen-space reflections for more dynamic highlights
+	environment.ssr_enabled = true
+	environment.ssr_max_steps = 96
+	environment.ssr_depth_tolerance = 0.2
+	environment.ssr_fade_in = 0.1
+	environment.ssr_fade_out = 2.5
+	environment.ssr_use_half_resolution = false
+
+	# Fade reflections based on material roughness if the engine exposes the enum control
+	if _environment_supports_property("ssr_roughness_quality"):
+		environment.set(
+			"ssr_roughness_quality",
+			Environment.SSR_ROUGHNESS_QUALITY_HIGH
+		)
 	environment.ssao_enabled = true
 	environment.ssao_radius = 1.0
 	environment.ssao_intensity = 1.0

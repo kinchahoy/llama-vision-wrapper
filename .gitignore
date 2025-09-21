@@ -10,3 +10,8 @@ wheels/
 .venv
 .aider*
 uv.lock
+
+# Godot cache files
+
+godot_project/.godot
+

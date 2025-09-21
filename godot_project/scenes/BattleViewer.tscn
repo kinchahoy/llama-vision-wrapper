@@ -8,6 +8,12 @@ background_color = Color(0.1, 0.12, 0.16, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.3, 0.35, 0.4, 1)
 ambient_light_energy = 0.3
+ssr_enabled = true
+ssr_max_steps = 96
+ssr_depth_tolerance = 0.2
+ssr_fade_in = 0.1
+ssr_fade_out = 2.5
+ssr_use_half_resolution = false
 
 [node name="BattleViewer3D" type="Control"]
 layout_mode = 3

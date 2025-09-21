@@ -58,8 +58,11 @@ func setup_materials():
 	# Floor material
 	floor_material = StandardMaterial3D.new()
 	floor_material.albedo_color = Color(0.15, 0.16, 0.20, 1.0)
-	floor_material.metallic = 0.1
-	floor_material.roughness = 0.8
+	floor_material.metallic = 0.8
+	floor_material.roughness = 0.15
+	floor_material.clearcoat = 0.3
+	floor_material.clearcoat_roughness = 0.15
+	
 	
 	# Selection material
 	selection_material = StandardMaterial3D.new()
