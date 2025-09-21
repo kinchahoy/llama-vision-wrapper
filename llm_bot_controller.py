@@ -2,8 +2,8 @@
 Python Function LLM Controller
 Single hub for:
 - Building concise prompts from bot observations
-- Polling an OpenAI-compatible LLM endpoint (optional)
-- Falling back to local example templates for development
+- Polling an OpenAI-compatible LLM endpoint
+- Falling back to local example templates for testing and endpointless development
 """
 
 import math

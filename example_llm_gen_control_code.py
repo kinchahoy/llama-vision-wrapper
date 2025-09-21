@@ -1,4 +1,6 @@
-#--------------- Default example templates (for development) ---------------- #
+from typing import Any, Deque, Dict, Iterable, List, Tuple
+
+#--------------- Default example templates (for testing and endpointless dev) ---------------- #
 def _get_default_templates() -> List[str]:
     return [
         _tpl_aggressive(),
