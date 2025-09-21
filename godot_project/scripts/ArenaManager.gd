@@ -161,7 +161,9 @@ func _update_bot_node(bot_node: Node3D, bot_data: Dictionary):
 	# Smooth position and rotation updates using interpolated data
 	var bot = bot_data
 	var target_pos = Vector3(bot.get("x", 0.0), 0.5, -bot.get("y", 0.0))
-	var target_rot = Vector3(0, -bot.get("theta", 0.0) - 90, 0)
+	# Map 2D heading (0°=East, 90°=North; CCW+) to Godot yaw.
+	# With X->X and Y->-Z, the correct mapping is yaw_y = theta - 90.
+	var target_rot = Vector3(0, bot.get("theta", 0.0) - 90.0, 0)
 	
 	# Direct assignment of interpolated positions for crisp movement
 	bot_node.position = target_pos

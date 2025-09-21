@@ -265,7 +265,12 @@ func _process(delta):
 		if timeline_slider.value >= timeline.size() - 1:
 			playing = false
 			play_button.text = "▶ Play"
-	
+
+	# Always mirror the slider into current_frame so state updates even if
+	# the value_changed signal order differs (programmatic updates included).
+	if timeline.size() > 0:
+		current_frame = clamp(timeline_slider.value, 0.0, float(timeline.size() - 1))
+
 	update_simulation_state()
 	
 	if ui_manager:

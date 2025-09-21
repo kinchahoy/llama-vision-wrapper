@@ -31,32 +31,35 @@ func setup_environment():
 	environment.sky.sky_material.sky_top_color = Color(0.2, 0.25, 0.35, 1.0)
 	environment.sky.sky_material.sky_horizon_color = Color(0.6, 0.7, 0.8, 1.0)
 	environment.ambient_light_color = Color(0.3, 0.35, 0.4, 1.0)
-	environment.ambient_light_energy = 0.3
-	
+	environment.ambient_light_energy = 0.5
+
 	# Post-processing
 	environment.tonemap_mode = Environment.TONE_MAPPER_ACES
 	environment.glow_enabled = true
 	environment.glow_intensity = 1.0
 	environment.glow_strength = 0.8
 	environment.glow_bloom = 0.1
-
+	
 	# Screen-space reflections for more dynamic highlights
 	environment.ssr_enabled = true
 	environment.ssr_max_steps = 96
 	environment.ssr_depth_tolerance = 0.2
-	environment.ssr_fade_in = 0.1
+	environment.ssr_fade_in = 0.2
 	environment.ssr_fade_out = 2.5
-	environment.ssr_use_half_resolution = false
+	#environment.ssr_use_half_resolution = false
 
-	# Fade reflections based on material roughness if the engine exposes the enum control
-	if _environment_supports_property("ssr_roughness_quality"):
-		environment.set(
-			"ssr_roughness_quality",
-			Environment.SSR_ROUGHNESS_QUALITY_HIGH
-		)
 	environment.ssao_enabled = true
 	environment.ssao_radius = 1.0
 	environment.ssao_intensity = 1.0
 
 func get_environment() -> Environment:
 	return environment
+
+func _environment_supports_property(prop_name: StringName) -> bool:
+	for prop in environment.get_property_list():
+		var name_variant = prop.get("name")
+		if name_variant is StringName and name_variant == prop_name:
+			return true
+		elif name_variant is String and StringName(name_variant) == prop_name:
+			return true
+	return false

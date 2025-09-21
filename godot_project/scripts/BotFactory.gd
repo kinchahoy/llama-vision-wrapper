@@ -79,7 +79,8 @@ func create_direction_indicator(material: StandardMaterial3D) -> MeshInstance3D:
 	var cone_node = MeshInstance3D.new()
 	cone_node.mesh = direction_indicator_mesh # Reuse mesh
 	cone_node.material_override = material
-	cone_node.position = Vector3(0, 0, 0.6)
+	# Point along local forward (-Z) and place slightly in front of the body
+	cone_node.position = Vector3(0, 0, -0.6)
 	cone_node.rotation_degrees = Vector3(-90, 0, 0)
 	
 	return cone_node
