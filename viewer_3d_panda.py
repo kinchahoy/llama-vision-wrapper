@@ -1435,7 +1435,6 @@ class Battle3DViewer(ShowBase):
             bot_func_data = (
                 bot_functions.get(bot["id"]) or bot_functions.get(str(bot["id"])) or {}
             )
-            personality = bot_func_data.get("personality", "unknown")
             version = bot_func_data.get("version", "N/A")
 
             # Visible objects summary
@@ -1449,7 +1448,7 @@ class Battle3DViewer(ShowBase):
 
             info = [
                 f"Bot {bot['id']} (Team {bot['team']})",
-                f"Function: {personality}_combat_v{version}",
+                f"Function version: v{version}",
                 f"HP: {bot['hp']}",
                 f"Pos: ({bot['x']:.1f}, {bot['y']:.1f})",
                 f"Heading: {heading:.0f}°  Speed: {speed:.1f} m/s",

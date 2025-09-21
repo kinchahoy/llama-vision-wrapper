@@ -657,12 +657,11 @@ class BattleViewer:
         bot_functions = self.battle_data.get("summary", {}).get("bot_functions", {})
         bot_func_data = bot_functions.get(str(bot_id), {})
 
-        personality = bot_func_data.get("personality", "unknown")
         version = bot_func_data.get("version", "N/A")
 
-        # Function name and LLM info
+        # Function details
         self._draw_text(
-            f"Function: {personality}_combat_v{version}", (x + 5, y + 30), self.WHITE
+            f"Function version: v{version}", (x + 5, y + 30), self.WHITE
         )
         self._draw_text(
             "LLM Generated: Python Function", (x + 5, y + 50), color=(150, 150, 255)

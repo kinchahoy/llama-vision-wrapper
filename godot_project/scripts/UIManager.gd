@@ -139,7 +139,7 @@ func update_selected_bot_info(viewer: Control):
 	var info_text = "[font_size=18][b]Bot [color=#%s]%d[/color] (Team %d)[/b][/font_size]\n" % [team_color, bot_id, bot.get("team")]
 	
 	var bot_funcs = summary.get("bot_functions", {}).get(str(bot_id), {})
-	info_text += "Personality: [color=cyan]%s_v%s[/color]\n" % [bot_funcs.get("personality", "N/A"), bot_funcs.get("version", "N/A")]
+	info_text += "Function version: [color=cyan]v%s[/color]\n" % bot_funcs.get("version", "N/A")
 	info_text += "Signal: [color=yellow]\"%s\"[/color]\n" % bot.get("signal", "none")
 	
 	info_text += "\n[b]-- Current State --[/b]\n"

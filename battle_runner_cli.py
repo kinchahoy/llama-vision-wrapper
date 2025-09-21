@@ -14,6 +14,12 @@ from battle_arena import Arena
 from llm_bot_controller import PythonLLMController
 
 
+FUNCTION_UPDATE_PERIOD = 0.2  # seconds between Python function evaluations
+# Mock-LLM code rewrite cadence (tweakable)
+LLM_REWRITE_ENABLED = True
+LLM_REWRITE_PERIOD = 4.0  # seconds between re-generating bot code
+
+
 class _RunnerModule(Protocol):
     PythonFunctionRunner: Any
 
@@ -88,6 +94,9 @@ def run_python_battle(
     runner = PythonFunctionRunner(sandbox_enabled=not sim_unsafe)
     llm = PythonLLMController(arena.BOT_COUNT)
 
+    if verbose and sim_unsafe:
+        print("Simulation unsafe mode enabled: bot functions execute without RestrictedPython and may use Numba acceleration.")
+
     if verbose:
         print(
             f"Starting {arena.BOTS_PER_SIDE}v{arena.BOTS_PER_SIDE} Python function battle (seed={seed})"
@@ -108,9 +117,8 @@ def run_python_battle(
         compilation_success[bot_id] = success
 
         if verbose:
-            personality = llm.get_bot_personality(bot_id)
             status = "✓" if success else "✗"
-            print(f"  Bot {bot_id} ({personality}): {status}")
+            print(f"  Bot {bot_id}: {status}")
 
     # Check if any bots failed compilation
     failed_bots = [
@@ -123,18 +131,46 @@ def run_python_battle(
         print("Battle starting...")
 
     start_time = time.time()
+    last_llm_rewrite_time = -1e9
+
+    steps_per_control = arena.physics_steps_per_control
+    function_tick_interval = max(
+        1, int(round(FUNCTION_UPDATE_PERIOD / arena.DT_CONTROL))
+    )
 
     # Main simulation loop
     while True:
-        # Physics step (240Hz)
+        # Physics step (cadence governed by arena.DT_PHYSICS)
         arena.step_physics()
 
-        # Control step (120Hz)
-        if arena.physics_tick % 2 == 0:  # 240Hz -> 120Hz
+        # Control step cadence derived from cached ratio
+        if arena.physics_tick % steps_per_control == 0:
             arena.step_control()
 
-            # Execute Python functions for each bot (~5Hz for LLM updates)
-            if arena.tick % 24 == 0:  # 120Hz -> 5Hz for function execution
+            # Periodically regenerate bot source code via LLM (or local templates) and recompile
+            if LLM_REWRITE_ENABLED and (arena.time - last_llm_rewrite_time) >= LLM_REWRITE_PERIOD:
+                for bot_id in range(arena.BOT_COUNT):
+                    if not arena._is_bot_alive(bot_id):
+                        continue
+                    try:
+                        new_source = llm.regenerate_bot_function(
+                            arena,
+                            bot_id,
+                            allowed_signals=runner.allowed_signals,
+                            endpoint_url=None,  # set URL + API key to enable remote LLM
+                            api_key=None,
+                        )
+                        llm.update_bot_function(bot_id, new_source)
+                        runner.compile_bot_function(bot_id, new_source)
+                        if verbose:
+                            print(f"  [LLM] Regenerated bot {bot_id} code")
+                    except Exception as e:
+                        if verbose:
+                            print(f"  [LLM] Failed to regenerate bot {bot_id}: {e}")
+                last_llm_rewrite_time = arena.time
+
+            # Execute Python functions for each bot based on configured cadence
+            if arena.tick % function_tick_interval == 0:
                 for bot_id in range(arena.BOT_COUNT):
                     if not arena._is_bot_alive(bot_id):
                         continue
@@ -166,7 +202,7 @@ def run_python_battle(
                     arena.try_fire_projectile(bot_id)
 
             # Log state periodically for visualization
-            if arena.tick % 12 == 0:  # ~10Hz logging
+            if arena.tick % 12 == 0:
                 arena.log_state()
 
         # Check for battle end
@@ -194,9 +230,8 @@ def run_python_battle(
         for bot_id in range(arena.BOT_COUNT):
             bot_info = runner.get_bot_function_info(bot_id)
             if bot_info:
-                personality = llm.get_bot_personality(bot_id)
                 print(
-                    f"  Bot {bot_id} ({personality}): "
+                    f"  Bot {bot_id}: "
                     f"{bot_info['error_count']} errors, "
                     f"{bot_info['last_execution_time'] * 1000:.2f}ms last exec"
                 )
@@ -245,7 +280,6 @@ def _generate_python_battle_summary(
         info = runner.get_bot_function_info(bot_id)
         if info:
             bot_function_info[bot_id] = {
-                "personality": llm.get_bot_personality(bot_id),
                 "function_errors": info["error_count"],
                 "avg_exec_time_ms": round(info["last_execution_time"] * 1000, 2),
                 "version": info["version"],
@@ -376,7 +410,7 @@ def main():
     parser.add_argument(
         "--sim-unsafe",
         action="store_true",
-        help="Disable RestrictedPython sandbox for bot functions (unsafe, faster)",
+        help="Disable RestrictedPython sandbox for bot functions (unsafe, enables direct execution and Numba acceleration)",
     )
 
     args = parser.parse_args()

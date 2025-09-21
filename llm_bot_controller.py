@@ -1,11 +1,22 @@
 """
 Python Function LLM Controller
-Generates Python functions for bot control instead of DSL programs.
+Single hub for:
+- Building concise prompts from bot observations
+- Polling an OpenAI-compatible LLM endpoint (optional)
+- Falling back to local example templates for development
 """
 
 import math
+import random
 from collections import deque
-from typing import Any, Deque, Dict, List
+from typing import Any, Deque, Dict, Iterable, List, Tuple
+
+import json
+from urllib import error, request
+
+import pymunk
+
+import example_llm_gen_control_code
 
 
 class PythonLLMController:
@@ -13,31 +24,79 @@ class PythonLLMController:
 
     MOVE_HISTORY_LIMIT = 12
 
-    def __init__(self, bot_count: int = 4):
+    def __init__(self, bot_count: int = 4, default_templates: List[str] | None = None):
         self.bot_count = bot_count
         self.bot_function_sources = {}
-        self.function_templates = self._load_function_templates()
+        self.function_templates = list(default_templates) if default_templates else []
         self.move_history: Dict[int, Deque[Dict[str, Any]]] = {
             bot_id: deque(maxlen=self.MOVE_HISTORY_LIMIT) for bot_id in range(bot_count)
         }
+        self.visibility_ray_count = 24
+        self._wall_segment_cache: Dict[pymunk.Shape, Tuple[Tuple[float, float], ...]] = {}
+        self._regen_counter: int = 0
+        self._mock_templates: List[str] | None = None
+        self._mock_rng = random.Random()
 
         # Assign different function types to bots
         for bot_id in range(bot_count):
-            template_idx = bot_id % len(self.function_templates)
-            self.bot_function_sources[bot_id] = self.function_templates[template_idx]
+            if self.function_templates:
+                template_idx = bot_id % len(self.function_templates)
+                self.bot_function_sources[bot_id] = self.function_templates[template_idx]
+            else:
+                self.bot_function_sources[bot_id] = self._pick_mock_template(bot_id)
+            
+    # No internal templates; tests or callers can inject via constructor
 
-    def _load_function_templates(self) -> List[str]:
-        """Load different bot function templates."""
-        return [
-            self._get_aggressive_function(),
-            self._get_defensive_function(),
-            self._get_balanced_function(),
-            self._get_sniper_function(),
-        ]
+    def _ensure_wall_cache(self, arena) -> Dict[pymunk.Shape, Tuple[Tuple[float, float], ...]]:
+        if self._wall_segment_cache:
+            return self._wall_segment_cache
+
+        cache: Dict[pymunk.Shape, Tuple[Tuple[float, float], ...]] = {}
+        for wall_body, wall_shape in getattr(arena, "wall_bodies", []):
+            if not wall_shape or not hasattr(wall_shape, "get_vertices"):
+                continue
+
+            verts = wall_shape.get_vertices()
+            if wall_body is not None:
+                world_vertices = tuple(
+                    (float(world_v.x), float(world_v.y))
+                    for world_v in (wall_body.local_to_world(v) for v in verts)
+                )
+            else:
+                world_vertices = tuple((float(v[0]), float(v[1])) for v in verts)
+
+            cache[wall_shape] = world_vertices
+
+        self._wall_segment_cache = cache
+        return cache
+
+    def _segment_query_first_excluding(
+        self,
+        space: pymunk.Space,
+        start: Tuple[float, float],
+        end: Tuple[float, float],
+        skip_shapes: Tuple[pymunk.Shape, ...],
+    ):
+        hits = space.segment_query(start, end, 0.0, pymunk.ShapeFilter())
+        if not hits:
+            return None
+
+        for info in sorted(hits, key=lambda data: data.alpha):
+            if info.shape in skip_shapes:
+                continue
+            return info
+
+        return None
 
     def get_bot_function_source(self, bot_id: int) -> str:
         """Get Python function source code for a bot."""
-        return self.bot_function_sources.get(bot_id, self._get_balanced_function())
+        if bot_id in self.bot_function_sources:
+            return self.bot_function_sources[bot_id]
+        # Fallback to a balanced-like default from templates
+        if self.function_templates:
+            idx = 2 if len(self.function_templates) >= 3 else 0
+            return self.function_templates[idx]
+        return self._pick_mock_template(bot_id)
 
     def _is_in_fov(
         self,
@@ -130,194 +189,406 @@ class PythonLLMController:
         return False, float("inf"), None
 
     def generate_visible_objects(self, arena, bot_id: int) -> List[Dict]:
-        """Ray march to find visible objects within FOV, accounting for occlusion."""
+        """Gather objects within the bot's FOV using pymunk queries."""
         if not arena._is_bot_alive(bot_id):
             return []
 
-        visible_objects = []
-
+        space = arena.space
         bot_body = arena.bot_bodies[bot_id]
         bot_data = arena.bot_data[bot_id]
-        bot_x, bot_y = bot_body.position
-        bot_heading = bot_body.angle  # Get bot's current heading
+        bot_pos = pymunk.Vec2d(*bot_body.position)
+        bot_heading = bot_body.angle
+        sense_range = arena.SENSE_RANGE
+        fov_angle = arena.FOV_ANGLE
+        skip_shapes = tuple(bot_body.shapes)
 
-        # Ray marching parameters
-        max_range = arena.SENSE_RANGE  # 15m
-        fov_angle = arena.FOV_ANGLE  # 120 degrees
-        ray_count = 24  # Cast 24 rays across the FOV (every 5 degrees)
+        wall_cache = self._ensure_wall_cache(arena)
 
-        # Calculate ray directions
+        entity_results: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        wall_hits: Dict[Tuple[int, int], Dict[str, Any]] = {}
+
+        if self.visibility_ray_count > 1:
+            angle_step = fov_angle / (self.visibility_ray_count - 1)
+        else:
+            angle_step = 0.0
         start_angle = bot_heading - fov_angle / 2
-        angle_step = fov_angle / (ray_count - 1)
 
-        for i in range(ray_count):
-            ray_angle = start_angle + i * angle_step
-            ray_end_x = bot_x + math.cos(ray_angle) * max_range
-            ray_end_y = bot_y + math.sin(ray_angle) * max_range
+        for ray_index in range(self.visibility_ray_count):
+            ray_angle = start_angle + angle_step * ray_index
+            direction = pymunk.Vec2d(math.cos(ray_angle), math.sin(ray_angle))
+            end = bot_pos + direction * sense_range
+            hit = self._segment_query_first_excluding(
+                space,
+                (bot_pos.x, bot_pos.y),
+                (end.x, end.y),
+                skip_shapes,
+            )
+            if not hit:
+                continue
 
-            # Find closest intersection along this ray
-            float("inf")
-            ray_objects = []  # Collect all objects on this ray for proper occlusion handling
+            shape = hit.shape
+            if shape.collision_type != arena.COLLISION_TYPE_WALL:
+                continue
 
-            # Check walls first (they block everything behind them)
-            if hasattr(arena, "wall_bodies"):
-                for wall_body, wall_shape in arena.wall_bodies:
-                    # Handle pymunk.Poly shapes by checking their edges
-                    if hasattr(wall_shape, "get_vertices"):
-                        if wall_body:  # It's a real pymunk.Poly from battle_arena
-                            local_verts = wall_shape.get_vertices()
-                            world_verts = [
-                                wall_body.local_to_world(v) for v in local_verts
-                            ]
-                        else:  # It's a MockWallShape from graphics.py
-                            world_verts = wall_shape.get_vertices()
+            point = hit.point
+            distance = float((point - bot_pos).length)
+            if distance > sense_range:
+                continue
 
-                        for i in range(len(world_verts)):
-                            seg_start = world_verts[i]
-                            seg_end = world_verts[(i + 1) % len(world_verts)]
+            bearing = (
+                math.degrees(math.atan2(point.y - bot_pos.y, point.x - bot_pos.x))
+                + 360.0
+            ) % 360.0
 
-                            intersects, distance, point = self._ray_intersects_segment(
-                                (bot_x, bot_y),
-                                (ray_end_x, ray_end_y),
-                                seg_start,
-                                seg_end,
-                            )
+            cache_key = (id(shape), len(wall_cache.get(shape, ())))
+            entry = {
+                "type": "wall",
+                "x": round(point.x, 2),
+                "y": round(point.y, 2),
+                "distance": distance,
+                "angle": bearing,
+            }
 
-                            if intersects:
-                                bearing = (
-                                    math.degrees(
-                                        math.atan2(point[1] - bot_y, point[0] - bot_x)
-                                    )
-                                    % 360
-                                )
-                                ray_objects.append(
-                                    {
-                                        "type": "wall",
-                                        "x": point[0],
-                                        "y": point[1],
-                                        "distance": distance,
-                                        "angle": bearing,
-                                    }
-                                )
+            current = wall_hits.get(cache_key)
+            if not current or distance < current["distance"]:
+                wall_hits[cache_key] = entry
 
-            # Check bots
-            for other_id, other_data in arena.bot_data.items():
-                if other_id == bot_id or not arena._is_bot_alive(other_id):
-                    continue
+        for other_id, other_data in arena.bot_data.items():
+            if other_id == bot_id or not arena._is_bot_alive(other_id):
+                continue
 
-                other_body = arena.bot_bodies[other_id]
-                other_x, other_y = other_body.position
+            other_body = arena.bot_bodies[other_id]
+            other_pos = pymunk.Vec2d(*other_body.position)
+            delta = other_pos - bot_pos
+            distance = float(delta.length)
+            if distance <= 0.0 or distance > sense_range:
+                continue
 
-                intersects, distance, point = self._ray_intersects_circle(
-                    (bot_x, bot_y),
-                    (ray_end_x, ray_end_y),
-                    (other_x, other_y),
-                    arena.BOT_RADIUS,
-                )
+            if not self._is_in_fov(
+                bot_heading,
+                bot_pos.x,
+                bot_pos.y,
+                other_pos.x,
+                other_pos.y,
+                fov_angle,
+            ):
+                continue
 
-                if intersects:
-                    bearing = (
-                        math.degrees(math.atan2(other_y - bot_y, other_x - bot_x)) % 360
-                    )
+            hit = self._segment_query_first_excluding(
+                space,
+                (bot_pos.x, bot_pos.y),
+                (other_pos.x, other_pos.y),
+                skip_shapes,
+            )
+            if not hit or hit.shape.body is not other_body:
+                continue
 
-                    bot_type = "friend" if other_data.team == bot_data.team else "enemy"
-                    ray_objects.append(
-                        {
-                            "type": bot_type,
-                            "x": other_x,
-                            "y": other_y,
-                            "distance": distance,
-                            "angle": bearing,
-                            "hp": int(other_data.hp),
-                            "team": f"team_{other_data.team}",
-                            "id": other_id,
-                            "velocity_x": other_body.velocity[0],
-                            "velocity_y": other_body.velocity[1],
-                            "signal": other_data.signal
-                            if hasattr(other_data, "signal")
-                            else "none",
-                        }
-                    )
+            bearing = (math.degrees(math.atan2(delta.y, delta.x)) + 360.0) % 360.0
+            entry = {
+                "type": "friend" if other_data.team == bot_data.team else "enemy",
+                "x": float(other_pos.x),
+                "y": float(other_pos.y),
+                "distance": distance,
+                "angle": bearing,
+                "hp": int(other_data.hp),
+                "team": f"team_{other_data.team}",
+                "id": other_id,
+                "velocity_x": float(other_body.velocity[0]),
+                "velocity_y": float(other_body.velocity[1]),
+                "signal": getattr(other_data, "signal", "none"),
+            }
 
-            # Check projectiles (always include unless blocked)
-            for proj_id, proj_data in arena.projectile_data.items():
-                proj_body = arena.projectile_bodies.get(proj_id)
-                if not proj_body:
-                    continue
+            entity_results[("bot", other_id)] = entry
 
-                proj_x, proj_y = proj_body.position
+        for proj_id, proj_data in arena.projectile_data.items():
+            proj_body = arena.projectile_bodies.get(proj_id)
+            if not proj_body:
+                continue
 
-                intersects, distance, point = self._ray_intersects_circle(
-                    (bot_x, bot_y),
-                    (ray_end_x, ray_end_y),
-                    (proj_x, proj_y),
-                    0.1,  # Small projectile radius
-                )
+            proj_pos = pymunk.Vec2d(*proj_body.position)
+            delta = proj_pos - bot_pos
+            distance = float(delta.length)
+            if distance <= 0.0 or distance > sense_range:
+                continue
 
-                if intersects:
-                    bearing = (
-                        math.degrees(math.atan2(proj_y - bot_y, proj_x - bot_x)) % 360
-                    )
-                    ray_objects.append(
-                        {
-                            "type": "projectile",
-                            "x": proj_x,
-                            "y": proj_y,
-                            "distance": distance,
-                            "angle": bearing,
-                            "velocity_x": proj_body.velocity[0],
-                            "velocity_y": proj_body.velocity[1],
-                            "ttl": proj_data.ttl,
-                            "team": f"team_{proj_data.team}",
-                        }
-                    )
+            if not self._is_in_fov(
+                bot_heading,
+                bot_pos.x,
+                bot_pos.y,
+                proj_pos.x,
+                proj_pos.y,
+                fov_angle,
+            ):
+                continue
 
-            # Sort objects by distance and add visible ones
-            ray_objects.sort(key=lambda obj: obj["distance"])
+            hit = self._segment_query_first_excluding(
+                space,
+                (bot_pos.x, bot_pos.y),
+                (proj_pos.x, proj_pos.y),
+                skip_shapes,
+            )
+            if not hit or hit.shape.body is not proj_body:
+                continue
 
-            # Add all objects that aren't blocked by closer ones
-            blocking_distance = float("inf")
-            for obj in ray_objects:
-                # Walls block everything behind them
-                if obj["type"] == "wall":
-                    blocking_distance = min(blocking_distance, obj["distance"])
-                    visible_objects.append(obj)
-                elif obj["distance"] < blocking_distance:
-                    # Object is visible (not blocked by walls)
-                    visible_objects.append(obj)
-                    # Bots block other objects behind them, but projectiles don't block much
-                    if obj["type"] in ["enemy", "friend"]:
-                        # Only block objects very close behind (within bot radius)
-                        blocking_distance = min(
-                            blocking_distance, obj["distance"] + arena.BOT_RADIUS * 0.5
-                        )
+            bearing = (math.degrees(math.atan2(delta.y, delta.x)) + 360.0) % 360.0
+            entry = {
+                "type": "projectile",
+                "x": float(proj_pos.x),
+                "y": float(proj_pos.y),
+                "distance": distance,
+                "angle": bearing,
+                "velocity_x": float(proj_body.velocity[0]),
+                "velocity_y": float(proj_body.velocity[1]),
+                "ttl": proj_data.ttl,
+                "team": f"team_{proj_data.team}",
+            }
 
-        # Remove duplicates (objects hit by multiple rays)
-        unique_objects = []
-        for obj in visible_objects:
-            is_duplicate = False
-            for existing in unique_objects:
-                if (
-                    existing["type"] == obj["type"]
-                    and existing.get("id") == obj.get("id")
-                    and abs(existing["x"] - obj["x"]) < 0.5
-                    and abs(existing["y"] - obj["y"]) < 0.5
-                ):
-                    is_duplicate = True
-                    break
-            if not is_duplicate:
-                unique_objects.append(obj)
+            entity_results[("projectile", proj_id)] = entry
 
-        return unique_objects
+        combined = list(entity_results.values()) + list(wall_hits.values())
+        combined.sort(key=lambda obj: obj.get("distance", float("inf")))
+        return combined
 
     def build_observation(self, arena, bot_id: int) -> Dict[str, Any]:
         """Construct full observation payload for a bot."""
+        self_state = self._get_self_state(arena, bot_id)
+        visible = self.generate_visible_objects(arena, bot_id)
+        params = self._get_world_params(arena)
+        precomp = self._compute_precomputations(self_state, visible, params)
+
         return {
-            "self": self._get_self_state(arena, bot_id),
-            "visible_objects": self.generate_visible_objects(arena, bot_id),
+            "self": self_state,
+            "visible_objects": visible,
             "move_history": self.generate_move_history(arena, bot_id),
-            "params": self._get_world_params(arena),
+            "params": params,
+            "precomp": precomp,
         }
+
+    def _lead_point(
+        self,
+        sx: float,
+        sy: float,
+        tx: float,
+        ty: float,
+        tvx: float,
+        tvy: float,
+        proj_speed: float,
+    ) -> Tuple[float, float]:
+        rx, ry = tx - sx, ty - sy
+        a = tvx * tvx + tvy * tvy - proj_speed * proj_speed
+        b = 2.0 * (rx * tvx + ry * tvy)
+        c = rx * rx + ry * ry
+        t = 0.0
+        if abs(a) < 1e-6:
+            if abs(b) > 1e-6:
+                t = max(0.0, -c / b)
+        else:
+            disc = b * b - 4.0 * a * c
+            if disc >= 0.0:
+                rdisc = math.sqrt(disc)
+                t1 = (-b - rdisc) / (2.0 * a)
+                t2 = (-b + rdisc) / (2.0 * a)
+                cand = [t for t in (t1, t2) if t >= 0.0]
+                t = min(cand) if cand else 0.0
+        return (tx + tvx * t, ty + tvy * t)
+
+    def _friend_in_line_of_fire(
+        self,
+        sx: float,
+        sy: float,
+        ax: float,
+        ay: float,
+        friends: List[Dict[str, Any]],
+        radius: float = 0.85,
+        cone_deg: float = 11.0,
+    ) -> bool:
+        vx, vy = ax - sx, ay - sy
+        L = math.hypot(vx, vy)
+        if L < 1e-6:
+            return True
+        ux, uy = vx / L, vy / L
+        cos_thresh = math.cos(math.radians(cone_deg))
+        for f in friends:
+            fx, fy = float(f.get("x", 0.0)), float(f.get("y", 0.0))
+            rfx, rfy = fx - sx, fy - sy
+            proj = rfx * ux + rfy * uy
+            if proj < 0.0 or proj > L:
+                continue
+            mag = math.hypot(rfx, rfy)
+            if mag > 1e-6 and ((rfx * ux + rfy * uy) / mag) < cos_thresh:
+                continue
+            px, py = ux * proj, uy * proj
+            dx, dy = rfx - px, rfy - py
+            if math.hypot(dx, dy) < radius:
+                return True
+        return False
+
+    def _compute_precomputations(
+        self,
+        self_state: Dict[str, Any],
+        visible: List[Dict[str, Any]],
+        params: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        sx, sy = float(self_state.get("x", 0.0)), float(self_state.get("y", 0.0))
+        proj_speed = float(params.get("proj_speed", 12.0))
+        enemies = [o for o in visible if o.get("type") == "enemy"]
+        friends = [o for o in visible if o.get("type") == "friend"]
+        walls = [o for o in visible if o.get("type") == "wall"]
+        projectiles = [o for o in visible if o.get("type") == "projectile"]
+
+        nearest_enemy = None
+        if enemies:
+            e = min(enemies, key=lambda o: float(o.get("distance", 1e9)))
+            tx, ty = float(e.get("x", 0.0)), float(e.get("y", 0.0))
+            tvx, tvy = float(e.get("velocity_x", 0.0)), float(e.get("velocity_y", 0.0))
+            aim_x, aim_y = self._lead_point(sx, sy, tx, ty, tvx, tvy, proj_speed)
+            safe = not self._friend_in_line_of_fire(sx, sy, aim_x, aim_y, friends)
+            nearest_enemy = {
+                "id": e.get("id"),
+                "x": tx,
+                "y": ty,
+                "distance": float(e.get("distance", 0.0)),
+                "angle": float(e.get("angle", 0.0)),
+                "hp": int(e.get("hp", 0)),
+                "aim_x": aim_x,
+                "aim_y": aim_y,
+                "safe_to_fire": bool(safe),
+            }
+
+        nearest_friend = None
+        if friends:
+            f = min(friends, key=lambda o: float(o.get("distance", 1e9)))
+            nearest_friend = {
+                "id": f.get("id"),
+                "x": float(f.get("x", 0.0)),
+                "y": float(f.get("y", 0.0)),
+                "distance": float(f.get("distance", 0.0)),
+                "angle": float(f.get("angle", 0.0)),
+                "signal": f.get("signal", "none"),
+            }
+
+        enemies_close = sum(1 for e in enemies if float(e.get("distance", 1e9)) < 5.0)
+        enemies_mid = sum(
+            1 for e in enemies if 5.0 <= float(e.get("distance", 1e9)) <= 10.0
+        )
+        enemies_far = sum(1 for e in enemies if float(e.get("distance", 0.0)) > 10.0)
+
+        nearest_wall = None
+        if walls:
+            w = min(walls, key=lambda o: float(o.get("distance", 1e9)))
+            nearest_wall = {
+                "distance": float(w.get("distance", 0.0)),
+                "angle": float(w.get("angle", 0.0)),
+                "x": float(w.get("x", 0.0)),
+                "y": float(w.get("y", 0.0)),
+            }
+
+        # Incoming projectile threat estimate (min time to closest approach)
+        min_tta = None
+        threat_dir = None
+        approaching = 0
+        for p in projectiles:
+            px, py = float(p.get("x", 0.0)), float(p.get("y", 0.0))
+            vx, vy = float(p.get("velocity_x", 0.0)), float(p.get("velocity_y", 0.0))
+            rx, ry = sx - px, sy - py
+            v2 = vx * vx + vy * vy
+            if v2 <= 1e-8:
+                continue
+            tca = - (rx * vx + ry * vy) / v2
+            if tca < 0.0:
+                continue
+            cx, cy = rx + vx * tca, ry + vy * tca
+            sep = math.hypot(cx, cy)
+            if sep < 1.5:  # within danger tube
+                approaching += 1
+                if min_tta is None or tca < min_tta:
+                    min_tta = tca
+                    threat_dir = (math.degrees(math.atan2(vy, vx)) + 360.0) % 360.0
+
+        # Nearby friend signals tally
+        signal_counts: Dict[str, int] = {}
+        for f in friends:
+            sig = f.get("signal", "none")
+            signal_counts[sig] = signal_counts.get(sig, 0) + 1
+
+        return {
+            "enemy_count": len(enemies),
+            "friend_count": len(friends),
+            "enemies_close": enemies_close,
+            "enemies_mid": enemies_mid,
+            "enemies_far": enemies_far,
+            "nearest_enemy": nearest_enemy,
+            "nearest_friend": nearest_friend,
+            "nearest_wall": nearest_wall,
+            "incoming_projectiles": {
+                "count_threats": approaching,
+                "min_time_to_approach": min_tta if min_tta is not None else float("inf"),
+                "approach_dir_deg": threat_dir,
+            },
+            "friend_signals": signal_counts,
+        }
+
+    def build_llm_prompt(
+        self,
+        arena,
+        bot_id: int,
+        allowed_signals: List[str] | Tuple[str, ...] | None = None,
+    ) -> str:
+        """Canonical prompt builder for LLM-generated bot functions.
+
+        Summarizes the observation and precomputed features to keep bot code short.
+        """
+        obs = self.build_observation(arena, bot_id)
+        allow = list(allowed_signals) if allowed_signals is not None else []
+        return self.format_llm_prompt_from_observation(obs, allow)
+
+    @staticmethod
+    def format_llm_prompt_from_observation(
+        observation: Dict[str, Any],
+        allowed_signals: Iterable[str] | None = None,
+    ) -> str:
+        """Format an LLM prompt using a pre-built observation payload."""
+        pre = observation.get("precomp", {})
+        allow = list(allowed_signals or [])
+
+        lines: List[str] = []
+        lines.append(
+            "You are writing a short Python function bot_function(observation) for a 2D combat sim."
+        )
+        lines.append(
+            "Rules: return a dict with action in {move, rotate, dodge, fire}; optionally set 'signal' from allowed_signals; keep code <= ~70 lines; avoid prints; be efficient."
+        )
+        lines.append(
+            "Constraints: avoid friendly fire; dodge incoming projectiles; respect can_fire cooldown; use math only; no imports or I/O."
+        )
+        if allow:
+            lines.append(f"Allowed signals: {allow}.")
+        lines.append(
+            "Observation keys: 'self', 'visible_objects', 'params', 'precomp', 'memory', 'allowed_signals'."
+        )
+        lines.append("Precomp fields simplify logic (use them if helpful):")
+        lines.append(
+            f"- counts: enemy_count={pre.get('enemy_count')}, friend_count={pre.get('friend_count')}, close/mid/far={pre.get('enemies_close')}/{pre.get('enemies_mid')}/{pre.get('enemies_far')}."
+        )
+        ne = pre.get("nearest_enemy") or {}
+        lines.append(
+            f"- nearest_enemy: id={ne.get('id')}, d={ne.get('distance')}, angle={ne.get('angle')}, aim=({ne.get('aim_x')},{ne.get('aim_y')}), safe_to_fire={ne.get('safe_to_fire')}."
+        )
+        nf = pre.get("nearest_friend") or {}
+        lines.append(
+            f"- nearest_friend: id={nf.get('id')}, d={nf.get('distance')}, signal={nf.get('signal')}."
+        )
+        inc = pre.get("incoming_projectiles") or {}
+        lines.append(
+            f"- incoming_projectiles: count_threats={inc.get('count_threats')}, min_time_to_approach={inc.get('min_time_to_approach')}."
+        )
+        nw = pre.get("nearest_wall") or {}
+        lines.append(f"- nearest_wall: d={nw.get('distance')}, angle={nw.get('angle')}.")
+        lines.append(
+            "Strategy suggestions: if threats imminent -> dodge; if safe_to_fire and can_fire -> fire at aim; otherwise move to better position (flank/orbit/cover). Set helpful 'signal'."
+        )
+        lines.append("Return only one action dict. Use observation['memory'] if needed.")
+        return "\n".join(lines)
 
     def generate_move_history(self, arena, bot_id: int) -> List[Dict[str, Any]]:
         """Return recent move history for a bot."""
@@ -412,336 +683,123 @@ class PythonLLMController:
             "bots_per_side": arena.BOTS_PER_SIDE,
         }
 
-    def _get_aggressive_function(self) -> str:
-        """Aggressive bot function that charges at enemies."""
-        return '''
-def bot_function(observation):
-    """Aggressive bot that charges at nearest enemy and fires aggressively."""
-    visible_objects = observation.get('visible_objects', [])
-    allowed_signals = observation.get('allowed_signals', [])
-    memory = observation.get('memory', {})
-    if not isinstance(memory, dict):
-        memory = {}
-
-    def choose_signal(candidate):
-        return candidate if candidate in allowed_signals else 'none'
-
-    # Immediate threat check
-    for obj in visible_objects:
-        if obj.get('type') == 'projectile' and obj.get('distance', 999.0) < 1.5:
-            dodge_angle = (obj.get('angle', 0.0) + 90.0) % 360.0
-            memory.pop('last_enemy_id', None)
-            return {
-                'action': 'dodge',
-                'direction': dodge_angle,
-                'signal': choose_signal('retreating'),
-                'memory': memory,
-            }
-
-    enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
-    if not enemies:
-        memory.pop('last_enemy_id', None)
-        return {
-            'action': 'rotate',
-            'angle': 45.0,
-            'signal': choose_signal('ready'),
-            'memory': memory,
-        }
-
-    enemies.sort(key=lambda e: e.get('distance', 999.0))
-    target = enemies[0]
-    memory['last_enemy_id'] = target.get('id')
-    distance = target.get('distance', 999.0)
-
-    if distance < 2.0:
-        retreat_angle = (target.get('angle', 0.0) + 180.0) % 360.0
-        return {
-            'action': 'dodge',
-            'direction': retreat_angle,
-            'signal': choose_signal('retreating'),
-            'memory': memory,
-        }
-
-    can_fire = observation.get('self', {}).get('can_fire', False)
-    if distance < 8.0 and can_fire:
-        return {
-            'action': 'fire',
-            'target_x': target.get('x'),
-            'target_y': target.get('y'),
-            'signal': choose_signal('firing'),
-            'memory': memory,
-        }
-
-    return {
-        'action': 'move',
-        'target_x': target.get('x'),
-        'target_y': target.get('y'),
-        'signal': choose_signal('attacking'),
-        'memory': memory,
-    }
-'''
-
-    def _get_defensive_function(self) -> str:
-        """Defensive bot function that maintains distance."""
-        return '''
-def bot_function(observation):
-    """Defensive bot that keeps distance and fires carefully."""
-    visible_objects = observation.get('visible_objects', [])
-    allowed_signals = observation.get('allowed_signals', [])
-    self_state = observation.get('self', {})
-    memory = observation.get('memory', {})
-    if not isinstance(memory, dict):
-        memory = {}
-
-    def choose_signal(candidate):
-        return candidate if candidate in allowed_signals else 'none'
-
-    # Projectile avoidance
-    for proj in visible_objects:
-        if proj.get('type') == 'projectile' and proj.get('distance', 999.0) < 2.5:
-            dodge_angle = (proj.get('angle', 0.0) + 90.0) % 360.0
-            memory['last_threat'] = proj.get('id', -1)
-            return {
-                'action': 'dodge',
-                'direction': dodge_angle,
-                'signal': choose_signal('moving_to_cover'),
-                'memory': memory,
-            }
-
-    enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
-    if not enemies:
-        memory.pop('last_enemy_distance', None)
-        return {
-            'action': 'rotate',
-            'angle': 0.0,
-            'signal': choose_signal('watching_flank'),
-            'memory': memory,
-        }
-
-    enemies.sort(key=lambda e: e.get('distance', 999.0))
-    target = enemies[0]
-    distance = target.get('distance', 999.0)
-    memory['last_enemy_distance'] = round(distance, 2)
-
-    if distance < 6.0:
-        retreat_angle = (target.get('angle', 0.0) + 180.0) % 360.0
-        retreat_radians = math.radians(retreat_angle)
-        retreat_distance = 8.0
-        retreat_x = self_state.get('x', 0.0) + retreat_distance * math.cos(retreat_radians)
-        retreat_y = self_state.get('y', 0.0) + retreat_distance * math.sin(retreat_radians)
-        return {
-            'action': 'move',
-            'target_x': retreat_x,
-            'target_y': retreat_y,
-            'signal': choose_signal('retreating'),
-            'memory': memory,
-        }
-
-    if distance < 12.0 and self_state.get('can_fire', False):
-        return {
-            'action': 'fire',
-            'target_x': target.get('x'),
-            'target_y': target.get('y'),
-            'signal': choose_signal('cover_fire'),
-            'memory': memory,
-        }
-
-    approach_distance = max(0.0, distance - 10.0)
-    approach_angle = math.radians(target.get('angle', 0.0))
-    offset_x = target.get('x', 0.0) - approach_distance * math.cos(approach_angle)
-    offset_y = target.get('y', 0.0) - approach_distance * math.sin(approach_angle)
-    return {
-        'action': 'move',
-        'target_x': offset_x,
-        'target_y': offset_y,
-        'signal': choose_signal('advancing'),
-        'memory': memory,
-    }
-'''
-
-    def _get_balanced_function(self) -> str:
-        """Balanced bot function with moderate aggression."""
-        return '''
-def bot_function(observation):
-    """Balanced bot with adaptive tactics and team coordination."""
-    visible_objects = observation.get('visible_objects', [])
-    allowed_signals = observation.get('allowed_signals', [])
-    self_state = observation.get('self', {})
-    memory = observation.get('memory', {})
-    if not isinstance(memory, dict):
-        memory = {}
-
-    def choose_signal(candidate):
-        return candidate if candidate in allowed_signals else 'none'
-
-    enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
-    friends = [obj for obj in visible_objects if obj.get('type') == 'friend']
-    walls = [obj for obj in visible_objects if obj.get('type') == 'wall']
-
-    backup_needed = any(friend.get('signal') == 'need_backup' for friend in friends)
-
-    for proj in visible_objects:
-        if proj.get('type') == 'projectile' and proj.get('distance', 999.0) < 2.0:
-            dodge_angle = (proj.get('angle', 0.0) + 90.0) % 360.0
-            memory['last_dodge_angle'] = dodge_angle
-            return {
-                'action': 'dodge',
-                'direction': dodge_angle,
-                'signal': choose_signal('moving_to_cover'),
-                'memory': memory,
-            }
-
-    if not enemies:
-        if walls and not backup_needed:
-            nearest_wall = min(walls, key=lambda w: w.get('distance', 999.0))
-            if nearest_wall.get('distance', 999.0) > 3.0:
-                return {
-                    'action': 'move',
-                    'target_x': nearest_wall.get('x'),
-                    'target_y': nearest_wall.get('y'),
-                    'signal': choose_signal('positioning'),
-                    'memory': memory,
-                }
-
-        return {
-            'action': 'rotate',
-            'angle': 315.0,
-            'signal': choose_signal('regrouping' if backup_needed else 'ready'),
-            'memory': memory,
-        }
-
-    enemies.sort(key=lambda e: e.get('distance', 999.0))
-    primary_target = enemies[0]
-    memory['last_enemy_id'] = primary_target.get('id')
-    distance = primary_target.get('distance', 999.0)
-    enemy_count = len(enemies)
-
-    if enemy_count >= 2 and distance < 5.0:
-        retreat_angle = (primary_target.get('angle', 0.0) + 180.0) % 360.0
-        return {
-            'action': 'dodge',
-            'direction': retreat_angle,
-            'signal': choose_signal('need_backup'),
-            'memory': memory,
-        }
-
-    if distance < 3.0:
-        dodge_angle = (primary_target.get('angle', 0.0) + 90.0) % 360.0
-        return {
-            'action': 'dodge',
-            'direction': dodge_angle,
-            'signal': choose_signal('retreating'),
-            'memory': memory,
-        }
-
-    if distance < 10.0 and self_state.get('can_fire', False):
-        return {
-            'action': 'fire',
-            'target_x': primary_target.get('x'),
-            'target_y': primary_target.get('y'),
-            'signal': choose_signal('focus_fire' if backup_needed else 'firing'),
-            'memory': memory,
-        }
-
-    return {
-        'action': 'move',
-        'target_x': primary_target.get('x'),
-        'target_y': primary_target.get('y'),
-        'signal': choose_signal('advancing' if backup_needed else 'attacking'),
-        'memory': memory,
-    }
-'''
-
-    def _get_sniper_function(self) -> str:
-        """Sniper bot function that prioritizes long-range combat."""
-        return '''
-def bot_function(observation):
-    """Sniper bot that prefers long-range engagement and provides overwatch."""
-    visible_objects = observation.get('visible_objects', [])
-    allowed_signals = observation.get('allowed_signals', [])
-    self_state = observation.get('self', {})
-    memory = observation.get('memory', {})
-    if not isinstance(memory, dict):
-        memory = {}
-
-    def choose_signal(candidate):
-        return candidate if candidate in allowed_signals else 'none'
-
-    projectiles = [obj for obj in visible_objects if obj.get('type') == 'projectile']
-    friends = [obj for obj in visible_objects if obj.get('type') == 'friend']
-
-    for proj in projectiles:
-        if proj.get('distance', 999.0) < 1.8:
-            dodge_angle = (proj.get('angle', 0.0) + 90.0) % 360.0
-            memory['last_dodge'] = dodge_angle
-            return {
-                'action': 'dodge',
-                'direction': dodge_angle,
-                'signal': choose_signal('moving_to_cover'),
-                'memory': memory,
-            }
-
-    enemies = [obj for obj in visible_objects if obj.get('type') == 'enemy']
-    if not enemies:
-        friends_in_trouble = any(
-            friend.get('signal') in ('need_backup', 'retreating') for friend in friends
-        )
-        return {
-            'action': 'rotate',
-            'angle': 270.0,
-            'signal': choose_signal('watching_flank' if friends_in_trouble else 'holding_position'),
-            'memory': memory,
-        }
-
-    enemies.sort(key=lambda e: e.get('distance', 999.0))
-    preferred_targets = [e for e in enemies if 8.0 <= e.get('distance', 0.0) <= 15.0]
-
-    if preferred_targets and self_state.get('can_fire', False):
-        target = preferred_targets[0]
-        memory['last_enemy_id'] = target.get('id')
-        return {
-            'action': 'fire',
-            'target_x': target.get('x'),
-            'target_y': target.get('y'),
-            'signal': choose_signal('cover_fire'),
-            'memory': memory,
-        }
-
-    closest_enemy = enemies[0]
-    distance = closest_enemy.get('distance', 999.0)
-    memory['last_enemy_id'] = closest_enemy.get('id')
-
-    if distance < 8.0:
-        retreat_distance = max(0.0, 12.0 - distance)
-        retreat_angle = math.radians((closest_enemy.get('angle', 0.0) + 180.0) % 360.0)
-        retreat_x = self_state.get('x', 0.0) + retreat_distance * math.cos(retreat_angle)
-        retreat_y = self_state.get('y', 0.0) + retreat_distance * math.sin(retreat_angle)
-        return {
-            'action': 'move',
-            'target_x': retreat_x,
-            'target_y': retreat_y,
-            'signal': choose_signal('retreating'),
-            'memory': memory,
-        }
-
-    optimal_distance = 10.0
-    approach_angle = math.radians(closest_enemy.get('angle', 0.0))
-    optimal_x = closest_enemy.get('x', 0.0) - optimal_distance * math.cos(approach_angle)
-    optimal_y = closest_enemy.get('y', 0.0) - optimal_distance * math.sin(approach_angle)
-    return {
-        'action': 'move',
-        'target_x': optimal_x,
-        'target_y': optimal_y,
-        'signal': choose_signal('advancing'),
-        'memory': memory,
-    }
-'''
-
     def update_bot_function(self, bot_id: int, new_function_source: str):
         """Update a bot's function source (simulating LLM rewriting)."""
         self.bot_function_sources[bot_id] = new_function_source
 
-    def get_bot_personality(self, bot_id: int) -> str:
-        """Get bot personality description."""
-        personalities = ["aggressive", "defensive", "balanced", "sniper"]
-        return personalities[bot_id % len(personalities)]
+    # --- LLM polling helpers ---
+
+    @staticmethod
+    def call_openai_compatible_endpoint(
+        endpoint_url: str,
+        api_key: str,
+        prompt: str,
+        model: str = "gpt-3.5-turbo",
+        timeout: float = 10.0,
+    ) -> str:
+        """Call an OpenAI-compatible chat/completions endpoint and return assistant content."""
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a tactical programming assistant that outputs concise Python functions.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.2,
+            "max_tokens": 512,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+        req = request.Request(endpoint_url, data=data, headers=headers, method="POST")
+        with request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+            body = json.loads(resp.read().decode("utf-8"))
+        try:
+            return body["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:  # pragma: no cover - guard
+            raise ValueError("Unexpected response format from LLM endpoint") from exc
+
+    def regenerate_function_from_observation(
+        self,
+        observation: Dict[str, Any],
+        allowed_signals: Iterable[str] | None = None,
+        endpoint_url: str | None = None,
+        api_key: str | None = None,
+        model: str = "gpt-3.5-turbo",
+        timeout: float = 10.0,
+    ) -> str:
+        """Generate/refresh a bot function given an observation via remote or local fallback.
+
+        If endpoint_url is None, returns a default template for rapid iteration.
+        """
+        prompt = self.format_llm_prompt_from_observation(observation, allowed_signals)
+        bot_id = int((observation.get("self", {}) or {}).get("id", 0))
+        if endpoint_url and endpoint_url.strip().lower() == "mock":
+            return self._pick_mock_template(bot_id)
+        if endpoint_url and api_key:
+            try:
+                return self.call_openai_compatible_endpoint(
+                    endpoint_url, api_key, prompt, model=model, timeout=timeout
+                )
+            except error.URLError:
+                # Fall back to local template if network fails
+                pass
+        # Fallback template selection
+        templates = self.function_templates
+        if templates:
+            idx = (self._regen_counter + bot_id) % len(templates)
+            self._regen_counter += 1
+            return templates[idx]
+        return self._pick_mock_template(bot_id)
+
+    def _ensure_mock_templates(self) -> List[str]:
+        if self._mock_templates is not None:
+            return self._mock_templates
+
+        try:
+            templates = example_llm_gen_control_code._get_default_templates()
+            self._mock_templates = [tpl.strip() for tpl in templates if tpl and tpl.strip()]
+        except Exception:
+            self._mock_templates = [
+                (
+                    "def bot_function(observation):\n"
+                    "    return {'action': 'rotate', 'angle': 45.0, 'signal': 'ready'}\n"
+                )
+            ]
+
+        return self._mock_templates
+
+    def _pick_mock_template(self, bot_id: int | None = None) -> str:
+        templates = self._ensure_mock_templates()
+        if not templates:
+            return (
+                "def bot_function(observation):\n"
+                "    return {'action': 'rotate', 'angle': 45.0, 'signal': 'ready'}\n"
+            )
+        pool = templates[:3] if len(templates) >= 3 else templates
+        return self._mock_rng.choice(pool)
+
+    def regenerate_bot_function(
+        self,
+        arena,
+        bot_id: int,
+        allowed_signals: Iterable[str] | None = None,
+        endpoint_url: str | None = None,
+        api_key: str | None = None,
+        model: str = "gpt-3.5-turbo",
+        timeout: float = 10.0,
+    ) -> str:
+        """Build prompt from arena state and fetch/choose the bot function source."""
+        obs = self.build_observation(arena, bot_id)
+        return self.regenerate_function_from_observation(
+            obs,
+            allowed_signals=allowed_signals,
+            endpoint_url=endpoint_url,
+            api_key=api_key,
+            model=model,
+            timeout=timeout,
+        )

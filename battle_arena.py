@@ -56,13 +56,19 @@ class Arena:
     MAX_HP = 100
 
     # Physics parameters
-    DT_PHYSICS = 1.0 / 240.0  # 240Hz physics
-    DT_CONTROL = 1.0 / 120.0  # 120Hz control
+    DT_PHYSICS = 1.0 / 240.0  # Simulation physics timestep
+    DT_CONTROL = 1.0 / 120.0  # Control evaluation timestep
     V_MAX = 2.0  # max speed m/s
     V_REV_MAX = 1.0  # max reverse speed m/s
     A_MAX = 8.0  # max acceleration m/s²
     OMEGA_MAX = math.radians(260)  # max turn rate rad/s
     LINEAR_DAMPING = 0.1  # velocity damping
+    BOT_FRICTION = 0.2
+    BOT_ELASTICITY = 0.05
+
+    HEADING_KP = 12.0
+    HEADING_KD = 2.5
+    MAX_TORQUE = 250.0
 
     # Projectile configuration
     PROJ_SPEED = 6.0  # m/s
@@ -102,6 +108,11 @@ class Arena:
         # Create pymunk space
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)  # No gravity in top-down view
+
+        # Cached cadence ratios
+        self.physics_steps_per_control = max(
+            1, int(round(self.DT_CONTROL / self.DT_PHYSICS))
+        )
 
         # Bot data storage (metadata not in pymunk bodies)
         self.bot_data: Dict[int, BotData] = {}
@@ -186,7 +197,7 @@ class Arena:
             self._create_bot(bot_id, x, y, theta, team=1)
 
     def step_physics(self):
-        """Single physics step at 240Hz using pymunk."""
+        """Single physics step at the configured DT_PHYSICS interval using pymunk."""
         dt = self.DT_PHYSICS
 
         # Update bot control forces
@@ -218,10 +229,13 @@ class Arena:
             # Update heading with turn rate limit
             target_theta = getattr(self, "target_theta", [0] * self.BOT_COUNT)[bot_id]
             current_angle = body.angle
-            theta_diff = self._normalize_angle(target_theta - current_angle)
-            max_dtheta = self.OMEGA_MAX * dt
-            dtheta = max(-max_dtheta, min(max_dtheta, theta_diff))
-            body.angular_velocity = dtheta / dt
+            angle_error = self._normalize_angle(target_theta - current_angle)
+            desired_omega = self.HEADING_KP * angle_error
+            damping = self.HEADING_KD * body.angular_velocity
+            torque_command = desired_omega - damping
+            max_torque = self.MAX_TORQUE
+            torque_command = max(-max_torque, min(max_torque, torque_command))
+            body.torque = torque_command
 
         # Update projectile TTL and remove expired ones
         self._update_projectile_ttl(dt)
@@ -408,22 +422,18 @@ class Arena:
                 self.fire_command[bot_id] = action.get("fire", False)
 
     def try_fire_projectile(self, bot_id: int) -> bool:
-        """Attempt to fire projectile from bot with 1-second rate limit."""
+        """Attempt to fire projectile from bot with X-second rate limit."""
         if bot_id not in self.bot_data or not self._is_bot_alive(bot_id):
             return False
 
         bot_data = self.bot_data[bot_id]
         body = self.bot_bodies[bot_id]
 
-        # Check 1-second fire rate limit
+        # Check X-second fire rate limit
         time_since_last = self.time - bot_data.last_fire_time
-        min_time_between = self.FIRE_COOLDOWN
+        min_time_between = max(1.0 / self.FIRE_RATE, self.FIRE_COOLDOWN)
 
         if time_since_last < min_time_between:
-            return False
-
-        # Check friendly fire gating (simplified - 1° cone check)
-        if self._check_friendly_fire_risk(bot_id):
             return False
 
         # Create projectile at bot position with bot heading
@@ -511,36 +521,6 @@ class Arena:
             begin=projectile_wall_collision,
         )
 
-    def _check_friendly_fire_risk(self, bot_id: int) -> bool:
-        """Check if firing would risk friendly fire (simplified)."""
-        if bot_id not in self.bot_data:
-            return True
-
-        bot_body = self.bot_bodies[bot_id]
-        bot_data = self.bot_data[bot_id]
-        fire_angle = bot_body.angle
-        cone_half_angle = math.radians(0.5)
-
-        for other_id, other_data in self.bot_data.items():
-            if (
-                other_id == bot_id
-                or not self._is_bot_alive(other_id)
-                or other_data.team != bot_data.team
-            ):
-                continue
-
-            # Check if teammate is in firing cone
-            other_body = self.bot_bodies[other_id]
-            dx = other_body.position[0] - bot_body.position[0]
-            dy = other_body.position[1] - bot_body.position[1]
-            angle_to_teammate = math.atan2(dy, dx)
-
-            angle_diff = abs(self._normalize_angle(angle_to_teammate - fire_angle))
-            if angle_diff <= cone_half_angle:
-                return True
-
-        return False
-
     def get_fire_status(self, bot_id: int) -> Tuple[float, bool]:
         """Return (cooldown_remaining, can_fire) for the specified bot."""
         if bot_id not in self.bot_data:
@@ -553,7 +533,6 @@ class Arena:
         can_fire = (
             self._is_bot_alive(bot_id)
             and cooldown_remaining <= 0.0
-            and not self._check_friendly_fire_risk(bot_id)
         )
         return cooldown_remaining, can_fire
 
@@ -695,7 +674,8 @@ class Arena:
 
         # Create shape
         shape = pymunk.Circle(body, self.BOT_RADIUS)
-        shape.friction = 0.1
+        shape.friction = self.BOT_FRICTION
+        shape.elasticity = self.BOT_ELASTICITY
         shape.collision_type = self.COLLISION_TYPE_BOT
 
         # Add to space
@@ -832,6 +812,10 @@ class Arena:
                 vy *= scale
 
             body.velocity = (vx, vy)
+            if body.angular_velocity > self.OMEGA_MAX:
+                body.angular_velocity = self.OMEGA_MAX
+            elif body.angular_velocity < -self.OMEGA_MAX:
+                body.angular_velocity = -self.OMEGA_MAX
 
     def get_battle_state(self) -> Dict:
         """Get current battle state for logging/visualization."""
@@ -1093,15 +1077,14 @@ def run_battle_simulation(
         )
     start_time = time.time()
 
+    physics_steps_per_control = arena.physics_steps_per_control
+
     # Main simulation loop
     while True:
-        # Physics step (240Hz)
+        # Physics step (cadence governed by DT_PHYSICS)
         arena.step_physics()
 
-        # Calculate physics steps per control step
-        physics_steps_per_control = int(x=arena.DT_PHYSICS / arena.DT_CONTROL)
-        assert physics_steps_per_control == 2
-        # Control step (X Hz)
+        # Control step cadence derived from cached ratio
         if (arena.physics_tick % physics_steps_per_control) == 0:
             arena.step_control()
 
@@ -1132,8 +1115,8 @@ def run_battle_simulation(
                 ):
                     arena.try_fire_projectile(bot_id)
 
-            # Log state every few ticks for visualization
-            if arena.tick % 12 == 0:  # ~10Hz logging
+            # Log state periodically for visualization
+            if arena.tick % 12 == 0:
                 arena.log_state()
 
         # Check for battle end
