@@ -52,6 +52,7 @@ func _ready():
 		viewport_container.stretch_shrink = 1
 		# If stretch is disabled in editor, fall back to manual sync on container resize
 		viewport_container.resized.connect(_sync_subviewport_size)
+		viewport_container.gui_input.connect(_on_viewport_gui_input)
 	
 	# Initialize components by preloading scripts
 	var arena_manager_script = preload("res://scripts/ArenaManager.gd")
@@ -147,22 +148,12 @@ func setup_timeline_slider():
 		timeline_slider.set_value_no_signal(0)
 		timeline_slider.step = 0.001 # Allow fractional values for smooth playback tracking
 
+
 func _input(event):
 	if camera_controller_script and camera_controller_script.has_method("handle_input"):
 		camera_controller_script.handle_input(event)
 	
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		print("DEBUG: Mouse button pressed at global position: ", event.position)
-		# We only process clicks within the 3D viewport area.
-		# This also transforms global mouse coordinates to be local to the viewport container,
-		# which is required for the raycast to work correctly.
-		if viewport_container.get_global_rect().has_point(event.position):
-			print("DEBUG: Click is inside viewport container.")
-			var local_mouse_pos = event.position - viewport_container.get_global_rect().position
-			handle_bot_selection(local_mouse_pos)
-		else:
-			print("DEBUG: Click is outside viewport container.")
-	elif event is InputEventKey and event.pressed:
+	if event is InputEventKey and event.pressed:
 		match event.keycode:
 			KEY_SPACE:
 				toggle_playback()
@@ -175,53 +166,46 @@ func _input(event):
 			KEY_ESCAPE, KEY_Q:
 				get_tree().quit()
 
+
+func _on_viewport_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		# Capture mouse position directly from the SubViewport (already mapped when stretch=true)
+		var viewport_pos: Vector2 = viewport_3d.get_mouse_position()
+		handle_bot_selection(viewport_pos)
+		accept_event()
+
+
 func handle_bot_selection(mouse_pos: Vector2):
-	print("--- Handling Bot Selection ---")
-	print("Mouse position (local to viewport): ", mouse_pos)
 	if not viewport_3d:
-		print("DEBUG: viewport_3d is null.")
 		return
 	var world = world_root.get_world_3d()
 	if not world:
-		print("DEBUG: world_root.get_world_3d() is null.")
 		return
 	if not camera_3d:
-		print("DEBUG: camera_3d is null.")
 		return
 		
 	var from = camera_3d.project_ray_origin(mouse_pos)
 	var to = from + camera_3d.project_ray_normal(mouse_pos) * 1000.0
-	print("Raycast from: ", from, " to: ", to)
 	
 	var space_state = world.direct_space_state
 	if not space_state:
-		print("DEBUG: Missing direct_space_state.")
 		return
 		
 	var query = PhysicsRayQueryParameters3D.create(from, to)
 	query.collide_with_areas = true
 	var result = space_state.intersect_ray(query)
-	
+
 	if result and result.collider:
-		print("Raycast hit: ", result.collider.name, " at position ", result.position)
 		var node = result.collider
 		while node:
-			print("Checking node: ", node.name, " (", node.get_path(), ")")
 			if node.has_meta("bot_id"):
 				var bot_id = node.get_meta("bot_id")
-				print("SUCCESS: Found bot with ID: ", bot_id)
 				select_bot_by_id(bot_id)
 				return # Found a bot, we are done
-			if node == world_root:
-				print("Reached world root, stopping search.")
-				break
 			node = node.get_parent()
 	else:
-		print("Raycast did not hit anything.")
-	
-	# Clicked on something else, or empty space, deselect
-	print("No bot found at click position, deselecting.")
-	select_bot_by_id(-1)
+		# Clicked on something else, or empty space, deselect
+		select_bot_by_id(-1)
 
 func select_bot_by_id(bot_id: int):
 	var current_selected_id = selected_bot.get("id", -1)
