@@ -153,3 +153,10 @@ def bot_function(observation):
     captured = capsys.readouterr()
     assert "LLM Prompt" in captured.out
     assert "def bot_function" in source
+
+
+    # Add this line to print the captured output to the console
+    print(captured.out)
+
+    assert "LLM Prompt" in captured.out
+    assert "def bot_function" in source

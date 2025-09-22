@@ -4,6 +4,7 @@ Compiles and executes LLM-generated Python functions via Numba JIT with timeout 
 """
 
 import copy
+import importlib
 import math
 import queue
 import threading
@@ -13,6 +14,19 @@ from types import MappingProxyType
 from typing import Any, Callable, Dict, Optional
 
 import numpy as np
+
+# Allowlist of modules bot functions may import when running in the restricted sandbox
+_SANDBOX_IMPORT_ALLOWLIST = {
+    "math",
+    "random",
+    "statistics",
+    "itertools",
+    "functools",
+    "collections",
+    "heapq",
+    "bisect",
+    "numpy",
+}
 
 # Try to import numba, fall back to no JIT if unavailable
 try:
@@ -33,10 +47,14 @@ except ImportError:
 
 try:
     from RestrictedPython import compile_restricted
+    from RestrictedPython.Guards import guarded_iter_unpack_sequence as _rp_guarded_iter_unpack_sequence
+    from RestrictedPython.Guards import guarded_unpack_sequence as _rp_guarded_unpack_sequence
 
     RESTRICTED_AVAILABLE = True
 except ImportError:
     compile_restricted = None  # type: ignore[assignment]
+    _rp_guarded_iter_unpack_sequence = None  # type: ignore[assignment]
+    _rp_guarded_unpack_sequence = None  # type: ignore[assignment]
     RESTRICTED_AVAILABLE = False
 
 
@@ -61,19 +79,42 @@ def _guarded_getiter(obj):
     return iter(obj)
 
 
-def _guarded_iter_unpack_sequence(obj, count):
+def _guarded_iter_unpack_sequence(obj, spec, *_):
+    if _rp_guarded_iter_unpack_sequence is not None:
+        return _rp_guarded_iter_unpack_sequence(obj, spec, _guarded_getiter)
     iterator = iter(obj)
-    for _ in range(count):
+    for _ in range(int(spec)):
         yield next(iterator)
 
 
-def _guarded_unpack_sequence(obj, count):
+def _guarded_unpack_sequence(obj, spec, *_):
+    if _rp_guarded_unpack_sequence is not None:
+        return _rp_guarded_unpack_sequence(obj, spec, _guarded_getiter)
     iterator = iter(obj)
-    return tuple(next(iterator) for _ in range(count))
+    return tuple(next(iterator) for _ in range(int(spec)))
 
 
 def _write_guard(obj):
     return obj
+
+
+def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
+    """Permit imports from a small allowlist of safe modules inside the sandbox."""
+
+    if level != 0:
+        raise ImportError("Relative imports are not supported in sandboxed bot functions")
+
+    root_name = name.split(".", 1)[0]
+    if root_name not in _SANDBOX_IMPORT_ALLOWLIST:
+        raise ImportError(f"Module '{name}' is not permitted in sandboxed bot functions")
+
+    module = importlib.import_module(name)
+
+    # mimic CPython behaviour: if fromlist is empty return the top-level module
+    if not fromlist:
+        return module
+
+    return module
 
 
 class ScratchPad:
@@ -389,6 +430,7 @@ class PythonFunctionRunner:
             "any": any,
             "all": all,
             "isinstance": isinstance,
+            "__import__": _restricted_import,
         }
 
         return {

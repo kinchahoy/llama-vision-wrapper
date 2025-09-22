@@ -849,6 +849,148 @@ class BattleViewer:
         # Pass `self` (the viewer instance) to access metadata.
 
         class MockArena:
+            COLLISION_TYPE_BOT = 1
+            COLLISION_TYPE_PROJECTILE = 2
+            COLLISION_TYPE_WALL = 3
+
+            class _Vec2:
+                __slots__ = ("x", "y")
+
+                def __init__(self, x: float, y: float):
+                    self.x = float(x)
+                    self.y = float(y)
+
+                def __iter__(self):
+                    yield self.x
+                    yield self.y
+
+                def __add__(self, other):
+                    ox, oy = (other.x, other.y) if hasattr(other, "x") else other
+                    return MockArena._Vec2(self.x + ox, self.y + oy)
+
+                def __sub__(self, other):
+                    ox, oy = (other.x, other.y) if hasattr(other, "x") else other
+                    return MockArena._Vec2(self.x - ox, self.y - oy)
+
+                def __mul__(self, scalar: float):
+                    return MockArena._Vec2(self.x * scalar, self.y * scalar)
+
+                __rmul__ = __mul__
+
+                def dot(self, other) -> float:
+                    ox, oy = (other.x, other.y) if hasattr(other, "x") else other
+                    return self.x * ox + self.y * oy
+
+                def cross(self, other) -> float:
+                    ox, oy = (other.x, other.y) if hasattr(other, "x") else other
+                    return self.x * oy - self.y * ox
+
+                @property
+                def length(self) -> float:
+                    return math.hypot(self.x, self.y)
+
+            class _SegmentQueryInfo:
+                __slots__ = ("shape", "alpha", "point")
+
+                def __init__(self, shape, alpha: float, point):
+                    self.shape = shape
+                    self.alpha = alpha
+                    self.point = point
+
+            class _MockBody:
+                __slots__ = ("position", "angle", "velocity", "shapes")
+
+                def __init__(self, position, angle: float, velocity):
+                    self.position = position
+                    self.angle = angle
+                    self.velocity = velocity
+                    self.shapes = ()
+
+            class _MockCircleShape:
+                __slots__ = ("body", "radius", "collision_type")
+
+                def __init__(self, body, radius: float, collision_type: int):
+                    self.body = body
+                    self.radius = radius
+                    self.collision_type = collision_type
+
+                def segment_intersections(self, start, end):
+                    center = MockArena._Vec2(*self.body.position)
+                    direction = end - start
+                    a = direction.dot(direction)
+                    if a <= 1e-9:
+                        return []
+
+                    to_center = start - center
+                    b = 2.0 * to_center.dot(direction)
+                    c = to_center.dot(to_center) - self.radius**2
+                    disc = b * b - 4.0 * a * c
+                    if disc < 0.0:
+                        return []
+
+                    sqrt_disc = math.sqrt(max(disc, 0.0))
+                    intersections = []
+                    for t in ((-b - sqrt_disc) / (2.0 * a), (-b + sqrt_disc) / (2.0 * a)):
+                        if 0.0 <= t <= 1.0:
+                            point = start + direction * t
+                            intersections.append((t, point))
+                    return intersections
+
+            class _MockPolygonShape:
+                __slots__ = ("body", "_vertices", "collision_type")
+
+                def __init__(self, vertices, collision_type: int):
+                    self.body = None
+                    self._vertices = [MockArena._Vec2(*v) for v in vertices]
+                    self.collision_type = collision_type
+
+                def get_vertices(self):
+                    return [(v.x, v.y) for v in self._vertices]
+
+                def segment_intersections(self, start, end):
+                    results = []
+                    if len(self._vertices) < 2:
+                        return results
+
+                    ray = end - start
+                    for idx in range(len(self._vertices)):
+                        a = self._vertices[idx]
+                        b = self._vertices[(idx + 1) % len(self._vertices)]
+                        edge = b - a
+                        denom = ray.cross(edge)
+                        if abs(denom) < 1e-9:
+                            continue
+
+                        diff = a - start
+                        t = diff.cross(edge) / denom
+                        u = diff.cross(ray) / denom
+                        if 0.0 <= t <= 1.0 and 0.0 <= u <= 1.0:
+                            point = start + ray * t
+                            results.append((t, point))
+                    return results
+
+            class _MockSpace:
+                def __init__(self):
+                    self._shapes = []
+
+                def add_shape(self, shape):
+                    self._shapes.append(shape)
+
+                def segment_query(self, start, end, _radius, _shape_filter):
+                    start_vec = MockArena._Vec2(*start)
+                    end_vec = MockArena._Vec2(*end)
+                    hits = []
+
+                    for shape in self._shapes:
+                        if not hasattr(shape, "segment_intersections"):
+                            continue
+
+                        for alpha, point in shape.segment_intersections(start_vec, end_vec):
+                            hits.append(MockArena._SegmentQueryInfo(shape, alpha, point))
+
+                    hits.sort(key=lambda info: info.alpha)
+                    return hits
+
             def __init__(self, viewer, current_state):
                 self.SENSE_RANGE = 15.0
                 self.FOV_ANGLE = math.radians(120)
@@ -858,28 +1000,35 @@ class BattleViewer:
                 self.projectile_data = {}
                 self.projectile_bodies = {}
                 self.wall_bodies = []
+                self.space = MockArena._MockSpace()
 
                 for bot in current_state.get("bots", []):
-                    if bot["alive"]:
-                        bot_id = bot["id"]
+                    if not bot["alive"]:
+                        continue
 
-                        class MockBotData:
-                            def __init__(self, bot_info):
-                                self.team = bot_info["team"]
-                                self.hp = bot_info["hp"]
-                                self.signal = bot_info.get("signal", "none")
+                    bot_id = bot["id"]
 
-                        class MockBotBody:
-                            def __init__(self, bot_info):
-                                self.position = (bot_info["x"], bot_info["y"])
-                                self.angle = math.radians(bot_info["theta"])
-                                self.velocity = (
-                                    bot_info.get("vx", 0),
-                                    bot_info.get("vy", 0),
-                                )
+                    class MockBotData:
+                        def __init__(self, bot_info):
+                            self.team = bot_info["team"]
+                            self.hp = bot_info["hp"]
+                            self.signal = bot_info.get("signal", "none")
 
-                        self.bot_data[bot_id] = MockBotData(bot)
-                        self.bot_bodies[bot_id] = MockBotBody(bot)
+                    body = MockArena._MockBody(
+                        (bot["x"], bot["y"]),
+                        math.radians(bot["theta"]),
+                        (bot.get("vx", 0), bot.get("vy", 0)),
+                    )
+                    shape = MockArena._MockCircleShape(
+                        body,
+                        self.BOT_RADIUS,
+                        MockArena.COLLISION_TYPE_BOT,
+                    )
+                    body.shapes = (shape,)
+
+                    self.bot_data[bot_id] = MockBotData(bot)
+                    self.bot_bodies[bot_id] = body
+                    self.space.add_shape(shape)
 
                 for proj in current_state.get("projectiles", []):
                     proj_id = len(self.projectile_data)
@@ -889,44 +1038,39 @@ class BattleViewer:
                             self.team = proj_info.get("team", 0)
                             self.ttl = proj_info.get("ttl", 1.0)
 
-                    class MockProjBody:
-                        def __init__(self, proj_info):
-                            self.position = (proj_info["x"], proj_info["y"])
-                            self.velocity = (
-                                proj_info.get("vx", 0),
-                                proj_info.get("vy", 0),
-                            )
+                    body = MockArena._MockBody(
+                        (proj["x"], proj["y"]),
+                        0.0,
+                        (proj.get("vx", 0), proj.get("vy", 0)),
+                    )
+                    shape = MockArena._MockCircleShape(
+                        body,
+                        0.1,
+                        MockArena.COLLISION_TYPE_PROJECTILE,
+                    )
+                    body.shapes = (shape,)
 
                     self.projectile_data[proj_id] = MockProjData(proj)
-                    self.projectile_bodies[proj_id] = MockProjBody(proj)
-
-                class MockWallShape:
-                    def __init__(self, vertices):
-                        self._vertices = vertices
-
-                    def get_vertices(self):
-                        return self._vertices
+                    self.projectile_bodies[proj_id] = body
+                    self.space.add_shape(shape)
 
                 walls_data = viewer.metadata.get("walls", [])
                 for wall_def in walls_data:
                     cx, cy, w, h, angle_deg = wall_def
                     angle_rad = math.radians(angle_deg)
                     c, s = math.cos(angle_rad), math.sin(angle_rad)
-                    hw, hh = w / 2, h / 2
-                    corners = [
-                        (-hw, -hh),
-                        (hw, -hh),
-                        (hw, hh),
-                        (-hw, hh),
+                    hw, hh = w / 2.0, h / 2.0
+                    local_corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+                    rotated = [
+                        (px * c - py * s, px * s + py * c) for px, py in local_corners
                     ]
-                    rotated_corners = [
-                        (p[0] * c - p[1] * s, p[0] * s + p[1] * c) for p in corners
-                    ]
-                    abs_corners = [(p[0] + cx, p[1] + cy) for p in rotated_corners]
+                    world_corners = [(px + cx, py + cy) for px, py in rotated]
 
-                    # Create a single polygon shape instead of segments
-                    wall_shape = MockWallShape(abs_corners)
+                    wall_shape = MockArena._MockPolygonShape(
+                        world_corners, MockArena.COLLISION_TYPE_WALL
+                    )
                     self.wall_bodies.append((None, wall_shape))
+                    self.space.add_shape(wall_shape)
 
             def _is_bot_alive(self, bot_id):
                 return bot_id in self.bot_data
