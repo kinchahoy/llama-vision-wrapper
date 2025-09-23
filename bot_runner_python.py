@@ -3,7 +3,6 @@ Python Function Runner for Battle Sim
 Compiles and executes LLM-generated Python functions via Numba JIT with timeout handling.
 """
 
-import copy
 import importlib
 import math
 import queue
@@ -223,6 +222,7 @@ class PythonFunctionRunner:
         self.max_execution_time = 0.01  # 10ms limit
         self.compile_cache = {}  # Cache compiled functions by source code hash
         self.allowed_signals = list(ALLOWED_SIGNALS.keys())
+        self._allowed_signals_tuple = tuple(self.allowed_signals)
         self.bot_memory: Dict[int, Dict[str, Any]] = {}
         self.sandbox_enabled = sandbox_enabled and RESTRICTED_AVAILABLE
 
@@ -451,18 +451,36 @@ class PythonFunctionRunner:
         if not isinstance(observation, dict):
             raise ValueError("Observation must be a dictionary")
 
-        payload = copy.deepcopy(observation)
-        payload["memory"] = copy.deepcopy(self.bot_memory.get(bot_id, {}))
-        payload["allowed_signals"] = tuple(self.allowed_signals)
+        payload = dict(observation)
+        payload["memory"] = dict(self.bot_memory.get(bot_id, {}))
+        payload["allowed_signals"] = self._allowed_signals_tuple
         payload["scratchpad"] = ScratchPad(self.SCRATCH_LIMIT)
+        if not self.sandbox_enabled:
+            return payload
         return self._make_read_only(payload)
 
     def _make_read_only(self, obj: Any) -> Any:
         if isinstance(obj, dict):
-            frozen = {key: self._make_read_only(value) for key, value in obj.items()}
-            return MappingProxyType(frozen)
+            # Fast-path: shallow-freeze common large payload fields selectively
+            if "visible_objects" in obj and isinstance(obj["visible_objects"], (list, tuple)):
+                vo = obj["visible_objects"]
+                if isinstance(vo, list):
+                    # Freeze each visible object's dict shallowly
+                    obj["visible_objects"] = tuple(
+                        MappingProxyType(d) if isinstance(d, dict) else d for d in vo
+                    )
+                else:
+                    obj["visible_objects"] = tuple(vo)
+            # Freeze other values recursively but avoid deep recursion into already-frozen types
+            for key, value in list(obj.items()):
+                if key == "visible_objects":
+                    continue
+                obj[key] = self._make_read_only(value)
+            return MappingProxyType(obj)
         if isinstance(obj, list):
-            return tuple(self._make_read_only(value) for value in obj)
+            for idx, value in enumerate(obj):
+                obj[idx] = self._make_read_only(value)
+            return tuple(obj)
         if isinstance(obj, set):
             return frozenset(self._make_read_only(value) for value in obj)
         if isinstance(obj, tuple):

@@ -5,9 +5,12 @@ Interactive visualization of battle simulations with playback controls.
 
 import json
 import math
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, List, Optional, Tuple, cast
 
 import pygame
+
+from battle_types import BattleData, BattleEvent, BattleFrame
+from pydantic import ValidationError
 
 # Import visibility system to use same logic as bot programs
 PythonLLMController: Any
@@ -45,11 +48,12 @@ class BattleViewer:
     HEALTH_LOW = (255, 0, 0)  # Red
     HEALTH_BG = (50, 50, 50)  # Dark gray
 
-    def __init__(self, battle_data: Dict):
+    def __init__(self, battle_data: BattleData):
         """Initialize viewer with battle data."""
         self.battle_data = battle_data
-        self.timeline = battle_data["timeline"]
-        self.metadata = battle_data["metadata"]
+        self.timeline = list(battle_data.timeline)
+        self.metadata = battle_data.metadata
+        self.summary = battle_data.summary
 
         # Playback state
         self.current_frame = 0
@@ -266,10 +270,10 @@ class BattleViewer:
         # Draw UI
         self._draw_ui(current_state)
 
-    def _get_current_state(self) -> Dict:
+    def _get_current_state(self) -> BattleFrame:
         """Get current frame state with interpolation."""
         if not self.timeline:
-            return {}
+            return BattleFrame(tick=0, time=0.0)
 
         frame_idx = int(self.current_frame)
         frame_idx = max(0, min(len(self.timeline) - 1, frame_idx))
@@ -309,7 +313,7 @@ class BattleViewer:
                 (self.arena_offset_x + self.ARENA_DISPLAY_SIZE, y),
             )
 
-    def _draw_bots(self, state: Dict):
+    def _draw_bots(self, state: BattleFrame):
         """Draw bots with health bars and heading indicators."""
         for bot in state.get("bots", []):
             # Convert centered sim coordinates to screen coordinates
@@ -457,7 +461,7 @@ class BattleViewer:
             hp_rect = (int(x - bar_width // 2), int(y), hp_width, bar_height)
             pygame.draw.rect(self.screen, hp_color, hp_rect)
 
-    def _draw_projectiles(self, state: Dict):
+    def _draw_projectiles(self, state: BattleFrame):
         """Draw projectiles."""
         projectiles = state.get("projectiles", [])
 
@@ -504,7 +508,7 @@ class BattleViewer:
                     1,
                 )
 
-    def _draw_walls(self, state: Dict):
+    def _draw_walls(self, state: BattleFrame):
         """Draw interior walls/obstacles from metadata."""
         wall_color = (100, 100, 100)
         walls_data = self.metadata.get("walls", [])
@@ -535,7 +539,7 @@ class BattleViewer:
 
             self.screen.blit(rotated_surface, new_rect)
 
-    def _draw_ui(self, state: Dict):
+    def _draw_ui(self, state: BattleFrame):
         """Draw UI elements (timeline, controls, info)."""
         # Timeline scrubber
         self._draw_timeline()
@@ -567,7 +571,7 @@ class BattleViewer:
             self._draw_text(f"Winner: {winner} ({reason})", (info_x, info_y + 100))
 
         # Display MVP and performance highlights
-        summary = self.battle_data.get("summary", {})
+        summary = self.summary
         if summary:
             mvp = summary.get("mvp", {})
             if mvp.get("bot_id") is not None:
@@ -654,7 +658,7 @@ class BattleViewer:
         )
 
         # Function info from bot_functions metadata
-        bot_functions = self.battle_data.get("summary", {}).get("bot_functions", {})
+        bot_functions = self.summary.get("bot_functions", {})
         bot_func_data = bot_functions.get(str(bot_id), {})
 
         version = bot_func_data.get("version", "N/A")
@@ -810,7 +814,7 @@ class BattleViewer:
             self.screen.blit(none_surface, (right_col_x, base_y + 15))
 
         # Performance stats from summary
-        summary = self.battle_data.get("summary", {})
+        summary = self.summary
         bot_scores = summary.get("bot_scores", [])
 
         # Find this bot's score data
@@ -1221,7 +1225,7 @@ class BattleViewer:
         visible_walls.sort(key=lambda x: x[1])
         return visible_walls
 
-    def _draw_events(self, x: int, y: int, events: List[Dict]):
+    def _draw_events(self, x: int, y: int, events: List[BattleEvent]):
         """Draw recent events."""
         self._draw_text("Recent Events:", (x, y), self.WHITE)
 
@@ -1270,12 +1274,15 @@ if __name__ == "__main__":
     filename = sys.argv[1]
     try:
         with open(filename) as f:
-            battle_data = json.load(f)
+            raw_data = json.load(f)
+        battle_data = BattleData.model_validate(raw_data)
         viewer = BattleViewer(battle_data)
         viewer.run()
     except FileNotFoundError:
         print(f"Battle log file not found: {filename}")
     except json.JSONDecodeError:
         print(f"Invalid JSON file: {filename}")
+    except ValidationError as exc:
+        print(f"Battle data validation error: {exc}")
     except Exception as e:
         print(f"Error loading battle data: {e}")

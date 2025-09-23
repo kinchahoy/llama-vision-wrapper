@@ -1,8 +1,10 @@
 """Smoke test to ensure python battle runner produces expected summary data."""
 
-import sys
 import importlib.util
+import sys
 from pathlib import Path
+
+from battle_types import BattleData
 
 
 def _load_module(name: str, filename: str):
@@ -31,8 +33,10 @@ def test_python_battle_summary_structure():
         verbose=False,
     )
 
-    summary = battle_data["summary"]
-    metadata = battle_data["metadata"]
+    assert isinstance(battle_data, BattleData)
+
+    summary = battle_data.summary
+    metadata = battle_data.metadata
 
     expected_summary_keys = {
         "control_system",
@@ -42,7 +46,7 @@ def test_python_battle_summary_structure():
         "avg_function_time_ms",
         "bot_functions",
     }
-    missing_keys = expected_summary_keys - summary.keys()
+    missing_keys = expected_summary_keys - set(summary.keys())
     assert not missing_keys, f"Missing summary keys: {missing_keys}"
 
     assert metadata["control_system"] == "python_functions"

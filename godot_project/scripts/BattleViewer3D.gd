@@ -8,6 +8,7 @@ var playing: bool = false
 var playback_speed: float = 1
 var selected_bot: Dictionary = {}
 var dragging_slider: bool = false
+var show_fov_debug: bool = false
 
 # Interpolation state for smooth playback
 var interpolation_factor: float = 0.0
@@ -24,6 +25,13 @@ var lighting: Node3D
 # UI references
 var play_button: Button
 var timeline_slider: HSlider
+var first_person_button: Button
+var overhead_button: Button
+
+# Camera view state
+var camera_mode: String = "overhead"
+var first_person_bot_id: int = -1
+var saved_overhead_state: Dictionary = {}
 
 # Components
 var arena_manager
@@ -43,8 +51,10 @@ func _ready():
 	camera_3d = camera_controller.get_node("Camera3D")
 	world_root = get_node("VBoxContainer/MainArea/ViewportContainer/SubViewport/World")
 	lighting = get_node("VBoxContainer/MainArea/ViewportContainer/SubViewport/Lighting")
-	play_button = get_node("VBoxContainer/BottomPanel/Toolbar/PlayButton")
-	timeline_slider = get_node("VBoxContainer/BottomPanel/Timeline/TimelineSlider")
+	play_button = get_node("VBoxContainer/MarginContainer/BottomPanel/Toolbar/PlayButton")
+	timeline_slider = get_node("VBoxContainer/MarginContainer/BottomPanel/Timeline/TimelineSlider")
+	first_person_button = get_node("VBoxContainer/MarginContainer/BottomPanel/Toolbar/FirstPersonButton")
+	overhead_button = get_node("VBoxContainer/MarginContainer/BottomPanel/Toolbar/OverheadButton")
 
 	# Ensure the viewport container stretches; avoid manual SubViewport sizing when stretched
 	if viewport_container:
@@ -89,6 +99,8 @@ func _ready():
 	
 	# Connect timeline slider signals
 	timeline_slider.drag_ended.connect(_on_timeline_slider_drag_ended)
+	first_person_button.pressed.connect(_on_first_person_button_pressed)
+	overhead_button.pressed.connect(_on_overhead_button_pressed)
 	
 	# Setup lighting
 	setup_lighting()
@@ -135,11 +147,47 @@ func setup_lighting():
 	var lighting_manager = lighting_manager_script.new()
 	lighting.add_child(lighting_manager)
 	lighting_manager.setup_modern_lighting()
-	
+
 	# Apply environment to camera
 	var environment = lighting_manager.get_environment()
 	if camera_3d and environment:
 		camera_3d.environment = environment
+
+func _activate_first_person_view(bot_id: int) -> void:
+	bot_id = int(bot_id)
+	if bot_id == -1:
+		return
+	if not camera_controller_script or not arena_manager:
+		return
+	var bot_node = arena_manager.get_bot_node(bot_id)
+	if not is_instance_valid(bot_node):
+		return
+	if camera_mode != "first_person":
+		saved_overhead_state = {
+			"camera_target": camera_controller_script.camera_target,
+			"camera_distance": camera_controller_script.camera_distance,
+			"camera_angle_h": camera_controller_script.camera_angle_h,
+			"camera_angle_v": camera_controller_script.camera_angle_v,
+		}
+	first_person_bot_id = bot_id
+	camera_mode = "first_person"
+	camera_controller_script.set_first_person_target(bot_node)
+	_update_camera_view()
+
+func _restore_overhead_view() -> void:
+	camera_mode = "overhead"
+	first_person_bot_id = -1
+	if not camera_controller_script:
+		return
+	if saved_overhead_state.is_empty():
+		camera_controller_script.reset_camera()
+	else:
+		camera_controller_script.camera_distance = saved_overhead_state.get("camera_distance", camera_controller_script.camera_distance)
+		camera_controller_script.camera_angle_h = saved_overhead_state.get("camera_angle_h", camera_controller_script.camera_angle_h)
+		camera_controller_script.camera_angle_v = saved_overhead_state.get("camera_angle_v", camera_controller_script.camera_angle_v)
+		var target: Vector3 = saved_overhead_state.get("camera_target", Vector3.ZERO)
+		camera_controller_script.set_overhead_mode(target)
+	saved_overhead_state.clear()
 
 func setup_timeline_slider():
 	var timeline = get_timeline()
@@ -163,8 +211,19 @@ func _input(event):
 				step_frame(1)
 			KEY_R:
 				reset_simulation()
+			KEY_F:
+				show_fov_debug = not show_fov_debug
+				if arena_manager and arena_manager.has_method("set_debug_overlays"):
+					arena_manager.set_debug_overlays(show_fov_debug)
 			KEY_ESCAPE, KEY_Q:
 				get_tree().quit()
+			KEY_PLUS, KEY_KP_ADD:
+				_adjust_speed(1.5)
+			KEY_MINUS, KEY_KP_SUBTRACT:
+				_adjust_speed(1.0 / 1.5)
+
+func _adjust_speed(mult: float) -> void:
+	playback_speed = clamp(playback_speed * mult, 0.1, 5.0)
 
 
 func _on_viewport_gui_input(event: InputEvent) -> void:
@@ -208,7 +267,8 @@ func handle_bot_selection(mouse_pos: Vector2):
 		select_bot_by_id(-1)
 
 func select_bot_by_id(bot_id: int):
-	var current_selected_id = selected_bot.get("id", -1)
+	bot_id = int(bot_id)
+	var current_selected_id = int(selected_bot.get("id", -1))
 	if bot_id == current_selected_id:
 		# If clicking the same bot, deselect it
 		bot_id = -1
@@ -219,15 +279,23 @@ func select_bot_by_id(bot_id: int):
 		var current_state = get_current_state()
 		var found = false
 		for bot in current_state.get("bots", []):
-			if bot.get("id") == bot_id:
-				selected_bot = bot
+			if int(bot.get("id", -1)) == bot_id:
+				selected_bot = bot.duplicate(true)
+				selected_bot["id"] = bot_id
 				found = true
 				break
 		if not found:
 			selected_bot = {}
 	
 	if arena_manager:
-		arena_manager.set_bot_selection(selected_bot.get("id", -1))
+		var sel_id = int(selected_bot.get("id", -1))
+		arena_manager.set_bot_selection(sel_id)
+		if camera_mode == "first_person":
+			var target_id = sel_id
+			if target_id == -1:
+				_restore_overhead_view()
+			else:
+				_activate_first_person_view(target_id)
 
 	if ui_manager:
 		ui_manager.update_selected_bot_info(self)
@@ -340,47 +408,24 @@ func interpolate_states(state1: Dictionary, state2: Dictionary, t: float) -> Dic
 		
 		interpolated["bots"] = interpolated_bots
 
-	# Interpolate projectile positions by proximity matching
+	# Interpolate projectile positions by ID (trust source data)
 	if state1.has("projectiles") and state2.has("projectiles"):
-		var projs1 = state1.get("projectiles", [])
-		var projs2 = state2.get("projectiles", []).duplicate() # Mutable copy for matching
-		var interpolated_projs = []
-		
-		# Max distance a projectile might travel in a log step (0.1s)
-		# Projectile speed is ~6m/s, so it moves ~0.6m. A 2m search radius is safe.
-		var search_radius_sq = 2.0 * 2.0
-		
-		for proj1 in projs1:
-			var best_match_proj2 = null
-			var best_match_idx = -1
-			var best_dist_sq = search_radius_sq
-			
-			for i in range(projs2.size()):
-				var proj2 = projs2[i]
-				
-				# Basic check: projectiles should be from the same team if that info is available
-				if proj1.get("team", -1) != proj2.get("team", -1):
-					continue
-					
-				var dx = proj2.get("x", 0.0) - proj1.get("x", 0.0)
-				var dy = proj2.get("y", 0.0) - proj1.get("y", 0.0)
-				var dist_sq = dx*dx + dy*dy
-				
-				if dist_sq < best_dist_sq:
-					best_dist_sq = dist_sq
-					best_match_proj2 = proj2
-					best_match_idx = i
-
-			if best_match_proj2:
-				var interpolated_proj = proj1.duplicate()
-				interpolated_proj["x"] = lerp(proj1.get("x", 0.0), best_match_proj2.get("x", 0.0), t)
-				interpolated_proj["y"] = lerp(proj1.get("y", 0.0), best_match_proj2.get("y", 0.0), t)
-				interpolated_projs.append(interpolated_proj)
-				projs2.remove_at(best_match_idx) # Prevent re-matching
-			else:
-				# Projectile likely expired, don't interpolate
-				interpolated_projs.append(proj1)
-		
+		var projs1: Array = state1.get("projectiles", [])
+		var projs2: Array = state2.get("projectiles", [])
+		var projs2_by_id := {}
+		for p2 in projs2:
+			if p2.has("id"):
+				projs2_by_id[p2["id"]] = p2
+		var interpolated_projs: Array = []
+		for p1 in projs1:
+			var ip = p1.duplicate()
+			if p1.has("id") and projs2_by_id.has(p1["id"]):
+				var p2 = projs2_by_id[p1["id"]]
+				ip["x"] = lerp(p1.get("x", 0.0), p2.get("x", 0.0), t)
+				ip["y"] = lerp(p1.get("y", 0.0), p2.get("y", 0.0), t)
+			# If not present in state2, keep p1 for this interval.
+			# It disappears only when the next frame is reached.
+			interpolated_projs.append(ip)
 		interpolated["projectiles"] = interpolated_projs
 	
 	return interpolated
@@ -390,6 +435,22 @@ func update_simulation_state():
 	if arena_manager and state:
 		arena_manager.update_bots(state)
 		arena_manager.update_projectiles(state)
+	_update_camera_view()
+
+func _update_camera_view() -> void:
+	if not camera_controller_script:
+		return
+	if camera_mode != "first_person":
+		return
+	if first_person_bot_id == -1 or not arena_manager:
+		_restore_overhead_view()
+		return
+	var bot_node = arena_manager.get_bot_node(first_person_bot_id)
+	if not is_instance_valid(bot_node):
+		_restore_overhead_view()
+		return
+	camera_controller_script.follow_node = bot_node
+	camera_controller_script.update_camera_position()
 
 # Signal handlers
 func _on_play_button_pressed():
@@ -399,6 +460,9 @@ func _on_timeline_slider_value_changed(value: float):
 	var timeline = get_timeline()
 	if timeline.size() > 0:
 		current_frame = clamp(value, 0.0, float(timeline.size() - 1))
+	# Nudge UI update to reflect speed in labels
+	if ui_manager:
+		ui_manager.update_all_ui(self)
 
 func _on_timeline_slider_drag_started():
 	playing = false
@@ -416,3 +480,12 @@ func _on_step_back_pressed():
 
 func _on_step_forward_pressed():
 	step_frame(1)
+
+func _on_first_person_button_pressed():
+	var bot_id = int(selected_bot.get("id", -1))
+	if bot_id == -1:
+		return
+	_activate_first_person_view(bot_id)
+
+func _on_overhead_button_pressed():
+	_restore_overhead_view()

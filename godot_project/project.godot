@@ -13,7 +13,7 @@ config_version=5
 config/name="Battle Viewer 3D"
 config/description="Modern battle simulation viewer with rich graphics"
 run/main_scene="res://scenes/BattleViewer.tscn"
-config/features=PackedStringArray("4.4", "Forward Plus")
+config/features=PackedStringArray("4.5", "Forward Plus")
 
 [display]
 

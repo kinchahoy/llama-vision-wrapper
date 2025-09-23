@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
-import json
-import threading
 from pathlib import Path
 import sys
 
@@ -12,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from llm_bot_controller import PythonLLMController
+from llm_bot_controller import PythonLLMController  # noqa: E402
 
 
 def test_prompt_building_and_regeneration(capsys):

@@ -8,6 +8,9 @@ var bot_nodes: Dictionary = {}
 var bot_pool: Array = []
 var projectile_nodes: Array = []
 var selected_bot_id: int = -1
+var debug_show_fov: bool = false
+var fov_mesh_instance: MeshInstance3D
+var vis_config := {"sense_range": 15.0, "fov_deg": 120}
 
 var projectile_mesh: SphereMesh
 
@@ -44,11 +47,17 @@ func setup_arena(metadata: Dictionary):
 	
 	# Create arena floor
 	create_floor(arena_width, arena_height)
-	
+
 	# Create walls
 	var walls_data = metadata.get("walls", [])
 	for wall_def in walls_data:
 		create_wall(wall_def)
+
+	# Visibility config for overlays (optional)
+	var cfg = metadata.get("visibility_config", {})
+	if cfg is Dictionary:
+		vis_config["sense_range"] = float(cfg.get("sense_range", vis_config["sense_range"]))
+		vis_config["fov_deg"] = float(cfg.get("fov_deg", vis_config["fov_deg"]))
 
 func create_floor(width: float, height: float):
 	var floor_mesh = BoxMesh.new()
@@ -79,6 +88,7 @@ func create_wall(wall_def: Array):
 	world_root.add_child(wall_node)
 
 func set_bot_selection(bot_id: int):
+	bot_id = int(bot_id)
 	# Deselect old bot
 	if selected_bot_id != -1 and is_instance_valid(bot_nodes.get(selected_bot_id)):
 		var old_bot_node = bot_nodes.get(selected_bot_id)
@@ -99,13 +109,18 @@ func set_bot_selection(bot_id: int):
 			if indicator:
 				indicator.visible = true
 
+	# Move/attach FOV overlay
+	_update_fov_overlay()
+
 func update_bots(state: Dictionary):
 	var current_bot_ids = {}
 	
 	# Update existing bots and create new ones from pool or from scratch
 	for bot_data in state.get("bots", []):
 		if bot_data.get("alive", true):
-			var bot_id = bot_data.get("id")
+			var bot_id = int(bot_data.get("id", -1))
+			if bot_id == -1:
+				continue
 			current_bot_ids[bot_id] = true
 			
 			var bot_node = bot_nodes.get(bot_id)
@@ -117,6 +132,9 @@ func update_bots(state: Dictionary):
 			
 			# Update bot state
 			_update_bot_node(bot_node, bot_data)
+
+	# Keep FOV overlay in sync
+	_update_fov_overlay()
 
 	# Deactivate bots that are no longer in the current state
 	var bots_to_deactivate = []
@@ -176,6 +194,74 @@ func create_bot(bot_id: int, team: int) -> Node3D:
 	var bot_node = bot_factory.create_bot(bot_id, team, materials)
 	world_root.add_child(bot_node)
 	return bot_node
+
+func get_bot_node(bot_id: int) -> Node3D:
+	return bot_nodes.get(int(bot_id))
+
+func set_debug_overlays(show_fov: bool) -> void:
+	debug_show_fov = show_fov
+	_update_fov_overlay()
+
+func _update_fov_overlay() -> void:
+	# Ensure overlay visibility and transform match selected bot
+	if not debug_show_fov:
+		if is_instance_valid(fov_mesh_instance):
+			fov_mesh_instance.visible = false
+		return
+
+	if selected_bot_id == -1 or not is_instance_valid(bot_nodes.get(selected_bot_id)):
+		if is_instance_valid(fov_mesh_instance):
+			fov_mesh_instance.visible = false
+		return
+
+	# Create mesh if missing
+	if not is_instance_valid(fov_mesh_instance):
+		fov_mesh_instance = _create_fov_mesh(vis_config["sense_range"], vis_config["fov_deg"]) 
+		world_root.add_child(fov_mesh_instance)
+
+	var bot_node: Node3D = bot_nodes.get(selected_bot_id)
+	fov_mesh_instance.visible = true
+
+	# Position: follow bot
+	fov_mesh_instance.position = bot_node.position + Vector3(0, 0.02, 0)
+
+	# Rotation: bot yaw already mapped as theta-90; overlay should share the same
+	# Mesh is modeled facing +X, while bots face -Z; apply -90° yaw offset.
+	fov_mesh_instance.rotation_degrees = bot_node.rotation_degrees + Vector3(0, -90.0, 0)
+
+func _create_fov_mesh(radius: float, fov_deg: float) -> MeshInstance3D:
+	var mesh_instance = MeshInstance3D.new()
+	var st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	var steps = int(max(6, round(fov_deg / 5.0)))
+	var half = deg_to_rad(fov_deg) * 0.5
+	var start_ang = -half
+	var ang_step = (half * 2.0) / float(steps)
+
+	# Triangle fan centered at origin on XZ plane
+	for i in range(steps):
+		var a0 = start_ang + ang_step * i
+		var a1 = a0 + ang_step
+		var p0 = Vector3(0, 0, 0)
+		var p1 = Vector3(cos(a0) * radius, 0, -sin(a0) * radius)
+		var p2 = Vector3(cos(a1) * radius, 0, -sin(a1) * radius)
+		st.add_vertex(p0)
+		st.add_vertex(p1)
+		st.add_vertex(p2)
+
+	var mesh = st.commit()
+	mesh_instance.mesh = mesh
+
+	# Material
+	var mat = StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 1.0, 0.2, 0.25)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh_instance.material_override = mat
+
+	return mesh_instance
 
 func update_bot_health(bot_node: Node3D, hp: float):
 	if bot_node.has_meta("health_component"):

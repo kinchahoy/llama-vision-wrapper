@@ -3,15 +3,25 @@ Python Function Battle Runner
 Run battles using Python functions instead of DSL programs.
 """
 
-import time
-import json
+from __future__ import annotations
+
 import importlib.util
+import json
+import time
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING, Protocol, cast
+from typing import Any, Dict, Optional, Protocol, Tuple, cast
 
 from battle_arena import Arena
 from llm_bot_controller import PythonLLMController
+from battle_types import (
+    BattleData,
+    BattleMetadata,
+    BattleSummary,
+    BotFunctionSummary,
+    RunnerStats,
+)
+from pydantic import ValidationError
 
 
 FUNCTION_UPDATE_PERIOD = 0.2  # seconds between Python function evaluations
@@ -70,7 +80,8 @@ def run_python_battle(
     arena_size: Optional[Tuple[float, float]] = None,
     bots_per_side: Optional[int] = None,
     sim_unsafe: bool = False,
-) -> Dict:
+    visibility_rays: Optional[int] = None,
+) -> BattleData:
     """
     Run a complete battle simulation using Python functions for bot control.
 
@@ -93,6 +104,8 @@ def run_python_battle(
     # Create Python function runner and LLM controller
     runner = PythonFunctionRunner(sandbox_enabled=not sim_unsafe)
     llm = PythonLLMController(arena.BOT_COUNT)
+    if visibility_rays is not None and visibility_rays > 0:
+        llm.visibility_ray_count = int(visibility_rays)
 
     if verbose and sim_unsafe:
         print("Simulation unsafe mode enabled: bot functions execute without RestrictedPython and may use Numba acceleration.")
@@ -212,49 +225,54 @@ def run_python_battle(
             break
 
     elapsed = time.time() - start_time
+    assert winner is not None
+
+    runner_stats = RunnerStats.model_validate(runner.get_runner_stats())
 
     if verbose:
         print(f"Battle complete: Team {winner} wins by {reason}")
         print(f"Duration: {arena.time:.1f}s simulated, {elapsed:.2f}s real")
 
-        # Print performance stats
-        stats = runner.get_runner_stats()
-        print(f"Function executions: {stats['total_executions']}")
-        print(f"Timeouts: {stats['total_timeouts']}")
-        print(f"Errors: {stats['total_errors']}")
-        if stats["total_executions"] > 0:
-            print(f"Average execution time: {stats['avg_execution_time'] * 1000:.2f}ms")
+        print(f"Function executions: {runner_stats.total_executions}")
+        print(f"Timeouts: {runner_stats.total_timeouts}")
+        print(f"Errors: {runner_stats.total_errors}")
+        if runner_stats.total_executions > 0:
+            avg_ms = runner_stats.avg_execution_time * 1000
+            print(f"Average execution time: {avg_ms:.2f}ms")
 
-        # Print individual bot stats
         print("\nBot performance:")
         for bot_id in range(arena.BOT_COUNT):
             bot_info = runner.get_bot_function_info(bot_id)
             if bot_info:
+                last_exec_ms = bot_info["last_execution_time"] * 1000
                 print(
                     f"  Bot {bot_id}: "
                     f"{bot_info['error_count']} errors, "
-                    f"{bot_info['last_execution_time'] * 1000:.2f}ms last exec"
+                    f"{last_exec_ms:.2f}ms last exec"
                 )
 
-    # Generate battle data
-    battle_data = {
-        "metadata": {
-            "seed": seed,
-            "duration": round(arena.time, 2),
-            "winner": f"team_{winner}",
-            "reason": reason,
-            "arena_size": arena.ARENA_SIZE,
-            "walls": arena.get_walls(),
-            "total_ticks": arena.tick,
-            "real_time": round(elapsed, 2),
-            "control_system": "python_functions",
-            "compilation_success": compilation_success,
-            "runner_stats": runner.get_runner_stats(),
-            "sandbox_enabled": not sim_unsafe,
-        },
-        "timeline": arena.battle_log,
-        "summary": _generate_python_battle_summary(arena, runner, llm),
-    }
+    metadata = BattleMetadata(
+        seed=seed,
+        duration=round(arena.time, 2),
+        winner=f"team_{winner}",
+        reason=reason,
+        arena_size=arena.ARENA_SIZE,
+        total_ticks=arena.tick,
+        real_time=round(elapsed, 2),
+        walls=arena.get_walls(),
+        control_system="python_functions",
+        compilation_success=compilation_success,
+        runner_stats=runner_stats,
+        sandbox_enabled=not sim_unsafe,
+    )
+
+    summary = _generate_python_battle_summary(arena, runner, runner_stats)
+
+    battle_data = BattleData(
+        metadata=metadata,
+        timeline=list(arena.battle_log),
+        summary=summary,
+    )
 
     # Clean up
     arena.cleanup()
@@ -263,40 +281,36 @@ def run_python_battle(
 
 
 def _generate_python_battle_summary(
-    arena: Arena, runner: PythonFunctionRunner, llm: PythonLLMController
-) -> Dict:
+    arena: Arena,
+    runner: PythonFunctionRunner,
+    runner_stats: RunnerStats,
+) -> BattleSummary:
     """Generate comprehensive battle summary for Python function battles."""
     from battle_arena import _generate_battle_summary
 
-    # Get base summary
     base_summary = _generate_battle_summary(arena)
 
-    # Add Python function specific stats
-    runner_stats = runner.get_runner_stats()
-
-    # Get bot function info
-    bot_function_info = {}
+    bot_function_info: Dict[int, BotFunctionSummary] = {}
     for bot_id in range(arena.BOT_COUNT):
         info = runner.get_bot_function_info(bot_id)
-        if info:
-            bot_function_info[bot_id] = {
-                "function_errors": info["error_count"],
-                "avg_exec_time_ms": round(info["last_execution_time"] * 1000, 2),
-                "version": info["version"],
-            }
+        if not info:
+            continue
+        bot_function_info[bot_id] = BotFunctionSummary(
+            function_errors=info["error_count"],
+            avg_exec_time_ms=round(info["last_execution_time"] * 1000, 2),
+            version=info["version"],
+        )
 
-    # Combine summaries
-    python_summary = base_summary.copy()
-    python_summary.update(
-        {
+    python_summary = base_summary.model_copy(
+        update={
             "control_system": "python_functions",
-            "function_executions": runner_stats["total_executions"],
-            "function_timeouts": runner_stats["total_timeouts"],
-            "function_errors": runner_stats["total_errors"],
-            "avg_function_time_ms": round(runner_stats["avg_execution_time"] * 1000, 2),
+            "function_executions": runner_stats.total_executions,
+            "function_timeouts": runner_stats.total_timeouts,
+            "function_errors": runner_stats.total_errors,
+            "avg_function_time_ms": round(runner_stats.avg_execution_time * 1000, 2),
             "bot_functions": bot_function_info,
-            "numba_enabled": runner_stats["numba_available"],
-            "sandbox_enabled": runner_stats.get("sandbox_enabled", True),
+            "numba_enabled": runner_stats.numba_available,
+            "sandbox_enabled": runner_stats.sandbox_enabled,
         }
     )
 
@@ -334,12 +348,16 @@ def run_interactive_viewer(
 
     try:
         with open(battle_file, "r") as f:
-            battle_data = json.load(f)
+            raw_data = json.load(f)
+        battle_data = BattleData.model_validate(raw_data)
     except FileNotFoundError:
         print(f"Error: Battle file '{battle_file}' not found")
         return
     except json.JSONDecodeError:
         print(f"Error: Invalid JSON in '{battle_file}'")
+        return
+    except ValidationError as exc:
+        print(f"Error: Battle data validation failed: {exc}")
         return
 
     print("Launching interactive viewer...")
@@ -412,6 +430,12 @@ def main():
         action="store_true",
         help="Disable RestrictedPython sandbox for bot functions (unsafe, enables direct execution and Numba acceleration)",
     )
+    parser.add_argument(
+        "--visibility-rays",
+        type=int,
+        default=None,
+        help="Override ray count for visibility fan (constant across runs)",
+    )
 
     args = parser.parse_args()
 
@@ -443,28 +467,35 @@ def main():
         bots_per_side=args.bots_per_side,
         verbose=not args.quiet,
         sim_unsafe=args.sim_unsafe,
+        visibility_rays=args.visibility_rays,
     )
 
     # Save results
     output_file = args.output or f"python_battle_{args.seed}.json"
     with open(output_file, "w") as f:
-        json.dump(battle_data, f, indent=2)
+        json.dump(battle_data.model_dump_jsonable(), f, indent=2)
     if not args.quiet:
         print(f"Battle data saved to {output_file}")
 
     # Print summary
     if not args.quiet:
-        summary = battle_data["summary"]
-        metadata = battle_data["metadata"]
+        summary = battle_data.summary
+        metadata = battle_data.metadata
 
         print("\n=== PYTHON BATTLE SUMMARY ===")
-        print(f"Winner: {metadata['winner']} ({metadata['reason']})")
-        print(f"Duration: {metadata['duration']}s")
-        print(f"Total shots: {summary['total_shots']}")
-        print(f"Hit rate: {summary['hit_rate']:.1%}")
-        print(f"MVP: Bot {summary['mvp']['bot_id']} (score: {summary['mvp']['score']})")
-        print(f"Function executions: {summary['function_executions']}")
-        print(f"Average function time: {summary['avg_function_time_ms']:.2f}ms")
+        print(f"Winner: {metadata.winner} ({metadata.reason})")
+        print(f"Duration: {metadata.duration}s")
+        print(f"Total shots: {summary.total_shots}")
+        print(f"Hit rate: {summary.hit_rate:.1%}")
+        if summary.mvp.bot_id is not None:
+            print(f"MVP: Bot {summary.mvp.bot_id} (score: {summary.mvp.score})")
+        else:
+            print("MVP: n/a")
+
+        function_executions = summary.function_executions or 0
+        avg_function_time = summary.avg_function_time_ms or 0.0
+        print(f"Function executions: {function_executions}")
+        print(f"Average function time: {avg_function_time:.2f}ms")
         print("\nTo view this battle:")
         print(f"  2D: uv run python battle_runner_cli.py viewer {output_file}")
         print(f"  3D: uv run python battle_runner_cli.py viewer {output_file} --3d")

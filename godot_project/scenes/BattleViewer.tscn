@@ -10,10 +10,8 @@ ambient_light_color = Color(0.3, 0.35, 0.4, 1)
 ambient_light_energy = 0.3
 ssr_enabled = true
 ssr_max_steps = 96
-ssr_depth_tolerance = 0.2
 ssr_fade_in = 0.1
 ssr_fade_out = 2.5
-ssr_use_half_resolution = false
 
 [node name="BattleViewer3D" type="Control"]
 layout_mode = 3
@@ -72,20 +70,19 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 stretch = true
-stretch_shrink = 1
 
 [node name="SubViewport" type="SubViewport" parent="VBoxContainer/MainArea/ViewportContainer"]
 own_world_3d = true
-stretch = true
 handle_input_locally = false
-render_target_update_mode = 2
+size = Vector2i(752, 746)
+render_target_update_mode = 4
 
 [node name="CameraController" type="Node3D" parent="VBoxContainer/MainArea/ViewportContainer/SubViewport"]
 transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 15, 25)
 
 [node name="Camera3D" type="Camera3D" parent="VBoxContainer/MainArea/ViewportContainer/SubViewport/CameraController"]
 environment = SubResource("Environment_1hx8v")
-fov = 60.0
+fov = 90.0
 
 [node name="World" type="Node3D" parent="VBoxContainer/MainArea/ViewportContainer/SubViewport"]
 
@@ -117,53 +114,63 @@ layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = true
 
-[node name="BottomPanel" type="VBoxContainer" parent="VBoxContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 25
+theme_override_constants/margin_top = 25
+theme_override_constants/margin_right = 25
+theme_override_constants/margin_bottom = 25
+
+[node name="BottomPanel" type="VBoxContainer" parent="VBoxContainer/MarginContainer"]
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
+theme_override_constants/separation = 10
 
-[node name="Timeline" type="HBoxContainer" parent="VBoxContainer/BottomPanel"]
+[node name="Timeline" type="HBoxContainer" parent="VBoxContainer/MarginContainer/BottomPanel"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/BottomPanel/Timeline"]
+[node name="Label" type="Label" parent="VBoxContainer/MarginContainer/BottomPanel/Timeline"]
+custom_minimum_size = Vector2(50, 30)
 layout_mode = 2
 text = "Timeline:"
 
-[node name="TimelineSlider" type="HSlider" parent="VBoxContainer/BottomPanel/Timeline"]
+[node name="TimelineSlider" type="HSlider" parent="VBoxContainer/MarginContainer/BottomPanel/Timeline"]
+custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 size_flags_horizontal = 3
 step = 0.1
 
-[node name="Toolbar" type="HBoxContainer" parent="VBoxContainer/BottomPanel"]
+[node name="Toolbar" type="HBoxContainer" parent="VBoxContainer/MarginContainer/BottomPanel"]
 layout_mode = 2
 
-[node name="PlayButton" type="Button" parent="VBoxContainer/BottomPanel/Toolbar"]
+[node name="PlayButton" type="Button" parent="VBoxContainer/MarginContainer/BottomPanel/Toolbar"]
 layout_mode = 2
 text = "▶ Play"
 
-[node name="StepBackButton" type="Button" parent="VBoxContainer/BottomPanel/Toolbar"]
+[node name="StepBackButton" type="Button" parent="VBoxContainer/MarginContainer/BottomPanel/Toolbar"]
 layout_mode = 2
 text = "◀"
 
-[node name="StepForwardButton" type="Button" parent="VBoxContainer/BottomPanel/Toolbar"]
+[node name="StepForwardButton" type="Button" parent="VBoxContainer/MarginContainer/BottomPanel/Toolbar"]
 layout_mode = 2
 text = "▶"
 
-[node name="ResetButton" type="Button" parent="VBoxContainer/BottomPanel/Toolbar"]
+[node name="FirstPersonButton" type="Button" parent="VBoxContainer/MarginContainer/BottomPanel/Toolbar"]
+layout_mode = 2
+text = "👁 First Person"
+
+[node name="OverheadButton" type="Button" parent="VBoxContainer/MarginContainer/BottomPanel/Toolbar"]
+layout_mode = 2
+text = "🗺 Overhead"
+
+[node name="ResetButton" type="Button" parent="VBoxContainer/MarginContainer/BottomPanel/Toolbar"]
 layout_mode = 2
 text = "↺ Reset"
 
-[node name="HSeparator" type="HSeparator" parent="VBoxContainer/BottomPanel/Toolbar"]
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/MarginContainer/BottomPanel/Toolbar"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="QuitButton" type="Button" parent="VBoxContainer/BottomPanel/Toolbar"]
+[node name="QuitButton" type="Button" parent="VBoxContainer/MarginContainer/BottomPanel/Toolbar"]
 layout_mode = 2
 text = "❌ Quit"
-
-[connection signal="drag_started" from="VBoxContainer/BottomPanel/Timeline/TimelineSlider" to="." method="_on_timeline_slider_drag_started"]
-[connection signal="value_changed" from="VBoxContainer/BottomPanel/Timeline/TimelineSlider" to="." method="_on_timeline_slider_value_changed"]
-[connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/PlayButton" to="." method="_on_play_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/StepBackButton" to="." method="_on_step_back_pressed"]
-[connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/StepForwardButton" to="." method="_on_step_forward_pressed"]
-[connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/ResetButton" to="." method="_on_reset_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/BottomPanel/Toolbar/QuitButton" to="." method="get_tree().quit()"]

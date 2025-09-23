@@ -36,6 +36,10 @@ class PythonLLMController:
         self._regen_counter: int = 0
         self._mock_templates: List[str] | None = None
         self._mock_rng = random.Random()
+        # Cache for visibility ray direction deltas (cos/sin tables)
+        self._ray_key: Tuple[int, float] | None = None
+        self._ray_cos: List[float] | None = None
+        self._ray_sin: List[float] | None = None
 
         # Assign different function types to bots
         for bot_id in range(bot_count):
@@ -81,12 +85,18 @@ class PythonLLMController:
         if not hits:
             return None
 
-        for info in sorted(hits, key=lambda data: data.alpha):
-            if info.shape in skip_shapes:
-                continue
-            return info
+        best_hit = None
+        best_alpha = float("inf")
+        skip = skip_shapes  # expected to be a set-like; caller passes frozenset
 
-        return None
+        for info in hits:
+            if info.shape in skip:
+                continue
+            if info.alpha < best_alpha:
+                best_alpha = info.alpha
+                best_hit = info
+
+        return best_hit
 
     def get_bot_function_source(self, bot_id: int) -> str:
         """Get Python function source code for a bot."""
@@ -196,31 +206,61 @@ class PythonLLMController:
         space = arena.space
         bot_body = arena.bot_bodies[bot_id]
         bot_data = arena.bot_data[bot_id]
-        bot_pos = pymunk.Vec2d(*bot_body.position)
+        bot_pos = bot_body.position
+        bot_pos_x = float(bot_pos.x)
+        bot_pos_y = float(bot_pos.y)
         bot_heading = bot_body.angle
         sense_range = arena.SENSE_RANGE
+        sense_range_sq = sense_range * sense_range
         fov_angle = arena.FOV_ANGLE
-        skip_shapes = tuple(bot_body.shapes)
+        half_fov = 0.5 * fov_angle
+        skip_shapes = getattr(bot_body, "_llm_skip_shapes", None)
+        if skip_shapes is None:
+            skip_shapes = frozenset(bot_body.shapes)
+            setattr(bot_body, "_llm_skip_shapes", skip_shapes)
 
         wall_cache = self._ensure_wall_cache(arena)
 
         entity_results: Dict[Tuple[str, int], Dict[str, Any]] = {}
         wall_hits: Dict[Tuple[int, int], Dict[str, Any]] = {}
 
-        if self.visibility_ray_count > 1:
-            angle_step = fov_angle / (self.visibility_ray_count - 1)
-        else:
-            angle_step = 0.0
-        start_angle = bot_heading - fov_angle / 2
+        # Use a consistent ray count regardless of bot count
+        ray_count = int(self.visibility_ray_count)
+        # Precompute direction table for current (ray_count, fov)
+        ray_key = (ray_count, fov_angle)
+        if self._ray_key != ray_key:
+            n = max(1, ray_count)
+            if n > 1:
+                step = fov_angle / (n - 1)
+            else:
+                step = 0.0
+            start = -half_fov
+            cos_tab = []
+            sin_tab = []
+            for i in range(n):
+                a = start + step * i
+                cos_tab.append(math.cos(a))
+                sin_tab.append(math.sin(a))
+            self._ray_key = ray_key
+            self._ray_cos = cos_tab
+            self._ray_sin = sin_tab
+        cos_tab = self._ray_cos or [1.0]
+        sin_tab = self._ray_sin or [0.0]
 
-        for ray_index in range(self.visibility_ray_count):
-            ray_angle = start_angle + angle_step * ray_index
-            direction = pymunk.Vec2d(math.cos(ray_angle), math.sin(ray_angle))
-            end = bot_pos + direction * sense_range
+        cosH = math.cos(bot_heading)
+        sinH = math.sin(bot_heading)
+
+        for ray_index in range(ray_count):
+            cd = cos_tab[ray_index]
+            sd = sin_tab[ray_index]
+            cos_a = cosH * cd - sinH * sd
+            sin_a = sinH * cd + cosH * sd
+            end_x = bot_pos_x + cos_a * sense_range
+            end_y = bot_pos_y + sin_a * sense_range
             hit = self._segment_query_first_excluding(
                 space,
-                (bot_pos.x, bot_pos.y),
-                (end.x, end.y),
+                (bot_pos_x, bot_pos_y),
+                (end_x, end_y),
                 skip_shapes,
             )
             if not hit:
@@ -231,12 +271,17 @@ class PythonLLMController:
                 continue
 
             point = hit.point
-            distance = float((point - bot_pos).length)
+            dx = float(point.x) - bot_pos_x
+            dy = float(point.y) - bot_pos_y
+            distance_sq = dx * dx + dy * dy
+            if distance_sq > sense_range_sq:
+                continue
+            distance = math.sqrt(distance_sq)
             if distance > sense_range:
                 continue
 
             bearing = (
-                math.degrees(math.atan2(point.y - bot_pos.y, point.x - bot_pos.x))
+                math.degrees(math.atan2(dy, dx))
                 + 360.0
             ) % 360.0
 
@@ -258,32 +303,30 @@ class PythonLLMController:
                 continue
 
             other_body = arena.bot_bodies[other_id]
-            other_pos = pymunk.Vec2d(*other_body.position)
-            delta = other_pos - bot_pos
-            distance = float(delta.length)
-            if distance <= 0.0 or distance > sense_range:
+            other_pos = other_body.position
+            dx = float(other_pos.x) - bot_pos_x
+            dy = float(other_pos.y) - bot_pos_y
+            dist_sq = dx * dx + dy * dy
+            if dist_sq <= 0.0 or dist_sq > sense_range_sq:
                 continue
 
-            if not self._is_in_fov(
-                bot_heading,
-                bot_pos.x,
-                bot_pos.y,
-                other_pos.x,
-                other_pos.y,
-                fov_angle,
-            ):
+            bearing_rad = math.atan2(dy, dx)
+            angle_diff = (bearing_rad - bot_heading + math.pi) % (2 * math.pi) - math.pi
+            if abs(angle_diff) > half_fov:
                 continue
+
+            distance = math.sqrt(dist_sq)
 
             hit = self._segment_query_first_excluding(
                 space,
-                (bot_pos.x, bot_pos.y),
-                (other_pos.x, other_pos.y),
+                (bot_pos_x, bot_pos_y),
+                (float(other_pos.x), float(other_pos.y)),
                 skip_shapes,
             )
             if not hit or hit.shape.body is not other_body:
                 continue
 
-            bearing = (math.degrees(math.atan2(delta.y, delta.x)) + 360.0) % 360.0
+            bearing = (math.degrees(bearing_rad) + 360.0) % 360.0
             entry = {
                 "type": "friend" if other_data.team == bot_data.team else "enemy",
                 "x": float(other_pos.x),
@@ -305,32 +348,30 @@ class PythonLLMController:
             if not proj_body:
                 continue
 
-            proj_pos = pymunk.Vec2d(*proj_body.position)
-            delta = proj_pos - bot_pos
-            distance = float(delta.length)
-            if distance <= 0.0 or distance > sense_range:
+            proj_pos = proj_body.position
+            dx = float(proj_pos.x) - bot_pos_x
+            dy = float(proj_pos.y) - bot_pos_y
+            dist_sq = dx * dx + dy * dy
+            if dist_sq <= 0.0 or dist_sq > sense_range_sq:
                 continue
 
-            if not self._is_in_fov(
-                bot_heading,
-                bot_pos.x,
-                bot_pos.y,
-                proj_pos.x,
-                proj_pos.y,
-                fov_angle,
-            ):
+            bearing_rad = math.atan2(dy, dx)
+            angle_diff = (bearing_rad - bot_heading + math.pi) % (2 * math.pi) - math.pi
+            if abs(angle_diff) > half_fov:
                 continue
+
+            distance = math.sqrt(dist_sq)
 
             hit = self._segment_query_first_excluding(
                 space,
-                (bot_pos.x, bot_pos.y),
-                (proj_pos.x, proj_pos.y),
+                (bot_pos_x, bot_pos_y),
+                (float(proj_pos.x), float(proj_pos.y)),
                 skip_shapes,
             )
             if not hit or hit.shape.body is not proj_body:
                 continue
 
-            bearing = (math.degrees(math.atan2(delta.y, delta.x)) + 360.0) % 360.0
+            bearing = (math.degrees(bearing_rad) + 360.0) % 360.0
             entry = {
                 "type": "projectile",
                 "x": float(proj_pos.x),

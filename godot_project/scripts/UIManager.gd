@@ -167,7 +167,19 @@ func update_selected_bot_info(viewer: Control):
 
 	# --- Tactical Info (Bottom Left Panel) ---
 	var current_state = viewer.get_current_state()
-	var visible_objects = _get_visible_objects(bot, current_state)
+	var visible_objects = []
+	# Prefer precomputed visibility (parity with Python controller)
+	var precomp_map = current_state.get("precomp_visible_by_bot", {})
+	var precomp_list = null
+	if precomp_map is Dictionary:
+		precomp_list = precomp_map.get(str(bot_id), null)
+	if precomp_list is Array:
+		# Normalize keys to dot-access style for downstream code (keep as Dictionary)
+		for obj in precomp_list:
+			visible_objects.append(obj)
+	else:
+		# Fallback: internal distance-based method
+		visible_objects = _get_visible_objects(bot, current_state)
 	
 	var friends = []
 	var enemies = []
@@ -186,21 +198,25 @@ func update_selected_bot_info(viewer: Control):
 		tactical_text += "  [color=gray]None[/color]\n"
 	else:
 		for f in friends:
-			tactical_text += "  F%d: %.1fm @ %.0f°\n" % [f.id, f.distance, f.angle]
+			var sig = f.get("signal", "none")
+			var sig_part = ""
+			if sig != "none":
+				sig_part = " [color=yellow][%s][/color]" % sig
+			tactical_text += "  F%d: %.1fm @ %.0f°%s\n" % [f.get("id", -1), f.get("distance", 0.0), f.get("angle", 0.0), sig_part]
 
 	tactical_text += "\n[color=red]Visible Enemies:[/color]\n"
 	if enemies.is_empty():
 		tactical_text += "  [color=gray]None[/color]\n"
 	else:
 		for e in enemies:
-			tactical_text += "  E%d: %.1fm @ %.0f°\n" % [e.id, e.distance, e.angle]
+			tactical_text += "  E%d: %.1fm @ %.0f°\n" % [e.get("id", -1), e.get("distance", 0.0), e.get("angle", 0.0)]
 			
 	tactical_text += "\n[color=yellow]Nearby Projectiles:[/color]\n"
 	if projectiles.is_empty():
 		tactical_text += "  [color=gray]None[/color]\n"
 	else:
 		for p in projectiles:
-			tactical_text += "  P: %.1fm @ %.0f°\n" % [p.distance, p.angle]
+			tactical_text += "  P: %.1fm @ %.0f°\n" % [p.get("distance", 0.0), p.get("angle", 0.0)]
 
 	if tactical_info_label:
 		tactical_info_label.text = tactical_text

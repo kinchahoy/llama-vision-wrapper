@@ -36,16 +36,16 @@ func setup_materials():
 	
 	# Projectile materials
 	projectile_material_blue = StandardMaterial3D.new()
-	projectile_material_blue.albedo_color = Color(0.3, 0.8, 1.0, 1.0)
+	projectile_material_blue.albedo_color = Color(0.1, 0.1, 1.0, 1.0)
 	projectile_material_blue.emission_enabled = true
-	projectile_material_blue.emission = Color(0.5, 1.2, 2.0, 1.0)
+	projectile_material_blue.emission = Color(0.1, 0.1, 1.0, 1.0)
 	projectile_material_blue.metallic = 0.8
 	projectile_material_blue.roughness = 0.1
 	
 	projectile_material_red = StandardMaterial3D.new()
-	projectile_material_red.albedo_color = Color(1.0, 0.4, 0.8, 1.0)
+	projectile_material_red.albedo_color = Color(1.0, 0.1, 0.1, 1.0)
 	projectile_material_red.emission_enabled = true
-	projectile_material_red.emission = Color(2.0, 0.8, 1.2, 1.0)
+	projectile_material_red.emission = Color(1.0, 0.1, 0.1, 1.0)
 	projectile_material_red.metallic = 0.8
 	projectile_material_red.roughness = 0.1
 	

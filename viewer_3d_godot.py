@@ -5,22 +5,35 @@ Features rich graphics, modern UI, and advanced visual effects.
 """
 
 import json
-import sys
 import os
 import subprocess
+import sys
 import tempfile
-from typing import Dict
 from pathlib import Path
+from typing import Any
+from battle_types import BattleData
+from pydantic import ValidationError
+
+# Shared viewer core utilities (typed to Any to avoid reassignment issues)
+viewer_core: Any = None
+try:
+    import viewer_core as _viewer_core
+    viewer_core = _viewer_core
+except Exception:
+    pass
+
+
+# Note: We intentionally do not precompute visibility here (performance).
 
 class GodotBattleViewer:
     """
     Modern Godot 4 Battle Viewer with rich graphics and vibrant UI.
     """
     
-    def __init__(self, battle_data: Dict):
+    def __init__(self, battle_data: BattleData):
         self.battle_data = battle_data
-        self.timeline = battle_data["timeline"]
-        self.metadata = battle_data["metadata"]
+        self.timeline = list(battle_data.timeline)
+        self.metadata = battle_data.metadata
         self.temp_file_path = None
         self.godot_process = None
     
@@ -51,15 +64,28 @@ class GodotBattleViewer:
     def run(self):
         """Run the Godot battle viewer."""
         try:
+            # Validate data (fast). Skip heavy precompute for performance.
+            if viewer_core is not None:
+                try:
+                    viewer_core.validate_battle_data(self.battle_data)
+                except Exception as e:
+                    print(f"❌ Battle data validation failed: {e}")
+                    return False
+            else:
+                print("⚠️ viewer_core not available; skipping validation.")
+
             # Use a temporary file for the battle data. No indentation for faster loading.
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
-                json.dump(self.battle_data, f)
+                json.dump(self.battle_data.model_dump_jsonable(), f)
                 self.temp_file_path = f.name
             
             project_path = Path(__file__).parent / "godot_project"
             if not project_path.exists():
                 raise RuntimeError(f"Godot project not found at: {project_path}")
-            print("🔧 Preparing to launch Godot Battle Viewer...: ", sys.getsizeof(self.battle_data))
+            print(
+                "🔧 Preparing to launch Godot Battle Viewer...: ",
+                sys.getsizeof(self.battle_data.model_dump_jsonable()),
+            )
             if not self.launch_godot(str(project_path), self.temp_file_path):
                 return False
             
@@ -73,6 +99,7 @@ class GodotBattleViewer:
             print("")
             print("🎮 Controls:")
             print("   SPACE = Play/Pause  |  ← → = Step Frame")
+            print("   + / - = Speed Up/Down  |  F = Toggle FOV")
             print("   Right Click + Drag = Rotate Camera  |  Wheel = Zoom")
             print("   Left Click = Select Bot  |  R = Reset  |  Q/ESC = Quit")
             
@@ -103,14 +130,18 @@ def run_godot_viewer(battle_file: str):
     
     try:
         with open(battle_file, "r") as f:
-            battle_data = json.load(f)
+            raw_data = json.load(f)
+        battle_data = BattleData.model_validate(raw_data)
     except FileNotFoundError:
         print(f"❌ Error: Battle file '{battle_file}' not found")
         return False
     except json.JSONDecodeError:
         print(f"❌ Error: Invalid JSON in '{battle_file}'")
         return False
-    
+    except ValidationError as exc:
+        print(f"❌ Error: Battle data validation failed: {exc}")
+        return False
+
     viewer = GodotBattleViewer(battle_data)
     return viewer.run()
 

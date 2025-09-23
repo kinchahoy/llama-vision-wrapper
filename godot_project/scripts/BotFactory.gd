@@ -64,7 +64,7 @@ func create_bot(bot_id: int, team: int, materials) -> Area3D:
 	body_node.add_child(label)
 	
 	# Store bot ID for selection
-	bot_container.set_meta("bot_id", bot_id)
+	bot_container.set_meta("bot_id", int(bot_id))
 	
 	return bot_container
 

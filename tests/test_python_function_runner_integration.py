@@ -9,8 +9,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import example_llm_gen_control_code
-from bot_runner_python import PythonFunctionRunner
+import example_llm_gen_control_code  # noqa: E402
+from bot_runner_python import PythonFunctionRunner  # noqa: E402
 
 
 def test_runner_executes_example_template():

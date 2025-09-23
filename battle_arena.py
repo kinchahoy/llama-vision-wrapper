@@ -3,13 +3,33 @@ LLM Battle Simulator - Core Arena and Physics with pymunk
 Handles 2v2 battles with robust physics and deterministic simulation.
 """
 
+from __future__ import annotations
+
 import importlib
 import math
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Literal, cast
 
 import pymunk
-from dataclasses import dataclass
+
+from battle_types import (
+    BattleData,
+    BattleEvent,
+    BattleFrame,
+    BattleMetadata,
+    BattleSummary,
+    BotScore,
+    BotSnapshot,
+    DeathEvent,
+    HitEvent,
+    ProjectileRemovedEvent,
+    ProjectileSnapshot,
+    ScoreBreakdown,
+    ShotEvent,
+    TeamScore,
+    WallDefinition,
+)
 
 
 @dataclass
@@ -121,15 +141,30 @@ class Arena:
         # Pymunk bodies storage
         self.bot_bodies: Dict[int, pymunk.Body] = {}
         self.projectile_bodies: Dict[int, pymunk.Body] = {}
+        # Fast SoA-style structures for tight loops
+        self._bot_bodies_list: List[Optional[pymunk.Body]] = [None] * self.BOT_COUNT
 
         # Simulation state
         self.tick = 0
         self.physics_tick = 0
         self.time = 0.0
-        self.battle_log = []
-        self.events = []
-        self.walls = []
+        self.battle_log: List[BattleFrame] = []
+        self.events: List[BattleEvent] = []
+        self.walls: List[WallDefinition] = []
         self.next_projectile_id = 1000  # Start projectile IDs at 1000
+
+        # Control inputs (pre-allocate to avoid per-step getattr fallbacks)
+        self.target_vx: List[float] = [0.0] * self.BOT_COUNT
+        self.target_vy: List[float] = [0.0] * self.BOT_COUNT
+        self.target_theta: List[float] = [0.0] * self.BOT_COUNT
+        self.fire_command: List[bool] = [False] * self.BOT_COUNT
+        # Alive flags mirror hp>0, updated on hits
+        self.bot_alive: List[bool] = [False] * self.BOT_COUNT
+
+        # Cached numeric factors for physics loop
+        self._lin_damp_factor: float = 1.0 - self.LINEAR_DAMPING * self.DT_PHYSICS
+        self._v_max_sq: float = self.V_MAX * self.V_MAX
+        self._omega_max: float = self.OMEGA_MAX
 
         # Setup collision handlers
         self._setup_collision_handlers()
@@ -139,6 +174,11 @@ class Arena:
 
         # Initialize bots
         self._spawn_bots(spawn_config or {})
+
+        for bot_id in range(self.BOT_COUNT):
+            body = self._bot_bodies_list[bot_id]
+            if body is not None:
+                self.target_theta[bot_id] = float(body.angle)
 
     def _spawn_bots(self, spawn_config: Dict):
         """Spawn bots in starting positions with optional randomization."""
@@ -200,23 +240,23 @@ class Arena:
         """Single physics step at the configured DT_PHYSICS interval using pymunk."""
         dt = self.DT_PHYSICS
 
+        target_vx = self.target_vx
+        target_vy = self.target_vy
+        target_theta = self.target_theta
+
         # Update bot control forces
         for bot_id in range(self.BOT_COUNT):
-            if bot_id not in self.bot_data or not self._is_bot_alive(bot_id):
+            body = self._bot_bodies_list[bot_id]
+            if body is None or not self.bot_alive[bot_id]:
                 continue
-
-            body = self.bot_bodies[bot_id]
-            self.bot_data[bot_id]
 
             # Apply acceleration toward target velocity
             current_vel = body.velocity
-            target_vel = (
-                getattr(self, "target_vx", [0] * self.BOT_COUNT)[bot_id],
-                getattr(self, "target_vy", [0] * self.BOT_COUNT)[bot_id],
-            )
+            tvx = float(target_vx[bot_id])
+            tvy = float(target_vy[bot_id])
 
-            dvx = target_vel[0] - current_vel[0]
-            dvy = target_vel[1] - current_vel[1]
+            dvx = tvx - current_vel[0]
+            dvy = tvy - current_vel[1]
 
             # Clamp acceleration
             ax = max(-self.A_MAX, min(self.A_MAX, dvx / dt))
@@ -227,9 +267,8 @@ class Arena:
             body.force = force
 
             # Update heading with turn rate limit
-            target_theta = getattr(self, "target_theta", [0] * self.BOT_COUNT)[bot_id]
             current_angle = body.angle
-            angle_error = self._normalize_angle(target_theta - current_angle)
+            angle_error = self._normalize_angle(float(target_theta[bot_id]) - current_angle)
             desired_omega = self.HEADING_KP * angle_error
             damping = self.HEADING_KD * body.angular_velocity
             torque_command = desired_omega - damping
@@ -251,13 +290,6 @@ class Arena:
 
     def step_control(self):
         """Single control step. This is where DSL gets executed."""
-        # Initialize control arrays if not present for legacy compatibility
-        if not hasattr(self, "target_vx"):
-            self.target_vx = [0.0] * self.BOT_COUNT
-            self.target_vy = [0.0] * self.BOT_COUNT
-            self.target_theta = [body.angle for body in self.bot_bodies.values()]
-            self.fire_command = [False] * self.BOT_COUNT
-
         self.tick += 1
 
     def set_bot_commands(
@@ -268,13 +300,6 @@ class Arena:
             return
 
         body = self.bot_bodies[bot_id]
-
-        # Initialize control arrays if not present
-        if not hasattr(self, "target_vx"):
-            self.target_vx = [0.0] * self.BOT_COUNT
-            self.target_vy = [0.0] * self.BOT_COUNT
-            self.target_theta = [body.angle for body in self.bot_bodies.values()]
-            self.fire_command = [False] * self.BOT_COUNT
 
         # Movement commands
         if move_votes:
@@ -323,13 +348,6 @@ class Arena:
             return
 
         body = self.bot_bodies[bot_id]
-
-        # Initialize control arrays if not present
-        if not hasattr(self, "target_vx"):
-            self.target_vx = [0.0] * self.BOT_COUNT
-            self.target_vy = [0.0] * self.BOT_COUNT
-            self.target_theta = [body.angle for body in self.bot_bodies.values()]
-            self.fire_command = [False] * self.BOT_COUNT
 
         action_type = action.get(
             "type", action.get("action")
@@ -436,11 +454,16 @@ class Arena:
         if time_since_last < min_time_between:
             return False
 
-        # Create projectile at bot position with bot heading
+        # Create projectile slightly ahead of bot nose to avoid immediate overlap
         px, py = body.position
         heading = body.angle
         pvx = math.cos(heading) * self.PROJ_SPEED
         pvy = math.sin(heading) * self.PROJ_SPEED
+
+        # Offset spawn position forward by bot radius + small margin
+        spawn_offset = self.BOT_RADIUS + 0.06
+        px += math.cos(heading) * spawn_offset
+        py += math.sin(heading) * spawn_offset
 
         proj_id = self.next_projectile_id
         self.next_projectile_id += 1
@@ -452,15 +475,15 @@ class Arena:
         bot_data.last_fire_time = self.time
 
         self.events.append(
-            {
-                "type": "shot",
-                "tick": self.tick,
-                "bot_id": bot_id,
-                "pos": [px, py],
-                "heading": math.degrees(heading),
-                "cooldown_remaining": 0.0,
-                "total_shots": bot_data.shots_fired,
-            }
+            ShotEvent(
+                tick=self.tick,
+                bot_id=bot_id,
+                projectile_id=proj_id,
+                pos=(px, py),
+                heading=math.degrees(heading),
+                cooldown_remaining=0.0,
+                total_shots=bot_data.shots_fired,
+            )
         )
         return True
 
@@ -473,12 +496,16 @@ class Arena:
 
             # Check if projectile expired or left arena
             body = self.projectile_bodies.get(proj_id)
-            if body and (proj_data.ttl <= 0 or self._is_projectile_out_of_bounds(body)):
-                expired_projectiles.append(proj_id)
+            if not body:
+                continue
+            if proj_data.ttl <= 0:
+                expired_projectiles.append((proj_id, "expired"))
+            elif self._is_projectile_out_of_bounds(body):
+                expired_projectiles.append((proj_id, "out_of_bounds"))
 
         # Remove expired projectiles
-        for proj_id in expired_projectiles:
-            self._remove_projectile(proj_id)
+        for proj_id, reason in expired_projectiles:
+            self._remove_projectile(proj_id, reason=reason)
 
     def _setup_collision_handlers(self):
         """Setup pymunk collision handlers."""
@@ -512,7 +539,7 @@ class Arena:
             projectile_shape, wall_shape = arbiter.shapes
             proj_id = projectile_shape.body.user_data
             if proj_id in self.projectile_data:
-                self._remove_projectile(proj_id)
+                self._remove_projectile(proj_id, reason="wall_collision")
             return False  # Don't actually collide, just remove
 
         self.space.on_collision(
@@ -612,20 +639,73 @@ class Arena:
         # Angle is 0 for horizontal walls aligned with X-axis.
         self.walls = [
             # Perimeter walls
-            (0, height / 2, width + thickness, thickness, 0),  # Top
-            (0, -height / 2, width + thickness, thickness, 0),  # Bottom
-            (-width / 2, 0, height, thickness, 90),  # Left
-            (width / 2, 0, height, thickness, 90),  # Right
+            WallDefinition(
+                center_x=0,
+                center_y=height / 2,
+                width=width + thickness,
+                height=thickness,
+                angle_deg=0,
+            ),
+            WallDefinition(
+                center_x=0,
+                center_y=-height / 2,
+                width=width + thickness,
+                height=thickness,
+                angle_deg=0,
+            ),
+            WallDefinition(
+                center_x=-width / 2,
+                center_y=0,
+                width=height,
+                height=thickness,
+                angle_deg=90,
+            ),
+            WallDefinition(
+                center_x=width / 2,
+                center_y=0,
+                width=height,
+                height=thickness,
+                angle_deg=90,
+            ),
             # Interior walls
-            (-width * 0.25, height * 0.2, 10, thickness, 0),
-            (0, -height * 0.15, 8, thickness, 90),
-            (-width * 0.25, -height * 0.3, 9, thickness, 20),
-            (width * 0.3, height * 0.1, 6, thickness, 90),
+            WallDefinition(
+                center_x=-width * 0.25,
+                center_y=height * 0.2,
+                width=10,
+                height=thickness,
+                angle_deg=0,
+            ),
+            WallDefinition(
+                center_x=0,
+                center_y=-height * 0.15,
+                width=8,
+                height=thickness,
+                angle_deg=90,
+            ),
+            WallDefinition(
+                center_x=-width * 0.25,
+                center_y=-height * 0.3,
+                width=9,
+                height=thickness,
+                angle_deg=20,
+            ),
+            WallDefinition(
+                center_x=width * 0.3,
+                center_y=height * 0.1,
+                width=6,
+                height=thickness,
+                angle_deg=90,
+            ),
         ]
 
         self.wall_bodies = []
         print("Creating arena walls:")
-        for center_x, center_y, w, h, angle_deg in self.walls:
+        for wall in self.walls:
+            center_x = wall.center_x
+            center_y = wall.center_y
+            w = wall.width
+            h = wall.height
+            angle_deg = wall.angle_deg
             print(
                 f"  Creating wall: center=({center_x:.1f}, {center_y:.1f}), size=({w:.1f}, {h:.1f}), angle={angle_deg}°"
             )
@@ -681,6 +761,8 @@ class Arena:
         # Add to space
         self.space.add(body, shape)
         self.bot_bodies[bot_id] = body
+        self._bot_bodies_list[bot_id] = body
+        self.bot_alive[bot_id] = True
 
     def _create_projectile(
         self,
@@ -716,8 +798,35 @@ class Arena:
         self.space.add(body, shape)
         self.projectile_bodies[proj_id] = body
 
-    def _remove_projectile(self, proj_id: int):
-        """Remove projectile from simulation."""
+    def _remove_projectile(self, proj_id: int, reason: str = "unknown"):
+        """Remove projectile from simulation and log reason."""
+        pos = None
+        shooter_id = None
+        if proj_id in self.projectile_bodies:
+            body = self.projectile_bodies[proj_id]
+            pos = tuple(body.position)
+        if proj_id in self.projectile_data:
+            shooter_id = self.projectile_data[proj_id].shooter_id
+
+        # Log removal event before actually removing
+        allowed_reasons = {"expired", "out_of_bounds", "hit"}
+        event_reason: Literal["expired", "out_of_bounds", "hit", "unknown"]
+        if reason in allowed_reasons:
+            event_reason = cast(
+                Literal["expired", "out_of_bounds", "hit", "unknown"], reason
+            )
+        else:
+            event_reason = "unknown"
+        self.events.append(
+            ProjectileRemovedEvent(
+                tick=self.tick,
+                projectile_id=proj_id,
+                shooter_id=shooter_id,
+                reason=event_reason,
+                pos=tuple(pos) if pos else None,
+            )
+        )
+
         if proj_id in self.projectile_bodies:
             body = self.projectile_bodies[proj_id]
             self.space.remove(body, *body.shapes)
@@ -760,115 +869,125 @@ class Arena:
         bot_body = self.bot_bodies[bot_id]
 
         self.events.append(
-            {
-                "type": "hit",
-                "tick": self.tick,
-                "projectile_shooter": proj_data.shooter_id,
-                "target": bot_id,
-                "damage": damage,
-                "pos": list(proj_body.position),
-                "shooter_accuracy": shooter_data.shots_hit
-                / max(1, shooter_data.shots_fired),
-            }
+            HitEvent(
+                tick=self.tick,
+                projectile_shooter=proj_data.shooter_id,
+                target=bot_id,
+                damage=damage,
+                pos=tuple(proj_body.position),
+                shooter_accuracy=
+                shooter_data.shots_hit / max(1, shooter_data.shots_fired),
+            )
         )
 
         # Check for death
         if bot_data.hp <= 0:
             bot_data.deaths += 1
             shooter_data.kills += 1
+            self.bot_alive[bot_id] = False
 
             self.events.append(
-                {
-                    "type": "death",
-                    "tick": self.tick,
-                    "bot_id": bot_id,
-                    "killer_id": proj_data.shooter_id,
-                    "pos": list(bot_body.position),
-                    "killer_kills": shooter_data.kills,
-                }
+                DeathEvent(
+                    tick=self.tick,
+                    bot_id=bot_id,
+                    killer_id=proj_data.shooter_id,
+                    pos=tuple(bot_body.position),
+                    killer_kills=shooter_data.kills,
+                )
             )
 
         # Remove projectile
-        self._remove_projectile(proj_id)
+        self._remove_projectile(proj_id, reason="hit")
 
     def _apply_velocity_constraints(self):
         """Apply velocity damping and speed limits to bots."""
-        for bot_id, body in self.bot_bodies.items():
-            if not self._is_bot_alive(bot_id):
+        damp = self._lin_damp_factor
+        v_max_sq = self._v_max_sq
+        omega_max = self._omega_max
+
+        for bot_id in range(self.BOT_COUNT):
+            body = self._bot_bodies_list[bot_id]
+            if body is None or not self.bot_alive[bot_id]:
                 body.velocity = (0, 0)
                 body.angular_velocity = 0
                 continue
 
             # Apply linear damping
             vx, vy = body.velocity
-            vx *= 1.0 - self.LINEAR_DAMPING * self.DT_PHYSICS
-            vy *= 1.0 - self.LINEAR_DAMPING * self.DT_PHYSICS
+            vx *= damp
+            vy *= damp
 
             # Clamp to max speed
-            speed = math.sqrt(vx * vx + vy * vy)
-            if speed > self.V_MAX:
-                scale = self.V_MAX / speed
+            speed_sq = vx * vx + vy * vy
+            if speed_sq > v_max_sq:
+                scale = self.V_MAX / math.sqrt(speed_sq)
                 vx *= scale
                 vy *= scale
 
             body.velocity = (vx, vy)
-            if body.angular_velocity > self.OMEGA_MAX:
-                body.angular_velocity = self.OMEGA_MAX
-            elif body.angular_velocity < -self.OMEGA_MAX:
-                body.angular_velocity = -self.OMEGA_MAX
+            av = body.angular_velocity
+            if av > omega_max:
+                body.angular_velocity = omega_max
+            elif av < -omega_max:
+                body.angular_velocity = -omega_max
 
-    def get_battle_state(self) -> Dict:
+    def get_battle_state(self) -> BattleFrame:
         """Get current battle state for logging/visualization."""
-        bots = []
-        for bot_id, bot_data in self.bot_data.items():
-            if self._is_bot_alive(bot_id):
-                body = self.bot_bodies[bot_id]
-                bots.append(
-                    {
-                        "id": bot_id,
-                        "x": round(body.position[0], 2),
-                        "y": round(body.position[1], 2),
-                        "theta": round(math.degrees(body.angle), 1),
-                        "vx": round(body.velocity[0], 2),
-                        "vy": round(body.velocity[1], 2),
-                        "hp": int(bot_data.hp),
-                        "alive": self._is_bot_alive(bot_id),
-                        "team": bot_data.team,
-                    }
+        bots: List[BotSnapshot] = []
+        for bot_id in range(self.BOT_COUNT):
+            if not self.bot_alive[bot_id] or bot_id not in self.bot_data:
+                continue
+            body = self._bot_bodies_list[bot_id]
+            if body is None:
+                continue
+            bot_data = self.bot_data[bot_id]
+            bots.append(
+                BotSnapshot(
+                    id=bot_id,
+                    x=round(body.position[0], 2),
+                    y=round(body.position[1], 2),
+                    theta=round(math.degrees(body.angle), 1),
+                    vx=round(body.velocity[0], 2),
+                    vy=round(body.velocity[1], 2),
+                    hp=int(bot_data.hp),
+                    alive=True,
+                    team=bot_data.team,
                 )
+            )
 
-        projectiles = []
+        projectiles: List[ProjectileSnapshot] = []
         for proj_id, proj_data in self.projectile_data.items():
-            if proj_id in self.projectile_bodies:
-                body = self.projectile_bodies[proj_id]
-                projectiles.append(
-                    {
-                        "id": proj_id,
-                        "x": round(body.position[0], 2),
-                        "y": round(body.position[1], 2),
-                        "vx": round(body.velocity[0], 2),
-                        "vy": round(body.velocity[1], 2),
-                        "team": proj_data.team,
-                        "age": self.tick - proj_data.birth_tick,
-                        "shooter_id": proj_data.shooter_id,
-                        "ttl": round(proj_data.ttl, 2),
-                    }
+            body = self.projectile_bodies.get(proj_id)
+            if body is None:
+                continue
+            projectiles.append(
+                ProjectileSnapshot(
+                    id=proj_id,
+                    x=round(body.position[0], 2),
+                    y=round(body.position[1], 2),
+                    vx=round(body.velocity[0], 2),
+                    vy=round(body.velocity[1], 2),
+                    team=proj_data.team,
+                    age=self.tick - proj_data.birth_tick,
+                    shooter_id=proj_data.shooter_id,
+                    ttl=round(proj_data.ttl, 2),
                 )
+            )
 
-        return {
-            "tick": self.tick,
-            "time": round(self.time, 3),
-            "bots": bots,
-            "projectiles": projectiles,
-            "events": self.events.copy(),
-        }
+        return BattleFrame(
+            tick=self.tick,
+            time=round(self.time, 3),
+            bots=bots,
+            projectiles=projectiles,
+            events=list(self.events),
+        )
 
     def log_state(self):
         """Log current state to battle log."""
         self.battle_log.append(self.get_battle_state())
         self.events.clear()  # Clear events after logging
 
-    def get_walls(self) -> List[Tuple]:
+    def get_walls(self) -> List[WallDefinition]:
         """Get wall data for logging/visualization."""
         return self.walls
 
@@ -904,9 +1023,9 @@ class Arena:
 
         return False, None, ""
 
-    def calculate_bot_scores(self) -> List[Dict]:
+    def calculate_bot_scores(self) -> List[BotScore]:
         """Calculate comprehensive scores for each bot."""
-        scores = []
+        scores: List[BotScore] = []
 
         for bot_id, bot_data in self.bot_data.items():
             # Basic stats
@@ -918,19 +1037,17 @@ class Arena:
             deaths = bot_data.deaths
 
             # Calculate metrics
-            hit_rate = hits / max(1, shots)  # Accuracy percentage
+            hit_rate = hits / max(1, shots)
             survival_rate = 1.0 if deaths == 0 else 0.0
-            damage_efficiency = damage_dealt / max(1, damage_taken)  # Damage ratio
+            damage_efficiency = damage_dealt / max(1, damage_taken)
 
             # Scoring formula
-            # Base scores
-            accuracy_score = hit_rate * 100  # 0-100 points for perfect accuracy
-            damage_score = damage_dealt * 0.4  # 0.4 points per HP dealt
-            kill_score = kills * 50  # 50 points per kill
-            survival_bonus = survival_rate * 25  # 25 bonus for staying alive
-            damage_penalty = damage_taken * -0.2  # -0.2 points per HP taken
+            accuracy_score = hit_rate * 100
+            damage_score = damage_dealt * 0.4
+            kill_score = kills * 50
+            survival_bonus = survival_rate * 25
+            damage_penalty = damage_taken * -0.2
 
-            # Overall score
             total_score = (
                 accuracy_score
                 + damage_score
@@ -940,62 +1057,68 @@ class Arena:
             )
 
             scores.append(
-                {
-                    "bot_id": bot_id,
-                    "team": self.bot_data[bot_id].team,
-                    "total_score": round(total_score, 1),
-                    # Performance metrics
-                    "hit_rate": round(hit_rate, 3),
-                    "damage_efficiency": round(damage_efficiency, 2),
-                    "survival_rate": survival_rate,
-                    # Raw stats
-                    "shots_fired": shots,
-                    "shots_hit": hits,
-                    "damage_dealt": round(damage_dealt, 1),
-                    "damage_taken": round(damage_taken, 1),
-                    "kills": kills,
-                    "deaths": deaths,
-                    # Score breakdown
-                    "score_breakdown": {
-                        "accuracy": round(accuracy_score, 1),
-                        "damage": round(damage_score, 1),
-                        "kills": round(kill_score, 1),
-                        "survival": round(survival_bonus, 1),
-                        "damage_penalty": round(damage_penalty, 1),
-                    },
-                }
+                BotScore(
+                    bot_id=bot_id,
+                    team=self.bot_data[bot_id].team,
+                    total_score=round(total_score, 1),
+                    hit_rate=round(hit_rate, 3),
+                    damage_efficiency=round(damage_efficiency, 2),
+                    survival_rate=survival_rate,
+                    shots_fired=shots,
+                    shots_hit=hits,
+                    damage_dealt=round(damage_dealt, 1),
+                    damage_taken=round(damage_taken, 1),
+                    kills=kills,
+                    deaths=deaths,
+                    score_breakdown=ScoreBreakdown(
+                        accuracy=round(accuracy_score, 1),
+                        damage=round(damage_score, 1),
+                        kills=round(kill_score, 1),
+                        survival=round(survival_bonus, 1),
+                        damage_penalty=round(damage_penalty, 1),
+                    ),
+                )
             )
 
         return scores
 
-    def calculate_team_scores(self) -> Dict:
+    def calculate_team_scores(
+        self, bot_scores: Optional[List[BotScore]] = None
+    ) -> Dict[int, TeamScore]:
         """Calculate team-level scores and rankings."""
-        bot_scores = self.calculate_bot_scores()
+        if bot_scores is None:
+            bot_scores = self.calculate_bot_scores()
 
-        team_stats = {
-            0: {"bots": [], "total_score": 0},
-            1: {"bots": [], "total_score": 0},
+        raw_stats: Dict[int, Dict[str, Any]] = {
+            0: {"bots": [], "total_score": 0.0},
+            1: {"bots": [], "total_score": 0.0},
         }
 
         for score in bot_scores:
-            team = score["team"]
-            team_stats[team]["bots"].append(score)
-            team_stats[team]["total_score"] += score["total_score"]
+            team = score.team
+            team_entry = raw_stats.setdefault(
+                team, {"bots": [], "total_score": 0.0}
+            )
+            team_entry["bots"].append(score)
+            team_entry["total_score"] += score.total_score
 
-        # Calculate team aggregates
-        for team in [0, 1]:
-            bots = team_stats[team]["bots"]
-            if bots:
-                team_stats[team].update(
-                    {
-                        "avg_hit_rate": sum(b["hit_rate"] for b in bots) / len(bots),
-                        "total_kills": sum(b["kills"] for b in bots),
-                        "total_deaths": sum(b["deaths"] for b in bots),
-                        "total_damage_dealt": sum(b["damage_dealt"] for b in bots),
-                        "total_damage_taken": sum(b["damage_taken"] for b in bots),
-                        "bots_alive": sum(1 for b in bots if b["deaths"] == 0),
-                    }
-                )
+        team_stats: Dict[int, TeamScore] = {}
+        for team, data in raw_stats.items():
+            bots: List[BotScore] = data["bots"]
+            if not bots:
+                team_stats[team] = TeamScore()
+                continue
+
+            team_stats[team] = TeamScore(
+                bots=bots,
+                total_score=round(data["total_score"], 1),
+                avg_hit_rate=sum(b.hit_rate for b in bots) / len(bots),
+                total_kills=sum(b.kills for b in bots),
+                total_deaths=sum(b.deaths for b in bots),
+                total_damage_dealt=sum(b.damage_dealt for b in bots),
+                total_damage_taken=sum(b.damage_taken for b in bots),
+                bots_alive=sum(1 for b in bots if b.deaths == 0),
+            )
 
         return team_stats
 
@@ -1044,7 +1167,7 @@ def run_battle_simulation(
     verbose: bool = True,
     arena_size: Optional[Tuple[float, float]] = None,
     bots_per_side: Optional[int] = None,
-) -> Dict:
+) -> BattleData:
     """Run a complete battle simulation with configurable parameters.
 
     Args:
@@ -1132,19 +1255,22 @@ def run_battle_simulation(
         )
 
     # Generate battle data before cleanup
-    battle_data = {
-        "metadata": {
-            "seed": seed,
-            "duration": round(arena.time, 2),
-            "winner": f"team_{winner}",
-            "reason": reason,
-            "arena_size": arena.ARENA_SIZE,
-            "total_ticks": arena.tick,
-            "real_time": round(elapsed, 2),
-        },
-        "timeline": arena.battle_log,
-        "summary": _generate_battle_summary(arena),
-    }
+    metadata = BattleMetadata(
+        seed=seed,
+        duration=round(arena.time, 2),
+        winner=f"team_{winner}",
+        reason=reason,
+        arena_size=arena.ARENA_SIZE,
+        total_ticks=arena.tick,
+        real_time=round(elapsed, 2),
+        walls=arena.get_walls(),
+    )
+
+    battle_data = BattleData(
+        metadata=metadata,
+        timeline=list(arena.battle_log),
+        summary=_generate_battle_summary(arena),
+    )
 
     # Clean up pymunk space to avoid CFFI callback errors
     arena.cleanup()
@@ -1152,34 +1278,30 @@ def run_battle_simulation(
     return battle_data
 
 
-def _generate_battle_summary(arena: Arena) -> Dict:
+def _generate_battle_summary(arena: Arena) -> BattleSummary:
     """Generate comprehensive battle summary with detailed scoring."""
-    # Get detailed scoring data
     bot_scores = arena.calculate_bot_scores()
-    team_scores = arena.calculate_team_scores()
+    team_scores = arena.calculate_team_scores(bot_scores)
 
-    # Count events by type
-    all_events = []
+    all_events: List[BattleEvent] = []
     for state in arena.battle_log:
-        all_events.extend(state.get("events", []))
+        all_events.extend(state.events)
 
     total_shots = sum(bot_data.shots_fired for bot_data in arena.bot_data.values())
     total_hits = sum(bot_data.shots_hit for bot_data in arena.bot_data.values())
-    total_deaths = len([e for e in all_events if e["type"] == "death"])
+    total_deaths = sum(1 for event in all_events if event.type == "death")
 
-    # Determine MVP (highest scoring bot)
-    mvp = max(bot_scores, key=lambda x: x["total_score"]) if bot_scores else None
-
-    # Determine best and worst performers by category
-    best_accuracy = max(bot_scores, key=lambda x: x["hit_rate"]) if bot_scores else None
-    most_damage = (
-        max(bot_scores, key=lambda x: x["damage_dealt"]) if bot_scores else None
+    mvp = max(bot_scores, key=lambda x: x.total_score) if bot_scores else None
+    best_accuracy = (
+        max(bot_scores, key=lambda x: x.hit_rate) if bot_scores else None
     )
-    most_kills = max(bot_scores, key=lambda x: x["kills"]) if bot_scores else None
+    most_damage = (
+        max(bot_scores, key=lambda x: x.damage_dealt) if bot_scores else None
+    )
+    most_kills = max(bot_scores, key=lambda x: x.kills) if bot_scores else None
 
-    # Get final positions and HP
-    final_hp = []
-    final_positions = []
+    final_hp: List[int] = []
+    final_positions: List[Optional[Tuple[float, float]]] = []
     for bot_id in range(arena.BOT_COUNT):
         if bot_id in arena.bot_data:
             bot_data = arena.bot_data[bot_id]
@@ -1187,7 +1309,7 @@ def _generate_battle_summary(arena: Arena) -> Dict:
             is_alive = arena._is_bot_alive(bot_id)
             final_hp.append(int(bot_data.hp) if is_alive else 0)
             final_positions.append(
-                [round(body.position[0], 1), round(body.position[1], 1)]
+                (round(body.position[0], 1), round(body.position[1], 1))
                 if is_alive
                 else None
             )
@@ -1195,42 +1317,52 @@ def _generate_battle_summary(arena: Arena) -> Dict:
             final_hp.append(0)
             final_positions.append(None)
 
-    return {
-        # Legacy stats for compatibility
-        "total_shots": total_shots,
-        "total_hits": total_hits,
-        "total_deaths": total_deaths,
-        "hit_rate": round(total_hits / max(total_shots, 1), 3),
-        "final_hp": final_hp,
-        "final_positions": final_positions,
-        # Detailed scoring system
-        "bot_scores": bot_scores,
-        "team_scores": team_scores,
-        # Performance highlights
-        "mvp": {
-            "bot_id": mvp["bot_id"] if mvp else None,
-            "score": mvp["total_score"] if mvp else 0,
-            "team": mvp["team"] if mvp else None,
-        },
-        "best_accuracy": {
-            "bot_id": best_accuracy["bot_id"] if best_accuracy else None,
-            "hit_rate": best_accuracy["hit_rate"] if best_accuracy else 0,
-            "shots": f"{best_accuracy['shots_hit']}/{best_accuracy['shots_fired']}"
-            if best_accuracy
-            else "0/0",
-        },
-        "most_damage": {
-            "bot_id": most_damage["bot_id"] if most_damage else None,
-            "damage": most_damage["damage_dealt"] if most_damage else 0,
-        },
-        "most_kills": {
-            "bot_id": most_kills["bot_id"] if most_kills else None,
-            "kills": most_kills["kills"] if most_kills else 0,
-        },
-        # Battle statistics
-        "battle_intensity": round(
-            total_shots / max(arena.time, 1), 1
-        ),  # shots per second
-        "lethality": round(total_deaths / max(arena.BOT_COUNT, 1), 2),  # death rate
-        "overall_accuracy": round(total_hits / max(total_shots, 1), 3),
-    }
+    summary = BattleSummary(
+        total_shots=total_shots,
+        total_hits=total_hits,
+        total_deaths=total_deaths,
+        hit_rate=round(total_hits / max(total_shots, 1), 3),
+        final_hp=final_hp,
+        final_positions=final_positions,
+        bot_scores=bot_scores,
+        team_scores=team_scores,
+        battle_intensity=round(total_shots / max(arena.time, 1), 1),
+        lethality=round(total_deaths / max(arena.BOT_COUNT, 1), 2),
+        overall_accuracy=round(total_hits / max(total_shots, 1), 3),
+    )
+
+    if mvp:
+        summary.mvp = summary.mvp.model_copy(
+            update={
+                "bot_id": mvp.bot_id,
+                "score": mvp.total_score,
+                "team": mvp.team,
+            }
+        )
+
+    if best_accuracy:
+        summary.best_accuracy = summary.best_accuracy.model_copy(
+            update={
+                "bot_id": best_accuracy.bot_id,
+                "hit_rate": best_accuracy.hit_rate,
+                "shots": f"{best_accuracy.shots_hit}/{best_accuracy.shots_fired}",
+            }
+        )
+
+    if most_damage:
+        summary.most_damage = summary.most_damage.model_copy(
+            update={
+                "bot_id": most_damage.bot_id,
+                "damage": most_damage.damage_dealt,
+            }
+        )
+
+    if most_kills:
+        summary.most_kills = summary.most_kills.model_copy(
+            update={
+                "bot_id": most_kills.bot_id,
+                "kills": most_kills.kills,
+            }
+        )
+
+    return summary
