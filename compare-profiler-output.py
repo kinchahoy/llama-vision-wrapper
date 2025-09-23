@@ -16,6 +16,20 @@ def main():
     old = pstats.Stats(old_file)
     new = pstats.Stats(new_file)
 
+    # Calculate overall totals
+    old_total = old.total_tt
+    new_total = new.total_tt
+    total_change = new_total - old_total
+
+    # Print overall comparison
+    print(f"Profile Comparison:")
+    print(f"  Old file: {old_file}")
+    print(f"  New file: {new_file}")
+    print(f"  Old total time: {old_total:.4f}s")
+    print(f"  New total time: {new_total:.4f}s")
+    print(f"  Overall change: {total_change:+.4f}s ({((new_total/old_total - 1) * 100):+.1f}%)")
+    print()
+
     diffs = []
     for func, new_stats in new.stats.items():
         new_time = new_stats[3]  # cumulative time
@@ -28,6 +42,7 @@ def main():
             diffs.append((change, new_time, old_time, label))
 
     # Pretty header
+    print(f"Top 20 Function Changes:")
     print(f"{'Function':50} | {'Δ (s)':>10} | {'New (s)':>10} | {'Old (s)':>10} | Note")
     print("-" * 100)
 
