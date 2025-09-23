@@ -26,18 +26,29 @@ def main():
     new_total = new.total_tt
     total_change = new_total - old_total
 
-    # Print overall comparison
-    print(f"Profile Comparison:")
-    print(f"  Old file: {old_file}")
-    print(f"  New file: {new_file}")
-    print(f"  Old total time: {old_total:.4f}s")
-    print(f"  New total time: {new_total:.4f}s")
-    print(f"  Overall change: {total_change:+.4f}s ({((new_total/old_total - 1) * 100):+.1f}%)")
+    # Print overall comparison with optimization focus
+    print(f"Performance Optimization Results:")
+    print(f"  Baseline (old): {old_file}")
+    print(f"  Optimized (new): {new_file}")
+    print(f"  Baseline time: {old_total:.4f}s")
+    print(f"  Optimized time: {new_total:.4f}s")
+    
+    if new_total < old_total:
+        speedup = old_total / new_total
+        time_saved = old_total - new_total
+        pct_faster = ((old_total - new_total) / old_total) * 100
+        print(f"  🚀 FASTER by {time_saved:.4f}s ({pct_faster:.1f}% faster, {speedup:.2f}x speedup)")
+    else:
+        slowdown = new_total / old_total
+        time_lost = new_total - old_total
+        pct_slower = ((new_total - old_total) / old_total) * 100
+        print(f"  ⚠️  SLOWER by {time_lost:.4f}s ({pct_slower:.1f}% slower, {slowdown:.2f}x slowdown)")
     print()
 
-    # Categorize functions
+    # Categorize functions for optimization analysis
     new_functions = []      # Functions that exist only in new profile
-    changed_functions = []  # Functions that exist in both with significant changes
+    faster_functions = []   # Functions that got faster (optimization wins)
+    slower_functions = []   # Functions that got slower (regressions)
     minor_changes = []      # Functions with insignificant changes
     
     # Thresholds for significance
@@ -67,7 +78,10 @@ def main():
                 
                 entry = (change, new_time, old_time, label, pct_change)
                 if is_significant:
-                    changed_functions.append(entry)
+                    if change < 0:  # Faster (negative change is good)
+                        faster_functions.append(entry)
+                    else:  # Slower (positive change is bad)
+                        slower_functions.append(entry)
                 else:
                     minor_changes.append(entry)
 
@@ -82,16 +96,32 @@ def main():
             print(f"... and {len(new_functions) - top_n} more new functions")
         print()
 
-    # Show significant changes
-    if changed_functions:
-        print(f"Significant Changes (top {min(top_n, len(changed_functions))} by absolute change):")
-        print(f"{'Function':50} | {'Δ (s)':>10} | {'Δ (%)':>8} | {'New (s)':>10} | {'Old (s)':>10}")
+    # Show optimization wins (faster functions)
+    if faster_functions:
+        print(f"🚀 Optimization Wins (top {min(top_n, len(faster_functions))} by time saved):")
+        print(f"{'Function':50} | {'Saved (s)':>10} | {'Faster (%)':>10} | {'New (s)':>10} | {'Old (s)':>10}")
         print("-" * 105)
-        for change, new_time, old_time, label, pct_change in sorted(changed_functions, key=lambda x: -abs(x[0]))[:top_n]:
-            pct_str = f"{pct_change:+.1f}" if abs(pct_change) < 999 else "∞" if pct_change > 0 else "-∞"
-            print(f"{label:50} | {change:+10.4f} | {pct_str:>8} | {new_time:10.4f} | {old_time:10.4f}")
-        if len(changed_functions) > top_n:
-            print(f"... and {len(changed_functions) - top_n} more significant changes")
+        for change, new_time, old_time, label, pct_change in sorted(faster_functions, key=lambda x: x[0])[:top_n]:  # Sort by change (most negative first)
+            time_saved = -change  # Make positive for display
+            pct_faster = -pct_change  # Make positive for display
+            pct_str = f"{pct_faster:.1f}%" if pct_faster < 999 else "99.9%+"
+            print(f"{label:50} | {time_saved:10.4f} | {pct_str:>10} | {new_time:10.4f} | {old_time:10.4f}")
+        if len(faster_functions) > top_n:
+            print(f"... and {len(faster_functions) - top_n} more optimized functions")
+        print()
+
+    # Show performance regressions (slower functions)
+    if slower_functions:
+        print(f"⚠️  Performance Regressions (top {min(top_n, len(slower_functions))} by time lost):")
+        print(f"{'Function':50} | {'Lost (s)':>10} | {'Slower (%)':>10} | {'New (s)':>10} | {'Old (s)':>10}")
+        print("-" * 105)
+        for change, new_time, old_time, label, pct_change in sorted(slower_functions, key=lambda x: -x[0])[:top_n]:  # Sort by change (most positive first)
+            time_lost = change
+            pct_slower = pct_change
+            pct_str = f"{pct_slower:.1f}%" if pct_slower < 999 else "∞" if old_time == 0 else "999%+"
+            print(f"{label:50} | {time_lost:10.4f} | {pct_str:>10} | {new_time:10.4f} | {old_time:10.4f}")
+        if len(slower_functions) > top_n:
+            print(f"... and {len(slower_functions) - top_n} more regressed functions")
         print()
 
     # Show minor changes only if requested and there are any
