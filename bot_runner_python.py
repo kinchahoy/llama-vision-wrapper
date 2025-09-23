@@ -351,7 +351,7 @@ class PythonFunctionRunner:
 
             if NUMBA_AVAILABLE and not self.sandbox_enabled:
                 try:
-                    return jit(nopython=False, cache=True)(func)
+                    return jit(cache=True)(func)
                 except Exception as jit_error:
                     print(f"JIT compilation failed, using regular Python: {jit_error}")
                     return func

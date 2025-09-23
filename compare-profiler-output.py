@@ -4,7 +4,13 @@
 # ]
 # ///
 
-import pstats, os, sys, argparse
+
+### This script compares two Python profiler output files and highlights performance optimizations and regressions. It is unrelated to any specific project and can be used generally.
+
+import argparse
+import os
+import pstats
+from typing import Any, Dict, Tuple, cast
 
 def main():
     parser = argparse.ArgumentParser(description='Compare two profiler output files')
@@ -21,13 +27,19 @@ def main():
     old = pstats.Stats(old_file)
     new = pstats.Stats(new_file)
 
-    # Calculate overall totals
-    old_total = old.total_tt
-    new_total = new.total_tt
-    total_change = new_total - old_total
+    StatsKey = Tuple[str, int, str]
+    StatsValue = Tuple[Any, ...]
+
+    old_total = float(getattr(old, "total_tt", 0.0))
+    new_total = float(getattr(new, "total_tt", 0.0))
+    #total_change = new_total - old_total
+
+    old_stats = cast(Dict[StatsKey, StatsValue], getattr(old, "stats", {}))
+    new_stats = cast(Dict[StatsKey, StatsValue], getattr(new, "stats", {}))
+    zero_entry: StatsValue = (0, 0, 0.0, 0.0)
 
     # Print overall comparison with optimization focus
-    print(f"Performance Optimization Results:")
+    print("Performance Optimization Results:")
     print(f"  Baseline (old): {old_file}")
     print(f"  Optimized (new): {new_file}")
     print(f"  Baseline time: {old_total:.4f}s")
@@ -56,9 +68,9 @@ def main():
     MIN_PCT_CHANGE = 5.0    # 5% minimum percentage change
     
     # Process all functions in new profile
-    for func, new_stats in new.stats.items():
-        new_time = new_stats[3]  # cumulative time
-        old_time = old.stats.get(func, (0,0,0,0))[3]
+    for func, new_stats_entry in new_stats.items():
+        new_time = new_stats_entry[3]  # cumulative time
+        old_time = old_stats.get(func, zero_entry)[3]
         
         file, line, name = func
         short_file = os.path.basename(file) if file != "~" else "~"
