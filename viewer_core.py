@@ -6,9 +6,67 @@ and config parity with llm_bot_controller.
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Union
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, Callable, Dict, Iterator, List, Tuple, Union
 
 from battle_types import BattleData, BattleFrame, BattleMetadata
+
+WallParams = Tuple[float, float, float, float, float]
+
+
+def normalize_wall_definition(wall_def: Any) -> WallParams:
+    """Coerce heterogeneous wall definitions into a numeric tuple."""
+
+    defaults: WallParams = (0.0, 0.0, 1.0, 1.0, 0.0)
+
+    if isinstance(wall_def, Mapping):
+        keys = ("center_x", "center_y", "width", "height", "angle_deg")
+        return tuple(
+            float(wall_def.get(key, defaults[idx])) for idx, key in enumerate(keys)
+        )
+
+    if all(
+        hasattr(wall_def, attr)
+        for attr in ("center_x", "center_y", "width", "height", "angle_deg")
+    ):
+        return (
+            float(getattr(wall_def, "center_x", defaults[0])),
+            float(getattr(wall_def, "center_y", defaults[1])),
+            float(getattr(wall_def, "width", defaults[2])),
+            float(getattr(wall_def, "height", defaults[3])),
+            float(getattr(wall_def, "angle_deg", defaults[4])),
+        )
+
+    if isinstance(wall_def, Sequence) and not isinstance(wall_def, (str, bytes)):
+        if len(wall_def) < 5:
+            raise ValueError("Wall definition sequence has fewer than 5 elements")
+        return (
+            float(wall_def[0]),
+            float(wall_def[1]),
+            float(wall_def[2]),
+            float(wall_def[3]),
+            float(wall_def[4]),
+        )
+
+    raise TypeError(f"Unsupported wall definition type: {type(wall_def)}")
+
+
+def iter_wall_params(
+    walls_data: Iterable[Any],
+    *,
+    on_error: Callable[[Any, Exception], None] | None = None,
+) -> Iterator[WallParams]:
+    """Yield normalized wall parameters, optionally reporting invalid entries."""
+
+    if not walls_data:
+        return
+
+    for wall_def in walls_data:
+        try:
+            yield normalize_wall_definition(wall_def)
+        except (TypeError, ValueError) as exc:
+            if on_error is not None:
+                on_error(wall_def, exc)
 
 
 def validate_battle_data(
@@ -45,27 +103,43 @@ def _build_mock_arena(
 
         class _Vec2:
             __slots__ = ("x", "y")
+
             def __init__(self, x: float, y: float):
                 self.x = float(x)
                 self.y = float(y)
+
             def __iter__(self):
                 yield self.x
                 yield self.y
+
+            def __getitem__(self, index: int) -> float:
+                if index == 0:
+                    return self.x
+                if index == 1:
+                    return self.y
+                raise IndexError(index)
+
             def __add__(self, other):
                 ox, oy = (other.x, other.y) if hasattr(other, "x") else other
                 return MockArena._Vec2(self.x + ox, self.y + oy)
+
             def __sub__(self, other):
                 ox, oy = (other.x, other.y) if hasattr(other, "x") else other
                 return MockArena._Vec2(self.x - ox, self.y - oy)
+
             def __mul__(self, scalar: float):
                 return MockArena._Vec2(self.x * scalar, self.y * scalar)
+
             __rmul__ = __mul__
+
             def dot(self, other) -> float:
                 ox, oy = (other.x, other.y) if hasattr(other, "x") else other
                 return self.x * ox + self.y * oy
+
             def cross(self, other) -> float:
                 ox, oy = (other.x, other.y) if hasattr(other, "x") else other
                 return self.x * oy - self.y * ox
+
             @property
             def length(self) -> float:
                 return math.hypot(self.x, self.y)
@@ -78,12 +152,20 @@ def _build_mock_arena(
                 self.point = point
 
         class _MockBody:
-            __slots__ = ("position", "angle", "velocity", "shapes")
+            __slots__ = ("position", "angle", "velocity", "shapes", "_llm_skip_shapes")
+
             def __init__(self, position, angle: float, velocity):
-                self.position = position
+                if hasattr(position, "x"):
+                    self.position = MockArena._Vec2(position.x, position.y)
+                else:
+                    self.position = MockArena._Vec2(*position)
+                if hasattr(velocity, "x"):
+                    self.velocity = MockArena._Vec2(velocity.x, velocity.y)
+                else:
+                    self.velocity = MockArena._Vec2(*velocity)
                 self.angle = angle
-                self.velocity = velocity
                 self.shapes = ()
+                self._llm_skip_shapes = None
 
         class _MockCircleShape:
             __slots__ = ("body", "radius", "collision_type")
@@ -179,9 +261,9 @@ def _build_mock_arena(
                         self.signal = bot_info.get("signal", "none")
 
                 body = MockArena._MockBody(
-                    (bot["x"], bot["y"]),
+                    MockArena._Vec2(bot["x"], bot["y"]),
                     math.radians(bot["theta"]),
-                    (bot.get("vx", 0), bot.get("vy", 0)),
+                    MockArena._Vec2(bot.get("vx", 0), bot.get("vy", 0)),
                 )
                 shape = MockArena._MockCircleShape(body, self.BOT_RADIUS, MockArena.COLLISION_TYPE_BOT)
                 body.shapes = (shape,)
@@ -198,9 +280,9 @@ def _build_mock_arena(
                         self.ttl = proj_info.get("ttl", 1.0)
 
                 body = MockArena._MockBody(
-                    (proj["x"], proj["y"]),
+                    MockArena._Vec2(proj["x"], proj["y"]),
                     0.0,
-                    (proj.get("vx", 0), proj.get("vy", 0)),
+                    MockArena._Vec2(proj.get("vx", 0), proj.get("vy", 0)),
                 )
                 shape = MockArena._MockCircleShape(body, 0.1, MockArena.COLLISION_TYPE_PROJECTILE)
                 body.shapes = (shape,)
@@ -208,15 +290,7 @@ def _build_mock_arena(
                 self.projectile_bodies[proj_id] = body
                 self.space.add_shape(shape)
 
-            for wall_def in metadata.get("walls", []):
-                if hasattr(wall_def, "center_x"):
-                    cx = float(wall_def.get("center_x"))
-                    cy = float(wall_def.get("center_y"))
-                    w = float(wall_def.get("width"))
-                    h = float(wall_def.get("height"))
-                    angle_deg = float(wall_def.get("angle_deg"))
-                else:
-                    cx, cy, w, h, angle_deg = wall_def
+            for cx, cy, w, h, angle_deg in iter_wall_params(metadata.get("walls", [])):
                 angle_rad = math.radians(angle_deg)
                 c, s = math.cos(angle_rad), math.sin(angle_rad)
                 hw, hh = w / 2.0, h / 2.0

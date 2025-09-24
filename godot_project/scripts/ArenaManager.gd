@@ -50,8 +50,11 @@ func setup_arena(metadata: Dictionary):
 
 	# Create walls
 	var walls_data = metadata.get("walls", [])
-	for wall_def in walls_data:
-		create_wall(wall_def)
+	for raw_wall_def in walls_data:
+		var wall_params := _normalize_wall_definition(raw_wall_def)
+		if wall_params.is_empty():
+			continue
+		create_wall(wall_params)
 
 	# Visibility config for overlays (optional)
 	var cfg = metadata.get("visibility_config", {})
@@ -69,16 +72,48 @@ func create_floor(width: float, height: float):
 	floor_node.position = Vector3(0, -0.1, 0)
 	world_root.add_child(floor_node)
 
+
+func _normalize_wall_definition(raw_wall_def) -> Array:
+	var defaults = [0.0, 0.0, 1.0, 1.0, 0.0]
+
+	if raw_wall_def is Dictionary:
+		return [
+			float(raw_wall_def.get("center_x", defaults[0])),
+			float(raw_wall_def.get("center_y", defaults[1])),
+			float(raw_wall_def.get("width", defaults[2])),
+			float(raw_wall_def.get("height", defaults[3])),
+			float(raw_wall_def.get("angle_deg", defaults[4])),
+		]
+	elif raw_wall_def is Array:
+		if raw_wall_def.size() < 5:
+			push_warning("Wall definition array has fewer than 5 elements: %s" % [raw_wall_def])
+			return []
+		return [
+			float(raw_wall_def[0]),
+			float(raw_wall_def[1]),
+			float(raw_wall_def[2]),
+			float(raw_wall_def[3]),
+			float(raw_wall_def[4]),
+		]
+
+	push_warning("Unsupported wall definition type: %s" % [typeof(raw_wall_def)])
+	return []
+
+
 func create_wall(wall_def: Array):
-	var center_x = wall_def[0]
-	var center_y = wall_def[1]
-	var width = wall_def[2]
-	var height = wall_def[3]
-	var angle_deg = wall_def[4]
-	
+	if wall_def.size() < 5:
+		push_warning("Wall definition array has fewer than 5 elements: %s" % [wall_def])
+		return
+
+	var center_x = float(wall_def[0])
+	var center_y = float(wall_def[1])
+	var width = float(wall_def[2])
+	var height = float(wall_def[3])
+	var angle_deg = float(wall_def[4])
+
 	var wall_mesh = BoxMesh.new()
 	wall_mesh.size = Vector3(width, 2.0, height)
-	
+
 	var wall_node = MeshInstance3D.new()
 	wall_node.mesh = wall_mesh
 	wall_node.material_override = materials.get_wall_material()
@@ -226,8 +261,8 @@ func _update_fov_overlay() -> void:
 	fov_mesh_instance.position = bot_node.position + Vector3(0, 0.02, 0)
 
 	# Rotation: bot yaw already mapped as theta-90; overlay should share the same
-	# Mesh is modeled facing +X, while bots face -Z; apply -90° yaw offset.
-	fov_mesh_instance.rotation_degrees = bot_node.rotation_degrees + Vector3(0, -90.0, 0)
+	# Mesh is modeled facing X, while bots face Z; apply +90° yaw offset.
+	fov_mesh_instance.rotation_degrees = bot_node.rotation_degrees + Vector3(0, +90.0, 0)
 
 func _create_fov_mesh(radius: float, fov_deg: float) -> MeshInstance3D:
 	var mesh_instance = MeshInstance3D.new()

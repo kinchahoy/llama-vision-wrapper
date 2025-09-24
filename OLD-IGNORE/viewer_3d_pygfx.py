@@ -14,6 +14,7 @@ import numpy as np
 import pygfx as gfx
 import pylinalg as la
 from wgpu.gui.auto import WgpuCanvas, run
+from viewer_core import iter_wall_params
 
 # Import visibility system to use same logic as 2D viewer
 PythonLLMController: Any
@@ -169,8 +170,9 @@ class Battle3DViewer:
         wall_3d_height = 2.0
         walls_data = self.metadata.get("walls", [])
 
-        for i, wall_def in enumerate(walls_data):
-            center_x, center_y, width, height, angle_deg = wall_def
+        for i, (center_x, center_y, width, height, angle_deg) in enumerate(
+            self._iter_wall_params(walls_data)
+        ):
 
             wall_geom = gfx.box_geometry(width, height, wall_3d_height)
 
@@ -205,6 +207,12 @@ class Battle3DViewer:
                 wall.receive_shadow = True
             except Exception:
                 pass
+
+    def _iter_wall_params(self, walls_data):
+        def _log_wall_error(wall_def, error: Exception):
+            print(f"Warning: {error}; skipping wall definition: {wall_def}")
+
+        yield from iter_wall_params(walls_data, on_error=_log_wall_error)
 
     def _setup_ui(self):
         """Set up text elements for UI."""
@@ -411,6 +419,24 @@ class Battle3DViewer:
         # Create a mock arena compatible with the LLM visibility API
 
         class MockArena:
+            class _Vec2:
+                __slots__ = ("x", "y")
+
+                def __init__(self, x: float, y: float):
+                    self.x = float(x)
+                    self.y = float(y)
+
+                def __iter__(self):
+                    yield self.x
+                    yield self.y
+
+                def __getitem__(self, index: int) -> float:
+                    if index == 0:
+                        return self.x
+                    if index == 1:
+                        return self.y
+                    raise IndexError(index)
+
             def __init__(self, viewer, current_state):
                 self.SENSE_RANGE = 15.0
                 self.FOV_ANGLE = math.radians(120)
@@ -433,9 +459,11 @@ class Battle3DViewer:
 
                         class MockBotBody:
                             def __init__(self, bot_info):
-                                self.position = (bot_info["x"], bot_info["y"])
+                                self.position = MockArena._Vec2(
+                                    bot_info["x"], bot_info["y"]
+                                )
                                 self.angle = math.radians(bot_info["theta"])
-                                self.velocity = (
+                                self.velocity = MockArena._Vec2(
                                     bot_info.get("vx", 0),
                                     bot_info.get("vy", 0),
                                 )
@@ -453,8 +481,10 @@ class Battle3DViewer:
 
                     class MockProjBody:
                         def __init__(self, proj_info):
-                            self.position = (proj_info["x"], proj_info["y"])
-                            self.velocity = (
+                            self.position = MockArena._Vec2(
+                                proj_info["x"], proj_info["y"]
+                            )
+                            self.velocity = MockArena._Vec2(
                                 proj_info.get("vx", 0),
                                 proj_info.get("vy", 0),
                             )
@@ -470,8 +500,7 @@ class Battle3DViewer:
                         return self._vertices
 
                 walls_data = viewer.metadata.get("walls", [])
-                for wall_def in walls_data:
-                    cx, cy, w, h, angle_deg = wall_def
+                for cx, cy, w, h, angle_deg in viewer._iter_wall_params(walls_data):
                     angle_rad = math.radians(angle_deg)
                     c, s = math.cos(angle_rad), math.sin(angle_rad)
                     hw, hh = w / 2, h / 2

@@ -11,6 +11,7 @@ import pygame
 
 from battle_types import BattleData, BattleEvent, BattleFrame
 from pydantic import ValidationError
+from viewer_core import iter_wall_params
 
 # Import visibility system to use same logic as bot programs
 PythonLLMController: Any
@@ -508,13 +509,18 @@ class BattleViewer:
                     1,
                 )
 
+    def _iter_wall_params(self, walls_data):
+        def _log_wall_error(wall_def, error: Exception):
+            print(f"Warning: {error}; skipping wall definition: {wall_def}")
+
+        yield from iter_wall_params(walls_data, on_error=_log_wall_error)
+
     def _draw_walls(self, state: BattleFrame):
         """Draw interior walls/obstacles from metadata."""
         wall_color = (100, 100, 100)
         walls_data = self.metadata.get("walls", [])
 
-        for wall_def in walls_data:
-            center_x, center_y, w, h, angle_deg = wall_def
+        for center_x, center_y, w, h, angle_deg in self._iter_wall_params(walls_data):
 
             # Create a surface for the wall, scaled to display size
             wall_w_px = w * self.scale_x
@@ -868,6 +874,13 @@ class BattleViewer:
                     yield self.x
                     yield self.y
 
+                def __getitem__(self, index: int) -> float:
+                    if index == 0:
+                        return self.x
+                    if index == 1:
+                        return self.y
+                    raise IndexError(index)
+
                 def __add__(self, other):
                     ox, oy = (other.x, other.y) if hasattr(other, "x") else other
                     return MockArena._Vec2(self.x + ox, self.y + oy)
@@ -902,13 +915,20 @@ class BattleViewer:
                     self.point = point
 
             class _MockBody:
-                __slots__ = ("position", "angle", "velocity", "shapes")
+                __slots__ = ("position", "angle", "velocity", "shapes", "_llm_skip_shapes")
 
                 def __init__(self, position, angle: float, velocity):
-                    self.position = position
+                    if hasattr(position, "x"):
+                        self.position = MockArena._Vec2(position.x, position.y)
+                    else:
+                        self.position = MockArena._Vec2(*position)
+                    if hasattr(velocity, "x"):
+                        self.velocity = MockArena._Vec2(velocity.x, velocity.y)
+                    else:
+                        self.velocity = MockArena._Vec2(*velocity)
                     self.angle = angle
-                    self.velocity = velocity
                     self.shapes = ()
+                    self._llm_skip_shapes = None
 
             class _MockCircleShape:
                 __slots__ = ("body", "radius", "collision_type")
@@ -1059,8 +1079,7 @@ class BattleViewer:
                     self.space.add_shape(shape)
 
                 walls_data = viewer.metadata.get("walls", [])
-                for wall_def in walls_data:
-                    cx, cy, w, h, angle_deg = wall_def
+                for cx, cy, w, h, angle_deg in viewer._iter_wall_params(walls_data):
                     angle_rad = math.radians(angle_deg)
                     c, s = math.cos(angle_rad), math.sin(angle_rad)
                     hw, hh = w / 2.0, h / 2.0
