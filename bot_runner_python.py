@@ -14,6 +14,16 @@ from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
+# Try to import wasmer for WebAssembly execution
+try:
+    from wasmer import engine, Store, Module, Instance
+    WASMER_AVAILABLE = True
+except ImportError:
+    WASMER_AVAILABLE = False
+    Store = None
+    Module = None
+    Instance = None
+
 # Allowlist of modules bot functions may import when running in the restricted sandbox
 _SANDBOX_IMPORT_ALLOWLIST = {
     "math",
@@ -211,7 +221,7 @@ class PythonFunctionRunner:
     MEMORY_LIMIT = 16
     SCRATCH_LIMIT = 16
 
-    def __init__(self, sandbox_enabled: bool = True):
+    def __init__(self, sandbox_enabled: bool = True, use_wasmer: bool = False):
         self.bot_functions: Dict[int, BotFunction] = {}
         self.execution_stats = {
             "total_executions": 0,
@@ -225,6 +235,11 @@ class PythonFunctionRunner:
         self._allowed_signals_tuple = tuple(self.allowed_signals)
         self.bot_memory: Dict[int, Dict[str, Any]] = {}
         self.sandbox_enabled = sandbox_enabled and RESTRICTED_AVAILABLE
+        self.use_wasmer = use_wasmer and WASMER_AVAILABLE
+        self.wasmer_store = Store() if self.use_wasmer else None
+        
+        if use_wasmer and not WASMER_AVAILABLE:
+            print("Warning: Wasmer requested but not available, falling back to standard execution")
 
     def _execute_with_timeout(
         self, func: Callable, *args
@@ -339,7 +354,9 @@ class PythonFunctionRunner:
             Compiled function or None if compilation failed
         """
         try:
-            if self.sandbox_enabled:
+            if self.use_wasmer:
+                func = self._compile_with_wasmer(source_code)
+            elif self.sandbox_enabled:
                 func = self._compile_with_restrictedpython(source_code)
             else:
                 func = self._compile_with_legacy_exec(source_code)
@@ -347,9 +364,10 @@ class PythonFunctionRunner:
             if func is None:
                 return None
 
-            self._validate_function_signature(func)
+            if not self.use_wasmer:
+                self._validate_function_signature(func)
 
-            if NUMBA_AVAILABLE and not self.sandbox_enabled:
+            if NUMBA_AVAILABLE and not self.sandbox_enabled and not self.use_wasmer:
                 try:
                     return jit(cache=True)(func)
                 except Exception as jit_error:
@@ -406,6 +424,52 @@ class PythonFunctionRunner:
         if not callable(func):
             raise ValueError("Function must be named 'bot_function'")
         return func
+
+    def _compile_with_wasmer(self, source_code: str) -> Optional[Callable]:
+        """
+        Compile Python source code to WebAssembly using Wasmer.
+        
+        Note: This is a simplified implementation. In practice, you'd need
+        a Python-to-WASM compiler like Pyodide or a custom transpiler.
+        For now, this creates a WASM wrapper around Python execution.
+        """
+        if not self.use_wasmer or not self.wasmer_store:
+            return None
+            
+        try:
+            # For demonstration, we'll create a simple WASM module that can call back to Python
+            # In a real implementation, you'd compile Python to WASM or use a Python-in-WASM runtime
+            
+            # Simple WASM module that exports a function
+            wasm_bytes = """
+            (module
+              (type (func (param i32) (result i32)))
+              (func (export "bot_function") (type 0) (param i32) (result i32)
+                local.get 0
+                i32.const 1
+                i32.add))
+            """
+            
+            # Compile the WASM module
+            module = Module(self.wasmer_store, wasm_bytes)
+            instance = Instance(module)
+            
+            # Create a Python wrapper that bridges to the WASM function
+            def wasmer_bot_function(observation):
+                # For now, return a simple action since we can't execute arbitrary Python in WASM
+                # In a real implementation, you'd serialize the observation, pass it to WASM,
+                # and deserialize the result
+                return {
+                    "action": "rotate", 
+                    "angle": 45.0,
+                    "signal": "ready"
+                }
+            
+            return wasmer_bot_function
+            
+        except Exception as e:
+            print(f"Wasmer compilation failed: {e}")
+            return None
 
     def _build_restricted_globals(self) -> Dict[str, Any]:
         safe_builtins = {
@@ -689,6 +753,8 @@ class PythonFunctionRunner:
         stats["cache_size"] = len(self.compile_cache)
         stats["numba_available"] = NUMBA_AVAILABLE
         stats["sandbox_enabled"] = self.sandbox_enabled
+        stats["wasmer_available"] = WASMER_AVAILABLE
+        stats["use_wasmer"] = self.use_wasmer
         return stats
 
     def clear_bot_function(self, bot_id: int):

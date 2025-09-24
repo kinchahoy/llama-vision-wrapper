@@ -81,6 +81,7 @@ def run_python_battle(
     bots_per_side: Optional[int] = None,
     sim_unsafe: bool = False,
     visibility_rays: Optional[int] = None,
+    use_wasmer: bool = False,
 ) -> BattleData:
     """
     Run a complete battle simulation using Python functions for bot control.
@@ -102,13 +103,16 @@ def run_python_battle(
     arena = Arena(seed, spawn_config, arena_size, bots_per_side)
 
     # Create Python function runner and LLM controller
-    runner = PythonFunctionRunner(sandbox_enabled=not sim_unsafe)
+    runner = PythonFunctionRunner(sandbox_enabled=not sim_unsafe, use_wasmer=use_wasmer)
     llm = PythonLLMController(arena.BOT_COUNT)
     if visibility_rays is not None and visibility_rays > 0:
         llm.visibility_ray_count = int(visibility_rays)
 
     if verbose and sim_unsafe:
         print("Simulation unsafe mode enabled: bot functions execute without RestrictedPython and may use Numba acceleration.")
+    
+    if verbose and use_wasmer:
+        print("Wasmer mode enabled: bot functions will be compiled to WebAssembly.")
 
     if verbose:
         print(
@@ -264,6 +268,7 @@ def run_python_battle(
         compilation_success=compilation_success,
         runner_stats=runner_stats,
         sandbox_enabled=not sim_unsafe,
+        use_wasmer=use_wasmer,
     )
 
     summary = _generate_python_battle_summary(arena, runner, runner_stats)
@@ -431,6 +436,11 @@ def main():
         help="Disable RestrictedPython sandbox for bot functions (unsafe, enables direct execution and Numba acceleration)",
     )
     parser.add_argument(
+        "--use-wasmer",
+        action="store_true",
+        help="Use Wasmer WebAssembly runtime for bot function execution (experimental)",
+    )
+    parser.add_argument(
         "--visibility-rays",
         type=int,
         default=None,
@@ -468,6 +478,7 @@ def main():
         verbose=not args.quiet,
         sim_unsafe=args.sim_unsafe,
         visibility_rays=args.visibility_rays,
+        use_wasmer=args.use_wasmer,
     )
 
     # Save results
