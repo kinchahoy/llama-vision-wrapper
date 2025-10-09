@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
 project(GenerationHelper LANGUAGES C CXX)
 
+# On macOS, force CMake to use the correct SDK path
+if(APPLE)
+    execute_process(
+        COMMAND xcrun --show-sdk-path
+        OUTPUT_VARIABLE CMAKE_OSX_SYSROOT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    message(STATUS "Using macOS SDK: ${CMAKE_OSX_SYSROOT}")
+    set(CMAKE_OSX_SYSROOT ${CMAKE_OSX_SYSROOT} CACHE PATH "macOS SDK path" FORCE)
+endif()
+
 # Default to Release build type for performance unless specified otherwise
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (e.g., Debug, Release)" FORCE)
