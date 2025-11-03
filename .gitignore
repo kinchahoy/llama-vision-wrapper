@@ -1,3 +1,6 @@
 .aider*
 *.so
 build/
+uv.lock
+cppyy-src/__pycache__/
+gen-helper/build/

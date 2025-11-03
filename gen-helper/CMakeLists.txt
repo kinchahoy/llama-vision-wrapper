@@ -1,6 +1,23 @@
 cmake_minimum_required(VERSION 3.10)
 project(GenerationHelper LANGUAGES C CXX)
 
+# --- Optional ccache setup ---
+option(ENABLE_CCACHE "Enable ccache if available" ON)
+
+if(ENABLE_CCACHE)
+    find_program(CCACHE_PROGRAM ccache)
+    if(CCACHE_PROGRAM)
+        message(STATUS "ccache found: ${CCACHE_PROGRAM}")
+        set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    else()
+        message(STATUS "ccache not found, continuing without it")
+    endif()
+else()
+    message(STATUS "ccache explicitly disabled via ENABLE_CCACHE=OFF")
+endif()
+
+
 # On macOS, force CMake to use the correct SDK path
 if(APPLE)
     execute_process(

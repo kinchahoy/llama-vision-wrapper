@@ -1,0 +1,31 @@
+{
+  "version": "cppyy-refactored",
+  "timestamp": "2025-11-03T13:56:40.548276",
+  "config": {
+    "repo_id": "unsloth/Qwen3-VL-2B-Instruct-GGUF",
+    "model": "Qwen3-VL-2B-Instruct-Q4_K_M.gguf",
+    "mmproj": "mmproj-BF16.gguf",
+    "n_ctx": 2048,
+    "n_batch": 512,
+    "n_threads": 8,
+    "n_gpu_layers": 0,
+    "verbose_cpp": false,
+    "temp": 0.8,
+    "top_k": 40,
+    "top_p": 0.95,
+    "repeat_penalty": 1.1,
+    "max_new_tokens": 256,
+    "benchmark": false,
+    "flash_attn": false
+  },
+  "timings": {},
+  "model_info": {
+    "vocab_size": 151936,
+    "context_size": 2048,
+    "embedding_size": 8192
+  },
+  "total_time": 432.7010340690613,
+  "total_tokens_generated": 63,
+  "final_output": " This image shows a woman wearing a white hard hat and an orange safety vest, smiling as she looks at her tablet. She is standing on a construction site with scaffolding and buildings in the background under a blue sky with clouds. The scene suggests that she is involved in managing or monitoring work activities for this project.",
+  "token_generation_rate": 7.169493839034766
+}
