@@ -1,14 +1,38 @@
 """
-Multimodal generation with benchmarking using the refactored core library.
+Multimodal generation with benchmarking using the llama_insight package.
 """
-import sys
+
 import argparse
 import json
+import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
-from llama_core import LlamaBackend, ModelLoader, MultimodalProcessor, TextGenerator
-from utils import Config, add_common_args, download_models, Timer
+try:
+    from llama_insight import (
+        Config,
+        LlamaBackend,
+        ModelLoader,
+        MultimodalProcessor,
+        TextGenerator,
+        Timer,
+        add_common_args,
+        download_models,
+    )
+except ImportError:  # pragma: no cover - dev fallback
+    project_root = Path(__file__).resolve().parents[1]
+    sys.path.append(str(project_root / "wrapper_src"))
+    from llama_insight import (  # type: ignore  # noqa
+        Config,
+        LlamaBackend,
+        ModelLoader,
+        MultimodalProcessor,
+        TextGenerator,
+        Timer,
+        add_common_args,
+        download_models,
+    )
 
 
 def main():
@@ -21,7 +45,7 @@ def main():
         "--image",
         nargs="+",
         type=str,
-        default=["debug.jpg"],
+        default=["test-images/debug.jpg"],
         help="Path to one or more input images.",
     )
     parser.add_argument(
@@ -36,8 +60,9 @@ def main():
         help="Enable benchmarking mode.",
     )
     parser.add_argument(
-        "-fa", "--flash-attn",
-        action="store_true", 
+        "-fa",
+        "--flash-attn",
+        action="store_true",
         dest="flash_attn",
         help="Enable flash attention.",
     )
@@ -74,10 +99,10 @@ def main():
             "top_p": config.top_p,
             "repeat_penalty": config.repeat_penalty,
             "max_new_tokens": config.max_new_tokens,
-            "benchmark": getattr(args, 'benchmark', False),
-            "flash_attn": getattr(args, 'flash_attn', False),
+            "benchmark": getattr(args, "benchmark", False),
+            "flash_attn": getattr(args, "flash_attn", False),
         },
-        "timings": {}
+        "timings": {},
     }
 
     try:
@@ -93,13 +118,23 @@ def main():
             loader = ModelLoader(backend.gbl)
             processor = MultimodalProcessor(backend.gbl)
             generator = TextGenerator(backend.gbl)
-            
+
             # Load model
             with timer.time_operation("Model loading"):
                 model = loader.load_model(model_path, config.n_gpu_layers)
-                ctx = loader.create_context(model, config.n_ctx, config.n_batch, config.n_threads)
-                ctx_mtmd = loader.load_multimodal(mmproj_path, model, config.n_gpu_layers > 0, config.n_threads)
-                sampler = generator.create_sampler(model, config.temp, config.top_k, config.top_p, config.repeat_penalty)
+                ctx = loader.create_context(
+                    model, config.n_ctx, config.n_batch, config.n_threads
+                )
+                ctx_mtmd = loader.load_multimodal(
+                    mmproj_path, model, config.n_gpu_layers > 0, config.n_threads
+                )
+                sampler = generator.create_sampler(
+                    model,
+                    config.temp,
+                    config.top_k,
+                    config.top_p,
+                    config.repeat_penalty,
+                )
 
             # Store model info
             vocab = backend.gbl.llama_model_get_vocab(model)
@@ -114,13 +149,15 @@ def main():
             with timer.time_operation("Image loading"):
                 for image_path in args.image:
                     bitmap = processor.load_image(ctx_mtmd, image_path)
-                    print(f"Loaded: {image_path} ({backend.gbl.mtmd_bitmap_get_nx(bitmap)}x{backend.gbl.mtmd_bitmap_get_ny(bitmap)})")
+                    print(
+                        f"Loaded: {image_path} ({backend.gbl.mtmd_bitmap_get_nx(bitmap)}x{backend.gbl.mtmd_bitmap_get_ny(bitmap)})"
+                    )
                     bitmaps.append(bitmap)
 
             # Process multimodal input
             with timer.time_operation("Prompt tokenization"):
                 chunks = processor.tokenize_prompt(ctx_mtmd, args.prompt, bitmaps)
-            
+
             with timer.time_operation("Input processing"):
                 n_past = processor.process_chunks(ctx, ctx_mtmd, chunks, config.n_batch)
 
@@ -129,18 +166,24 @@ def main():
             print(f"{args.prompt}", end="", flush=True)
 
             with timer.time_operation("Text generation", config.max_new_tokens):
-                result = generator.generate(sampler, ctx, model, n_past, config.n_ctx, config.max_new_tokens)
+                result = generator.generate(
+                    sampler, ctx, model, n_past, config.n_ctx, config.max_new_tokens
+                )
 
             # Print results
             print(f"{result.generated_text}")
-            
+
             # Calculate benchmarks
             total_time = time.time() - start_time
             benchmark_results.update({
                 "total_time": total_time,
                 "total_tokens_generated": int(result.total_tokens_generated),
                 "final_output": str(result.generated_text),
-                "token_generation_rate": float(result.total_tokens_generated / timer.timings[-1][1] if timer.timings else 0)
+                "token_generation_rate": float(
+                    result.total_tokens_generated / timer.timings[-1][1]
+                    if timer.timings
+                    else 0
+                ),
             })
 
             print(f"\n=== Results ===")

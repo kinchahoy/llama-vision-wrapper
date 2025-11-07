@@ -4,3 +4,7 @@ build/
 uv.lock
 cppyy-src/__pycache__/
 gen-helper/build/
+*.__pycache__
+*.pyc 
+__pypackages__/
+.vscode/

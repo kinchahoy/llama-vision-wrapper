@@ -30,16 +30,13 @@ library_dirs = [
 ]
 
 # Libraries to link against (Linux .so files)
-libraries = [
-    "ggml-base", "ggml-cpu", "ggml",
-    "llama", "mtmd", "generation_helper"
-]
+libraries = ["ggml-base", "ggml-cpu", "ggml", "llama", "mtmd", "generation_helper"]
 
 # Define the extension
 extensions = [
     Extension(
-        "llama_mtmd_wrapper",
-        ["llama_mtmd_wrapper.pyx"],
+        "llama_mtmd_cython_wrapper",
+        ["llama_mtmd_cython_wrapper.pyx"],
         include_dirs=include_dirs,
         library_dirs=library_dirs,
         libraries=libraries,
@@ -51,6 +48,6 @@ extensions = [
 
 # Setup
 setup(
-    name="llama_mtmd_wrapper",
+    name="llama_mtmd_cython_wrapper",
     ext_modules=cythonize(extensions),
 )

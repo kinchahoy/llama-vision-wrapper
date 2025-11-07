@@ -1,13 +1,33 @@
 """
 Example to encode images into media embeddings.
 """
-import sys
 import argparse
 import os
+import sys
+from pathlib import Path
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from llama_core import LlamaBackend, ModelLoader, MultimodalProcessor
-from utils import Config, add_common_args, download_models, timed_operation
+try:
+    from llama_insight import (
+        Config,
+        LlamaBackend,
+        ModelLoader,
+        MultimodalProcessor,
+        add_common_args,
+        download_models,
+        timed_operation,
+    )
+except ImportError:  # pragma: no cover - dev fallback
+    project_root = Path(__file__).resolve().parents[2]
+    sys.path.append(str(project_root / "wrapper_src"))
+    from llama_insight import (  # type: ignore  # noqa
+        Config,
+        LlamaBackend,
+        ModelLoader,
+        MultimodalProcessor,
+        add_common_args,
+        download_models,
+        timed_operation,
+    )
 
 
 def main():

@@ -1,7 +1,8 @@
 [project]
-name = "llama-vision-warpper"
+name = "llama_insight"
 version = "0.1.0"
-description = "Python bindings for llama.cpp multimodal functionality using cppyy and Cython."
+description = "High-level llama.cpp multimodal bindings powered by cppyy."
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "cppyy",
@@ -11,3 +12,9 @@ dependencies = [
     "typer",
     "sh",
 ]
+
+[tool.setuptools]
+package-dir = {"" = "wrapper_src"}
+
+[tool.setuptools.packages.find]
+where = ["wrapper_src"]

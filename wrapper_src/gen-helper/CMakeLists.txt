@@ -44,7 +44,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Assumes llama.cpp source is in a subdirectory named 'llama.cpp'
 # Assumes llama.cpp was built *with* BUILD_SHARED_LIBS=ON in 'llama.cpp/build'
 # Libraries are expected in 'llama.cpp/build'
-set(LLAMA_CPP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../llama.cpp" CACHE PATH "Path to llama.cpp source directory")
+set(LLAMA_CPP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../../llama.cpp" CACHE PATH "Path to llama.cpp source directory")
 set(LLAMA_CPP_BUILD_DIR "${LLAMA_CPP_SOURCE_DIR}/build" CACHE PATH "Path to llama.cpp build directory (containing libs)")
 set(LLAMA_CPP_INCLUDE_DIR "${LLAMA_CPP_SOURCE_DIR}/include" CACHE PATH "Path to llama.h include directory")
 set(LLAMA_CPP_COMMON_INCLUDE_DIR "${LLAMA_CPP_SOURCE_DIR}/common" CACHE PATH "Path to common.h include directory")

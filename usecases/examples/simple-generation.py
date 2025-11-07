@@ -1,14 +1,34 @@
 """
-A simple example using the refactored core library.
+A simple example using the llama_insight package.
 """
-import sys
 import argparse
-import os
+import sys
+from pathlib import Path
 
-# Import from parent directory
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from llama_core import LlamaBackend, ModelLoader, MultimodalProcessor, TextGenerator
-from utils import Config, add_common_args, download_models, timed_operation
+try:
+    from llama_insight import (
+        Config,
+        LlamaBackend,
+        ModelLoader,
+        MultimodalProcessor,
+        TextGenerator,
+        add_common_args,
+        download_models,
+        timed_operation,
+    )
+except ImportError:  # pragma: no cover - local editable install fallback
+    project_root = Path(__file__).resolve().parents[2]
+    sys.path.append(str(project_root / "wrapper_src"))
+    from llama_insight import (  # type: ignore  # noqa
+        Config,
+        LlamaBackend,
+        ModelLoader,
+        MultimodalProcessor,
+        TextGenerator,
+        add_common_args,
+        download_models,
+        timed_operation,
+    )
 
 
 def main():
