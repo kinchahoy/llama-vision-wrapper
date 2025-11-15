@@ -8,7 +8,7 @@ from pathlib import Path
 
 import cppyy
 
-# Resolve important directories relative to the project root.
+PACKAGE_DIR = Path(__file__).resolve().parent
 
 
 def _resolve_project_root() -> Path:
@@ -20,24 +20,41 @@ def _resolve_project_root() -> Path:
     for candidate in current.parents:
         if (candidate / "llama.cpp").exists():
             return candidate
-    # Fallback to the package directory's parent
+
+    embedded = PACKAGE_DIR / ".deps"
+    if (embedded / "llama.cpp").exists():
+        return embedded
+
     return current.parents[1]
 
 
 BASE_DIR = _resolve_project_root()
 LLAMA_CPP_DIR = BASE_DIR / "llama.cpp"
-LLAMA_CPP_LIBS_DIR = LLAMA_CPP_DIR / "build" / "bin"
-HELPER_LIB_DIR = BASE_DIR / "wrapper_src" / "gen-helper" / "build"
 
-LIB_EXT = "dylib" if sys.platform == "darwin" else "so"
-REQUIRED_LIBS = [
-    f"libggml-base.{LIB_EXT}",
-    f"libggml-cpu.{LIB_EXT}",
-    f"libggml.{LIB_EXT}",
-    f"libllama.{LIB_EXT}",
-    f"libmtmd.{LIB_EXT}",
-    f"libgeneration_helper.{LIB_EXT}",
-]
+PACKAGED_LIB_DIR = PACKAGE_DIR / "libs"
+
+if PACKAGED_LIB_DIR.exists():
+    LLAMA_CPP_LIBS_DIR = PACKAGED_LIB_DIR
+    HELPER_LIB_DIR = PACKAGED_LIB_DIR
+else:
+    LLAMA_CPP_LIBS_DIR = LLAMA_CPP_DIR / "build" / "bin"
+    HELPER_LIB_DIR = BASE_DIR / "wrapper_src" / "gen-helper" / "build"
+
+if sys.platform == "darwin":
+    LIB_EXT = "dylib"
+elif sys.platform.startswith("win"):
+    LIB_EXT = "dll"
+else:
+    LIB_EXT = "so"
+
+LIB_PREFIX = "" if sys.platform.startswith("win") else "lib"
+
+
+def _shared_lib_name(base: str) -> str:
+    return f"{LIB_PREFIX}{base}.{LIB_EXT}"
+
+
+_GENERATION_HELPER_LIB = _shared_lib_name("generation_helper")
 
 INCLUDE_DIRS = [
     LLAMA_CPP_DIR / "include",
@@ -51,6 +68,41 @@ _initialized = False
 gbl = None
 
 
+def _collect_required_libs() -> list[str]:
+    libs = [
+        _shared_lib_name("ggml-base"),
+        _shared_lib_name("ggml-cpu"),
+    ]
+    libs.extend(_discover_backend_libs(LLAMA_CPP_LIBS_DIR))
+    libs.extend(
+        [
+            _shared_lib_name("ggml"),
+            _shared_lib_name("llama"),
+            _shared_lib_name("mtmd"),
+            _shared_lib_name("common"),
+            _GENERATION_HELPER_LIB,
+        ]
+    )
+    return libs
+
+
+def _discover_backend_libs(lib_dir: Path) -> list[str]:
+    if not lib_dir.exists():
+        return []
+    skipped = {
+        _shared_lib_name("ggml-base"),
+        _shared_lib_name("ggml-cpu"),
+        _shared_lib_name("ggml"),
+    }
+    pattern = f"{LIB_PREFIX}ggml-*.{LIB_EXT}" if LIB_PREFIX else f"ggml-*.{LIB_EXT}"
+    libs = []
+    for candidate in sorted(lib_dir.glob(pattern)):
+        if candidate.name in skipped:
+            continue
+        libs.append(candidate.name)
+    return libs
+
+
 def initialize():
     """Initialize cppyy and load all required libraries."""
     global _initialized, gbl
@@ -61,8 +113,10 @@ def initialize():
         if inc_path.exists():
             cppyy.add_include_path(str(inc_path))
 
-    for lib_name in REQUIRED_LIBS:
-        lib_dir = HELPER_LIB_DIR if "generation_helper" in lib_name else LLAMA_CPP_LIBS_DIR
+    for lib_name in _collect_required_libs():
+        lib_dir = (
+            HELPER_LIB_DIR if lib_name == _GENERATION_HELPER_LIB else LLAMA_CPP_LIBS_DIR
+        )
         lib_path = lib_dir / lib_name
         if not lib_path.exists():
             raise FileNotFoundError(f"Required library not found: {lib_path}")

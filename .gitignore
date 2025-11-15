@@ -4,7 +4,11 @@ build/
 uv.lock
 cppyy-src/__pycache__/
 gen-helper/build/
+llama.cpp/build-uv/
+wrapper_src/gen-helper/build-uv/
+wrapper_src/llama_insight/libs/
+wrapper_src/llama_insight/.deps/
 *.__pycache__
-*.pyc 
+*.pyc
 __pypackages__/
 .vscode/

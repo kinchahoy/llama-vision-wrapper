@@ -1,3 +1,13 @@
+[build-system]
+requires = [
+    "uv_build>=0.9.8,<0.10.0",
+    "scikit-build-core>=0.11",
+    "cmake>=3.26",
+    "ninja>=1.11",
+]
+build-backend = "build_backend"
+backend-path = ["."]
+
 [project]
 name = "llama_insight"
 version = "0.1.0"
@@ -8,13 +18,22 @@ dependencies = [
     "cppyy",
     "Cython",
     "huggingface-hub",
-    "setuptools>=80.9.0",
     "typer",
     "sh",
 ]
 
-[tool.setuptools]
-package-dir = {"" = "wrapper_src"}
-
-[tool.setuptools.packages.find]
-where = ["wrapper_src"]
+[tool.uv.build-backend]
+module-root = "wrapper_src"
+source-include = [
+    "build_backend.py",
+    "wrapper_src/gen-helper/**",
+    "patch_llama_common_for_dynamic.patch",
+]
+source-exclude = [
+    "llama.cpp/**",
+    "build/**",
+    "dist/**",
+    "test-images/**",
+    "usecases/**",
+    "old/**",
+]
