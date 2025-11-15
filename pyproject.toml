@@ -6,7 +6,7 @@ requires = [
     "ninja>=1.11",
 ]
 build-backend = "build_backend"
-backend-path = ["."]
+backend-path = ["build-tools"]
 
 [project]
 name = "llama_insight"
@@ -25,15 +25,16 @@ dependencies = [
 [tool.uv.build-backend]
 module-root = "wrapper_src"
 source-include = [
-    "build_backend.py",
+    "build-tools/**",
     "wrapper_src/gen-helper/**",
     "patch_llama_common_for_dynamic.patch",
+    "wrapper_src/llama_insight/_headers/**",
 ]
 source-exclude = [
-    "llama.cpp/**",
-    "build/**",
-    "dist/**",
-    "test-images/**",
-    "usecases/**",
-    "old/**",
+    "/llama.cpp/**",
+    "/build/**",
+    "/dist/**",
+    "/test-images/**",
+    "/usecases/**",
+    "/old/**",
 ]

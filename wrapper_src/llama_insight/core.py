@@ -9,6 +9,7 @@ from pathlib import Path
 import cppyy
 
 PACKAGE_DIR = Path(__file__).resolve().parent
+HEADERS_ROOT = PACKAGE_DIR / "_headers"
 
 
 def _resolve_project_root() -> Path:
@@ -56,13 +57,41 @@ def _shared_lib_name(base: str) -> str:
 
 _GENERATION_HELPER_LIB = _shared_lib_name("generation_helper")
 
-INCLUDE_DIRS = [
-    LLAMA_CPP_DIR / "include",
-    LLAMA_CPP_DIR / "ggml" / "include",
-    LLAMA_CPP_DIR / "common",
-    LLAMA_CPP_DIR / "tools" / "mtmd",
-    BASE_DIR / "wrapper_src" / "gen-helper",
-]
+if HEADERS_ROOT.exists():
+    INCLUDE_DIRS = [
+        HEADERS_ROOT / "llama.cpp" / "include",
+        HEADERS_ROOT / "llama.cpp" / "ggml" / "include",
+        HEADERS_ROOT / "llama.cpp" / "common",
+        HEADERS_ROOT / "llama.cpp" / "tools" / "mtmd",
+        HEADERS_ROOT,
+    ]
+    HEADER_PATHS = {
+        "llama.h": HEADERS_ROOT / "llama.cpp" / "include" / "llama.h",
+        "common.h": HEADERS_ROOT / "llama.cpp" / "common" / "common.h",
+        "sampling.h": HEADERS_ROOT / "llama.cpp" / "common" / "sampling.h",
+        "mtmd.h": HEADERS_ROOT / "llama.cpp" / "tools" / "mtmd" / "mtmd.h",
+        "mtmd-helper.h": HEADERS_ROOT / "llama.cpp" / "tools" / "mtmd" / "mtmd-helper.h",
+        "generation_helper.h": HEADERS_ROOT / "generation_helper.h",
+    }
+else:
+    INCLUDE_DIRS = [
+        LLAMA_CPP_DIR / "include",
+        LLAMA_CPP_DIR / "ggml" / "include",
+        LLAMA_CPP_DIR / "common",
+        LLAMA_CPP_DIR / "tools" / "mtmd",
+        BASE_DIR / "wrapper_src" / "gen-helper",
+    ]
+    HEADER_PATHS = {
+        "llama.h": LLAMA_CPP_DIR / "include" / "llama.h",
+        "common.h": LLAMA_CPP_DIR / "common" / "common.h",
+        "sampling.h": LLAMA_CPP_DIR / "common" / "sampling.h",
+        "mtmd.h": LLAMA_CPP_DIR / "tools" / "mtmd" / "mtmd.h",
+        "mtmd-helper.h": LLAMA_CPP_DIR / "tools" / "mtmd" / "mtmd-helper.h",
+        "generation_helper.h": BASE_DIR
+        / "wrapper_src"
+        / "gen-helper"
+        / "generation_helper.h",
+    }
 
 _initialized = False
 gbl = None
@@ -103,6 +132,14 @@ def _discover_backend_libs(lib_dir: Path) -> list[str]:
     return libs
 
 
+def _include_header(header: str) -> None:
+    candidate = HEADER_PATHS.get(header)
+    if candidate and candidate.exists():
+        cppyy.include(str(candidate))
+    else:
+        cppyy.include(header)
+
+
 def initialize():
     """Initialize cppyy and load all required libraries."""
     global _initialized, gbl
@@ -132,7 +169,7 @@ def initialize():
         "mtmd-helper.h",
         "generation_helper.h",
     ]:
-        cppyy.include(header)
+        _include_header(header)
 
     gbl = cppyy.gbl
     _initialized = True

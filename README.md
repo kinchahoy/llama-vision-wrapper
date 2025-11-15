@@ -140,20 +140,25 @@ ls
 
 ### Native build automation (Option 3)
 
-`uv build` now uses a custom backend (`build_backend.py`) that keeps `uv_build` in charge of packaging while delegating the native compilation work to scikit-build-core’s CMake discovery helpers. During every wheel/editable build the backend:
+`uv build` now uses a custom backend (`build-tools/build_backend.py`) that keeps `uv_build` in charge of packaging while delegating the native compilation work to scikit-build-core’s CMake discovery helpers. During every wheel/editable build the backend:
 
 - Applies `patch_llama_common_for_dynamic.patch` to the vendored `llama.cpp`.
 - Configures and compiles `llama.cpp` plus `wrapper_src/gen-helper` with CMake.
 - Copies the produced shared objects into `wrapper_src/llama_insight/libs/`.
-- Mirrors the header trees required by `cppyy` into `wrapper_src/llama_insight/.deps/llama.cpp/` so imports work even after installation elsewhere.
 - Ensures the `llama.cpp` sources exist: if the submodule hasn’t been initialized yet it runs `git submodule update --init --recursive llama.cpp`, or clones from `LLAMA_INSIGHT_LLAMA_CPP_URL` when provided.
 
-Controls (env vars or `--config-settings`):
+Header files for `cppyy` live under `wrapper_src/llama_insight/_headers/` and the backend automatically refreshes them on each build by invoking `build-tools/stage_headers.py`, so you don’t need a separate staging step.
+
+Backend selection defaults to an auto-detect pass (Metal → CUDA → Vulkan → HIP → KleidiAI → CPU). Set `LLAMA_INSIGHT_BACKEND` to force a choice.
+
+Native builds cache their compiled `.so`/`.dylib` files under `~/.cache/llama_insight/artifacts` (override via `LLAMA_INSIGHT_CACHE_DIR`), so repeated `uv build` runs with the same backend/flags can skip recompilation.
+
+Controls (env vars):
 
 | Setting | Purpose |
 | --- | --- |
-| `LLAMA_INSIGHT_BACKEND` or `--config-settings llama-insight.backend=<cpu|cuda|metal|vulkan|hip|kleidiai>` | Force a backend. If unset, the installer auto-detects Metal (macOS arm64), then CUDA (nvcc or NVIDIA driver), then Vulkan (pkg-config/headers), else CPU. |
-| `LLAMA_INSIGHT_EXTRA_CMAKE_FLAGS` or `--config-settings llama-insight.extra-flags="..."` | Append custom `-D` flags for atypical builds. |
+| `LLAMA_INSIGHT_BACKEND` | Override the backend (`cpu`, `cuda`, `metal`, `vulkan`, `hip`, `kleidiai`, `custom`). If unset, the installer auto-detects Metal → CUDA → Vulkan → HIP → KleidiAI → CPU. |
+| `LLAMA_INSIGHT_EXTRA_CMAKE_FLAGS` | Append custom `-D` flags for atypical builds. |
 | `LLAMA_INSIGHT_JOBS` / `JOBS` | Override the CMake parallelism. |
 | `LLAMA_INSIGHT_SKIP_NATIVE_BUILD=1` | Skip the native compilation (useful for docs/tests); leaves any existing libs untouched. |
 | `LLAMA_INSIGHT_LLAMA_CPP_URL` | Provide a git URL to clone `llama.cpp` when the submodule isn’t available. |
@@ -165,14 +170,12 @@ Notes on logging and long installs
 - You can run with `UV_VERBOSE=1` (or `-v` flags on some commands) for more verbosity from underlying tools; our backend always emits brief step logs regardless.
 
 Backend selection at install time
-- During `uv pip install ./llama_insight-<ver>.tar.gz`, the installer logs the detected backend, e.g. `Backend selected: metal (source: autodetect)` on an M2 Mac.
+- During `uv pip install ./llama_insight-<ver>.tar.gz`, the installer logs the backend in use, e.g. `Backend selected: metal (source: env)` when `LLAMA_INSIGHT_BACKEND=metal` is set.
 - To force a backend or tweak settings inline with uv:
   - Force backend:
-    - `uv pip install ./llama_insight-0.1.0.tar.gz --config-settings llama-insight.backend=metal`
-    - or `LLAMA_INSIGHT_BACKEND=metal uv pip install ./llama_insight-0.1.0.tar.gz`
+    - `LLAMA_INSIGHT_BACKEND=metal uv pip install ./llama_insight-0.1.0.tar.gz`
   - Extra CMake flags:
-    - `uv pip install ./llama_insight-0.1.0.tar.gz --config-settings "llama-insight.extra-flags=-DGGML_VULKAN=ON"`
-    - or `LLAMA_INSIGHT_EXTRA_CMAKE_FLAGS='-DGGML_VULKAN=ON' uv pip install ./...`
+    - `LLAMA_INSIGHT_EXTRA_CMAKE_FLAGS='-DGGML_VULKAN=ON' uv pip install ./...`
   - Parallel jobs:
     - `LLAMA_INSIGHT_JOBS=8 uv pip install ./llama_insight-0.1.0.tar.gz`
   - Alternate llama.cpp fork:

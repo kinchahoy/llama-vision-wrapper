@@ -4,6 +4,7 @@ scikit-build-core)."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -26,7 +27,7 @@ from uv_build import (
     prepare_metadata_for_build_wheel as _uv_prepare_metadata_for_build_wheel,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WRAPPER_SRC_DIR = PROJECT_ROOT / "wrapper_src"
 PACKAGE_DIR = WRAPPER_SRC_DIR / "llama_insight"
 LLAMA_CPP_DIR = PROJECT_ROOT / "llama.cpp"
@@ -36,7 +37,6 @@ LLAMA_BUILD_DIR = LLAMA_CPP_DIR / "build-uv"
 GEN_BUILD_DIR = GEN_HELPER_DIR / "build-uv"
 
 PACKAGED_LIB_DIR = PACKAGE_DIR / "libs"
-PACKAGED_DEPS_DIR = PACKAGE_DIR / ".deps" / "llama.cpp"
 BUILD_METADATA_FILE = PACKAGED_LIB_DIR / "build-metadata.json"
 
 LIB_EXT = (
@@ -46,13 +46,6 @@ LIB_EXT = (
     if sys.platform == "darwin"
     else "so"
 )
-
-LLAMA_INCLUDE_DIRS = [
-    LLAMA_CPP_DIR / "include",
-    LLAMA_CPP_DIR / "ggml" / "include",
-    LLAMA_CPP_DIR / "common",
-    LLAMA_CPP_DIR / "tools" / "mtmd",
-]
 
 BACKEND_FLAGS = {
     "cuda": ["-DGGML_CUDA=ON"],
@@ -65,6 +58,7 @@ BACKEND_FLAGS = {
 }
 
 DEFAULT_BACKEND = "cpu"
+DEFAULT_LLAMA_REPO = "https://github.com/ggerganov/llama.cpp.git"
 
 
 def get_requires_for_build_wheel(
@@ -134,8 +128,10 @@ def _ensure_native_artifacts(config_settings: dict[str, Any] | None) -> None:
         return
 
     _ensure_llama_cpp_sources()
+    _stage_headers()
     backend = _select_backend(config_settings)
     extra_flags = _collect_extra_flags(config_settings)
+    _maybe_restore_cached_artifacts(backend, extra_flags)
     jobs = _determine_jobs()
     dry_run = _read_bool_setting(
         config_settings, "dry-run", env=("LLAMA_INSIGHT_DRY_RUN",)
@@ -147,12 +143,11 @@ def _ensure_native_artifacts(config_settings: dict[str, Any] | None) -> None:
         _log("Building llama.cpp + helper shared libraries...")
         _build_llama_cpp(backend, extra_flags, jobs, skip_compile=dry_run)
         _build_generation_helper(jobs)
-        _stage_runtime_headers()
         libs = _stage_built_libraries()
         _write_build_metadata(backend, extra_flags, libs)
+        _store_cached_artifacts(backend, extra_flags, libs)
     else:
         _log("Native artifacts already up-to-date; skipping rebuild.")
-
     _ensure_required_libs_present()
 
 
@@ -186,7 +181,6 @@ def _build_llama_cpp(
         "-DLLAMA_BUILD_COMMON=ON",
         "-DLLAMA_BUILD_COMMON_DLL=ON",
         "-DLLAMA_BUILD_TOOLS=ON",
-        #        "-DLLAMA_METAL_EMBED_LIBRARY=OFF",
         *BACKEND_FLAGS[backend],
         *extra_flags,
     ]
@@ -218,18 +212,6 @@ def _build_generation_helper(jobs: int) -> None:
     )
 
 
-def _stage_runtime_headers() -> None:
-    if PACKAGED_DEPS_DIR.exists():
-        shutil.rmtree(PACKAGED_DEPS_DIR)
-    for include_dir in LLAMA_INCLUDE_DIRS:
-        if not include_dir.exists():
-            raise FileNotFoundError(f"Include path missing: {include_dir}")
-        relative = include_dir.relative_to(LLAMA_CPP_DIR)
-        destination = PACKAGED_DEPS_DIR / relative
-        _log(f"Copying headers: {relative}")
-        shutil.copytree(include_dir, destination, dirs_exist_ok=True)
-
-
 def _stage_built_libraries() -> list[str]:
     libs = _discover_built_libraries()
     if not libs:
@@ -251,11 +233,17 @@ def _stage_built_libraries() -> list[str]:
 
 def _discover_built_libraries() -> list[Path]:
     candidates: list[Path] = []
+    patterns = [f"lib*.{LIB_EXT}"]
+    if LIB_EXT == "so":
+        patterns.append(f"lib*.{LIB_EXT}.*")  # capture SONAME targets like libfoo.so.0
     for directory in (LLAMA_BUILD_DIR / "bin", GEN_BUILD_DIR):
         if not directory.exists():
             continue
-        candidates.extend(directory.glob(f"lib*.{LIB_EXT}"))
-    return sorted(candidates, key=lambda path: path.name)
+        for pattern in patterns:
+            candidates.extend(directory.glob(pattern))
+    # Remove duplicates while preserving sort order.
+    unique = {path.name: path for path in candidates}
+    return [unique[name] for name in sorted(unique)]
 
 
 def _apply_patch() -> None:
@@ -296,24 +284,42 @@ def _ensure_llama_cpp_sources() -> None:
             ["git", "submodule", "update", "--init", "--recursive", "llama.cpp"],
             cwd=PROJECT_ROOT,
         )
-        return
+        if (LLAMA_CPP_DIR / "CMakeLists.txt").exists():
+            return
 
-    repo_url = (
-        os.environ.get("LLAMA_INSIGHT_LLAMA_CPP_URL")
-        or "https://github.com/ggerganov/llama.cpp.git"
-    )
-    _log(f"Cloning llama.cpp from {repo_url} ...")
-    # Prefer a shallow clone; recurse submodules in case upstream uses any.
+    # Fallback: clone directly into the tree so we can
+    # build wheels even when the submodule is not pre-initialized.
+    repo_url = os.environ.get("LLAMA_INSIGHT_LLAMA_CPP_URL") or DEFAULT_LLAMA_REPO
+    _clone_llama_cpp(repo_url, LLAMA_CPP_DIR)
+    if not (LLAMA_CPP_DIR / "CMakeLists.txt").exists():
+        raise FileNotFoundError(
+            f"llama.cpp checkout missing at {LLAMA_CPP_DIR} after clone.\n"
+            "Ensure llama.cpp is available via git submodule or manual checkout."
+        )
+
+
+def _clone_llama_cpp(repo_url: str, destination: Path) -> None:
+    destination = destination.resolve()
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    _log(f"Cloning llama.cpp from {repo_url} into {destination} ...")
     _run(
-        ["git", "clone", "--depth", "1", "--recursive", repo_url, "llama.cpp"],
-        cwd=PROJECT_ROOT,
+        ["git", "clone", "--depth", "1", "--recursive", repo_url, str(destination)],
+        cwd=destination.parent,
     )
-    return
 
-    raise FileNotFoundError(
-        f"llama.cpp checkout missing at {LLAMA_CPP_DIR}. "
-        "Provide it via git submodules or set LLAMA_INSIGHT_LLAMA_CPP_URL."
-    )
+
+def _stage_headers() -> None:
+    stage_script = PROJECT_ROOT / "build-tools" / "stage_headers.py"
+    if not stage_script.exists():
+        _log("Header staging script missing; skipping header sync.")
+        return
+    python = sys.executable or shutil.which("python3") or shutil.which("python")
+    if not python:
+        raise RuntimeError("Unable to locate a Python interpreter to run stage_headers.py.")
+    _log("Staging llama.cpp headers into package data...")
+    _run([python, str(stage_script)], cwd=PROJECT_ROOT)
 
 
 def _find_cmake() -> str:
@@ -329,24 +335,18 @@ def _find_cmake() -> str:
 
 
 def _select_backend(config_settings: dict[str, Any] | None) -> str:
-    override = _read_setting(config_settings, "backend")
-    source = ""
-    if override:
-        backend = override.lower()
-        source = "config-settings"
+    env_b = os.environ.get("LLAMA_INSIGHT_BACKEND")
+    if env_b:
+        backend = env_b.lower()
+        source = "env"
     else:
-        env_b = os.environ.get("LLAMA_INSIGHT_BACKEND")
-        if env_b:
-            backend = env_b.lower()
-            source = "env"
+        auto = _auto_detect_backend()
+        if auto:
+            backend = auto.lower()
+            source = "autodetect"
         else:
-            auto = _auto_detect_backend()
-            if auto:
-                backend = auto.lower()
-                source = "autodetect"
-            else:
-                backend = DEFAULT_BACKEND
-                source = "default"
+            backend = DEFAULT_BACKEND
+            source = "default"
     if backend not in BACKEND_FLAGS:
         valid = ", ".join(sorted(BACKEND_FLAGS))
         raise ValueError(f"Unsupported backend '{backend}'. Expected one of: {valid}")
@@ -355,107 +355,73 @@ def _select_backend(config_settings: dict[str, Any] | None) -> str:
 
 
 def _auto_detect_backend() -> str | None:
-    """Best-effort auto-detection of an accelerated backend.
-
-    Preference order:
-    - macOS on Apple Silicon -> metal
-    - Linux/Windows with CUDA toolchain or NVIDIA drivers -> cuda
-    - Systems with Vulkan SDK -> vulkan
-    - Fallback -> None (caller picks cpu)
-    """
     plat = sys.platform
     machine = platform.machine().lower()
-    _log(
-        message="Detecting accelerated backends (Metal, CUDA, Vulkan, Kleidiai, CPU only)..."
-    )
-
+    _log("Detecting accelerated backend (Metal / CUDA / Vulkan / HIP / KleidiAI)...")
     for detector in _BACKEND_DETECTORS:
         backend = detector(plat, machine)
         if backend:
             return backend
-
-    _log(message="No accelerated backend detected; falling back to cpu")
+    _log("No accelerated backend detected; defaulting to CPU.")
     return None
 
 
 def _detect_metal(plat: str, machine: str) -> str | None:
-    if plat != "darwin" or machine not in {"arm64", "aarch64"}:
-        return None
-    if _cmd_ok(["xcrun", "-f", "metal"]):
-        _log("Auto-selected backend: metal (macOS arm64)")
+    if plat == "darwin" and machine in {"arm64", "aarch64"} and _cmd_ok(["xcrun", "-f", "metal"]):
+        _log("Auto-selected backend: metal (macOS + Metal toolchain detected)")
         return "metal"
     return None
 
 
-def _detect_cuda(plat: str, machine: str) -> str | None:
-    if (
-        _cmd_ok(["nvcc", "--version"])
-        or _cmd_ok(["nvidia-smi", "-L"])
-        or Path("/usr/local/cuda").exists()
-    ):
-        _log("Auto-selected backend: cuda (CUDA detected)")
+def _detect_cuda(plat: str, machine: str) -> str | None:  # noqa: ARG001
+    if _cmd_ok(["nvcc", "--version"]) or _cmd_ok(["nvidia-smi", "-L"]) or Path("/usr/local/cuda").exists():
+        _log("Auto-selected backend: cuda (CUDA toolkit/driver detected)")
         return "cuda"
     return None
 
 
-def _detect_kleidiai(plat: str, machine: str) -> str | None:
-    if _supports_kleidiai_backend(plat, machine):
-        _log("Auto-selected backend: kleidiai (Arm KleidiAI features detected)")
-        return "kleidiai"
+def _detect_vulkan(plat: str, machine: str) -> str | None:  # noqa: ARG001
+    if _cmd_ok(["pkg-config", "--exists", "vulkan"]) or _cmd_ok(["vulkaninfo", "--summary"]) or Path(
+        "/usr/include/vulkan/vulkan.h"
+    ).exists():
+        _log("Auto-selected backend: vulkan (Vulkan SDK detected)")
+        return "vulkan"
     return None
 
 
-def _detect_hip(plat: str, machine: str) -> str | None:
+def _detect_hip(plat: str, machine: str) -> str | None:  # noqa: ARG001
     hip_paths = [
         os.environ.get("HIP_PATH"),
         os.environ.get("ROCM_PATH"),
         "/opt/rocm",
     ]
-    hip_detected = any(Path(path).exists() for path in hip_paths if path)
-    hip_detected = hip_detected or Path("/opt/rocm/bin/hipcc").exists()
-    if hip_detected or _cmd_ok(["hipconfig", "-V"]) or _cmd_ok(["rocminfo"]):
-        _log("Auto-selected backend: hip (ROCm detected)")
+    path_exists = any(Path(path).exists() for path in hip_paths if path)
+    if (
+        path_exists
+        or Path("/opt/rocm/bin/hipcc").exists()
+        or _cmd_ok(["hipconfig", "-V"])
+        or _cmd_ok(["rocminfo"])
+    ):
+        _log("Auto-selected backend: hip (ROCm toolkit detected)")
         return "hip"
     return None
 
 
-def _detect_vulkan(plat: str, machine: str) -> str | None:
-    if (
-        _cmd_ok(["pkg-config", "--exists", "vulkan"])
-        or _cmd_ok(["vulkaninfo", "--summary"])
-        or Path("/usr/include/vulkan/vulkan.h").exists()
-    ):
-        _log("Auto-selected backend: vulkan (Vulkan detected)")
-        return "vulkan"
+def _detect_kleidiai(plat: str, machine: str) -> str | None:
+    if plat == "linux" and machine in {"arm64", "aarch64"} and _supports_kleidiai_backend():
+        _log("Auto-selected backend: kleidiai (Arm KleidiAI features detected)")
+        return "kleidiai"
     return None
 
 
-_BACKEND_DETECTORS = (
-    _detect_metal,
-    _detect_cuda,
-    _detect_kleidiai,
-    _detect_hip,
-    _detect_vulkan,
-)
-
-
-def _supports_kleidiai_backend(plat: str, machine: str) -> bool:
-    if plat != "linux":
-        return False
-    if machine not in {"arm64", "aarch64"}:
-        return False
-    features = _read_linux_arm_cpu_features()
-    return bool(features & _KLEIDIAI_FEATURE_TOKENS)
-
-
-def _read_linux_arm_cpu_features() -> set[str]:
+def _supports_kleidiai_backend() -> bool:
     cpuinfo_path = Path("/proc/cpuinfo")
     if not cpuinfo_path.exists():
-        return set()
+        return False
     try:
         content = cpuinfo_path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
-        return set()
+        return False
     features: set[str] = set()
     for line in content.splitlines():
         if ":" not in line:
@@ -467,11 +433,18 @@ def _read_linux_arm_cpu_features() -> set[str]:
         for token in tokens:
             if token:
                 features.add(token.strip().lower())
-    return features
+    return bool(features & _KLEIDIAI_FEATURE_TOKENS)
 
 
-_KLEIDIAI_FEATURE_TOKENS = frozenset(
-    {"asimddp", "dotprod", "i8mm", "matmulint8", "sme", "sve", "sve2"}
+_KLEIDIAI_FEATURE_TOKENS = frozenset({"asimddp", "dotprod", "i8mm", "matmulint8", "sme", "sve", "sve2"})
+
+
+_BACKEND_DETECTORS = (
+    _detect_metal,
+    _detect_cuda,
+    _detect_vulkan,
+    _detect_hip,
+    _detect_kleidiai,
 )
 
 
@@ -563,6 +536,82 @@ def _fingerprint(
     }
 
 
+def _cache_root() -> Path:
+    override = os.environ.get("LLAMA_INSIGHT_CACHE_DIR")
+    if override:
+        return Path(override).expanduser()
+    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    if xdg_cache:
+        return Path(xdg_cache).expanduser() / "llama_insight"
+    return Path.home() / ".cache" / "llama_insight"
+
+
+def _artifact_cache_dir() -> Path:
+    cache = _cache_root() / "artifacts"
+    cache.mkdir(parents=True, exist_ok=True)
+    return cache
+
+
+def _artifact_cache_key(backend: str, extra_flags: list[str]) -> str:
+    payload = json.dumps(
+        {
+            "backend": backend,
+            "extra_flags": extra_flags,
+            "platform": sys.platform,
+            "machine": platform.machine(),
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _cache_slot(backend: str, extra_flags: list[str]) -> Path:
+    return _artifact_cache_dir() / _artifact_cache_key(backend, extra_flags)
+
+
+def _maybe_restore_cached_artifacts(backend: str, extra_flags: list[str]) -> bool:
+    try:
+        slot = _cache_slot(backend, extra_flags)
+        libs_dir = slot / "libs"
+        metadata_src = slot / BUILD_METADATA_FILE.name
+        if not libs_dir.exists() or not metadata_src.exists():
+            return False
+        lib_candidates = sorted(p for p in libs_dir.iterdir() if p.is_file())
+        if not lib_candidates:
+            return False
+        if PACKAGED_LIB_DIR.exists():
+            shutil.rmtree(PACKAGED_LIB_DIR)
+        PACKAGED_LIB_DIR.mkdir(parents=True, exist_ok=True)
+        for candidate in lib_candidates:
+            shutil.copy2(candidate, PACKAGED_LIB_DIR / candidate.name)
+        shutil.copy2(metadata_src, BUILD_METADATA_FILE)
+        _log("Restored cached native artifacts; skipping rebuild if unchanged.")
+        return True
+    except Exception as err:
+        _log(f"Native artifact cache restore failed: {err}")
+        return False
+
+
+def _store_cached_artifacts(
+    backend: str, extra_flags: list[str], libs: list[str]
+) -> None:
+    try:
+        slot = _cache_slot(backend, extra_flags)
+        if slot.exists():
+            shutil.rmtree(slot)
+        libs_dir = slot / "libs"
+        libs_dir.mkdir(parents=True, exist_ok=True)
+        for lib_name in libs:
+            source = PACKAGED_LIB_DIR / lib_name
+            if source.exists():
+                shutil.copy2(source, libs_dir / lib_name)
+        if BUILD_METADATA_FILE.exists():
+            shutil.copy2(BUILD_METADATA_FILE, slot / BUILD_METADATA_FILE.name)
+        _log(f"Cached native artifacts for backend '{backend}'.")
+    except Exception as err:
+        _log(f"Unable to write native artifact cache: {err}")
+
+
 def _resolve_existing_artifacts(
     raise_errors: bool = False,
 ) -> tuple[dict[str, Any], list[str]] | None:
@@ -611,14 +660,8 @@ def _cmd_ok(cmd: list[str]) -> bool:
 
 
 def _log_backend_summary(backend: str, source: str) -> None:
-    # One concise banner + override tips for users running via `uv pip install`.
     selectors = "|".join(sorted(BACKEND_FLAGS))
     _log(
         f"Backend selected: {backend} (source: {source}). "
-        f"Override with LLAMA_INSIGHT_BACKEND=<{selectors}> or "
-        f"--config-settings llama-insight.backend=<{selectors}>."
-    )
-    _log(
-        "Other options: LLAMA_INSIGHT_EXTRA_CMAKE_FLAGS='<-D...>' (extra CMake flags), "
-        "LLAMA_INSIGHT_JOBS=<N> (parallel build), LLAMA_INSIGHT_LLAMA_CPP_URL=<git_url> (alternate repo)."
+        f"Override with LLAMA_INSIGHT_BACKEND=<{selectors}>."
     )
