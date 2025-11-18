@@ -204,10 +204,18 @@ class ModelLoader:
             raise RuntimeError(f"Failed to load model: {model_path}")
         return model
 
-    def create_context(self, model, n_ctx: int = 2048, n_batch: int = 512, n_threads: int = 8):
+    def create_context(
+        self,
+        model,
+        n_ctx: int = 2048,
+        n_batch: int = 512,
+        n_threads: int = 8,
+        n_seq_max: int = 1,
+    ):
         params = self.gbl.llama_context_default_params()
         params.n_ctx = n_ctx
         params.n_batch = n_batch
+        params.n_seq_max = max(1, n_seq_max)
         params.n_threads = params.n_threads_batch = n_threads
         params.log_level = self.gbl.GGML_LOG_LEVEL_ERROR
 
@@ -234,6 +242,7 @@ class MultimodalProcessor:
     def __init__(self, gbl):
         self.gbl = gbl
         self.loaded_embedding = None
+        self.last_logits_index = 0
 
     def load_image(self, ctx_mtmd, image_path: str):
         bitmap = self.gbl.mtmd_helper_bitmap_init_from_file(ctx_mtmd, image_path.encode("utf-8"))
@@ -270,9 +279,11 @@ class MultimodalProcessor:
 
         return chunks
 
-    def process_chunks(self, ctx, ctx_mtmd, chunks, n_batch: int = 512):
+    def process_chunks(self, ctx, ctx_mtmd, chunks, n_batch: int = 512, seq_id: int = 0):
         n_past = 0
         n_chunks = self.gbl.mtmd_input_chunks_size(chunks)
+        seq_identifier = self.gbl.llama_seq_id(seq_id)
+        self.last_logits_index = 0
 
         for i in range(n_chunks):
             chunk = self.gbl.mtmd_input_chunks_get(chunks, i)
@@ -280,13 +291,17 @@ class MultimodalProcessor:
             is_last = i == n_chunks - 1
 
             if chunk_type == self.gbl.MTMD_INPUT_CHUNK_TYPE_TEXT:
-                n_past = self._eval_text_chunk(ctx, chunk, n_past, n_batch, is_last)
+                n_past = self._eval_text_chunk(
+                    ctx, chunk, n_past, n_batch, is_last, seq_identifier=seq_identifier
+                )
             elif chunk_type in (
                 self.gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
                 self.gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
             ):
                 self.encode_media_chunk(ctx_mtmd, chunk)
-                n_past = self._decode_media_chunk(ctx, ctx_mtmd, chunk, n_past, n_batch)
+                n_past = self._decode_media_chunk(
+                    ctx, ctx_mtmd, chunk, n_past, n_batch, seq_identifier=seq_identifier
+                )
 
         return n_past
 
@@ -294,9 +309,17 @@ class MultimodalProcessor:
         if self.gbl.mtmd_encode_chunk(ctx_mtmd, chunk) != 0:
             raise RuntimeError("Failed to encode media chunk")
 
-    def _decode_media_chunk(self, ctx, ctx_mtmd, chunk, n_past: int, n_batch: int):
+    def _decode_media_chunk(
+        self,
+        ctx,
+        ctx_mtmd,
+        chunk,
+        n_past: int,
+        n_batch: int,
+        seq_identifier=None,
+    ):
         embd = self.loaded_embedding.data() if self.loaded_embedding else self.gbl.mtmd_get_output_embd(ctx_mtmd)
-        seq_id = self.gbl.llama_seq_id(0)
+        seq_id = seq_identifier or self.gbl.llama_seq_id(0)
 
         new_n_past_array = self.gbl.std.array[self.gbl.llama_pos, 1]()
         new_n_past_array[0] = self.gbl.llama_pos(n_past)
@@ -311,11 +334,19 @@ class MultimodalProcessor:
 
         return int(new_n_past_array[0])
 
-    def _eval_text_chunk(self, ctx, chunk, n_past: int, n_batch: int, logits_for_last: bool = False):
+    def _eval_text_chunk(
+        self,
+        ctx,
+        chunk,
+        n_past: int,
+        n_batch: int,
+        logits_for_last: bool = False,
+        seq_identifier=None,
+    ):
         n_tokens_out = self.gbl.std.vector["size_t"](1)
         tokens = self.gbl.mtmd_input_chunk_get_tokens_text(chunk, n_tokens_out.data())
         n_tokens = n_tokens_out[0]
-        seq_id = self.gbl.llama_seq_id(0)
+        seq_id = seq_identifier or self.gbl.llama_seq_id(0)
 
         batch = self.gbl.llama_batch_init(n_batch, 0, 1)
 
@@ -335,6 +366,7 @@ class MultimodalProcessor:
 
             if logits_for_last and token_idx == n_tokens:
                 batch.logits[batch.n_tokens - 1] = True
+                self.last_logits_index = batch.n_tokens - 1
 
             if self.gbl.llama_decode(ctx, batch) != 0:
                 self.gbl.llama_batch_free(batch)

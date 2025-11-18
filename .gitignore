@@ -12,3 +12,5 @@ wrapper_src/llama_insight/_header/
 *.pyc
 __pypackages__/
 .vscode/
+wrapper_src/llama_insight/_headers
+wrapper_src/llama_insight/libs
