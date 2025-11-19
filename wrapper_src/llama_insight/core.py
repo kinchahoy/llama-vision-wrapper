@@ -334,6 +334,59 @@ class MultimodalProcessor:
 
         return int(new_n_past_array[0])
 
+    def decode_media_chunks_batched(
+        self,
+        ctx,
+        ctx_mtmd,
+        chunks,
+        n_pasts,
+        seq_ids,
+        n_batch: int,
+    ):
+        if not chunks:
+            return []
+
+        decode_fn = None
+        try:
+            decode_fn = self.gbl.decode_media_chunks_batch
+        except AttributeError:
+            try:
+                decode_fn = self.gbl.mtmd_helper_decode_image_chunks_batch
+            except AttributeError:
+                raise RuntimeError(
+                    "Batched media decode helper not found in loaded libraries"
+                )
+
+        chunk_vec = self.gbl.std.vector["const mtmd_input_chunk *"]()
+        for chunk in chunks:
+            chunk_vec.push_back(chunk)
+
+        n_past_vec = self.gbl.std.vector[self.gbl.llama_pos]()
+        for pos in n_pasts:
+            n_past_vec.push_back(self.gbl.llama_pos(pos))
+
+        seq_vec = self.gbl.std.vector[self.gbl.llama_seq_id]()
+        for seq_id in seq_ids:
+            seq_vec.push_back(seq_id)
+
+        result_vec = self.gbl.std.vector[self.gbl.llama_pos]()
+        result_vec.resize(len(chunks))
+
+        ret = decode_fn(
+            ctx_mtmd,
+            ctx,
+            chunk_vec.data(),
+            n_past_vec.data(),
+            seq_vec.data(),
+            len(chunks),
+            n_batch,
+            result_vec.data(),
+        )
+        if ret != 0:
+            raise RuntimeError("Failed to decode batched media chunks")
+
+        return [int(result_vec[i]) for i in range(len(chunks))]
+
     def _eval_text_chunk(
         self,
         ctx,
