@@ -56,6 +56,7 @@ include_directories(
     ${LLAMA_CPP_INCLUDE_DIR}
     ${LLAMA_CPP_COMMON_INCLUDE_DIR}
     ${LLAMA_CPP_GGML_INCLUDE_DIR}
+    ${LLAMA_CPP_SOURCE_DIR}/tools/mtmd
 )
 
 # --- Find Required Libraries ---

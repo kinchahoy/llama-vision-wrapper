@@ -1,9 +1,13 @@
 #include "generation_helper.h"
 #include <cstdio> // For printf/fprintf
+#include <algorithm>
+#include <cstring>
 #include <vector>
 #include <string> // For std::string
 #include "llama.h" // Ensure llama definitions are included
 #include "common.h" // For llama_token_to_piece
+#include "mtmd.h"
+#include "mtmd-helper.h"
 GenerationResult generate_tokens_cpp(
     common_sampler * sampler,
     struct llama_context * ctx,
@@ -172,4 +176,182 @@ MediaLoadResult load_media_embedding(
     fclose(f);
     result.success = true;
     return result;
+}
+
+namespace {
+
+struct media_chunk_job {
+    const mtmd_input_chunk * chunk;
+    mtmd_input_chunk_type chunk_type;
+    llama_seq_id seq_id;
+    llama_pos n_past_start;
+    int32_t n_tokens;
+    llama_pos n_pos_total;
+    int nx = 0;
+    int ny = 0;
+    std::vector<float> embd;
+    int32_t processed = 0;
+};
+
+} // namespace
+
+int32_t decode_media_chunks_batch(
+    mtmd_context * ctx_mtmd,
+    struct llama_context * ctx,
+    const mtmd_input_chunk * const * chunks,
+    const llama_pos * n_past,
+    const llama_seq_id * seq_ids,
+    int32_t n_chunks,
+    int32_t n_batch,
+    llama_pos * new_n_past)
+{
+    if (n_chunks <= 0) {
+        return 0;
+    }
+
+    if (!ctx || !ctx_mtmd || !chunks || !n_past || !seq_ids || !new_n_past) {
+        return -1;
+    }
+
+    const llama_model * model = llama_get_model(ctx);
+    if (!model) {
+        return -1;
+    }
+
+    const int n_mmproj_embd = llama_model_n_embd_inp(model);
+    const bool use_mrope = mtmd_decode_use_mrope(ctx_mtmd);
+    const bool use_non_causal = mtmd_decode_use_non_causal(ctx_mtmd);
+    const int n_pos_per_embd = use_mrope ? 4 : 1;
+
+    std::vector<media_chunk_job> jobs;
+    jobs.reserve(n_chunks);
+
+    for (int32_t i = 0; i < n_chunks; ++i) {
+        const mtmd_input_chunk * chunk = chunks[i];
+        if (!chunk) {
+            return -1;
+        }
+
+        auto chunk_type = mtmd_input_chunk_get_type(chunk);
+        if (chunk_type == MTMD_INPUT_CHUNK_TYPE_TEXT) {
+            return -1;
+        }
+
+        media_chunk_job job;
+        job.chunk = chunk;
+        job.chunk_type = chunk_type;
+        job.seq_id = seq_ids[i];
+        job.n_past_start = n_past[i];
+        job.n_tokens = mtmd_input_chunk_get_n_tokens(chunk);
+        job.n_pos_total = mtmd_input_chunk_get_n_pos(chunk);
+
+        if (chunk_type == MTMD_INPUT_CHUNK_TYPE_IMAGE) {
+            const auto image_tokens = mtmd_input_chunk_get_tokens_image(chunk);
+            if (!image_tokens) {
+                return -1;
+            }
+            job.nx = mtmd_image_tokens_get_nx(image_tokens);
+            job.ny = mtmd_image_tokens_get_ny(image_tokens);
+        }
+
+        if (mtmd_encode_chunk(ctx_mtmd, chunk) != 0) {
+            return -1;
+        }
+
+        float * embd_ptr = mtmd_get_output_embd(ctx_mtmd);
+        if (!embd_ptr) {
+            return -1;
+        }
+
+        job.embd.resize(static_cast<size_t>(job.n_tokens) * n_mmproj_embd);
+        std::memcpy(job.embd.data(), embd_ptr, sizeof(float) * job.embd.size());
+
+        jobs.emplace_back(std::move(job));
+    }
+
+    std::vector<float> batch_embd(static_cast<size_t>(n_batch) * n_mmproj_embd);
+    std::vector<llama_pos> batch_pos(static_cast<size_t>(n_batch) * n_pos_per_embd);
+    std::vector<int32_t> batch_n_seq_id(n_batch);
+    std::vector<llama_seq_id> batch_seq_storage(n_batch);
+    std::vector<llama_seq_id *> batch_seq_id(n_batch + 1);
+    std::vector<int8_t> batch_logits(n_batch);
+    batch_seq_id[n_batch] = nullptr;
+
+    llama_batch batch = {
+        /*n_tokens =*/ 0,
+        /*tokens   =*/ nullptr,
+        /*embd     =*/ batch_embd.data(),
+        /*pos      =*/ batch_pos.data(),
+        /*n_seq_id =*/ batch_n_seq_id.data(),
+        /*seq_id   =*/ batch_seq_id.data(),
+        /*logits   =*/ batch_logits.data(),
+    };
+
+    int32_t ret = 0;
+
+    if (use_non_causal) {
+        llama_set_causal_attn(ctx, false);
+    }
+
+    while (true) {
+        int tokens_added = 0;
+        for (auto & job : jobs) {
+            while (job.processed < job.n_tokens && tokens_added < n_batch) {
+                const size_t source_index = static_cast<size_t>(job.processed);
+                float * dst = batch_embd.data() + static_cast<size_t>(tokens_added) * n_mmproj_embd;
+                const float * src = job.embd.data() + source_index * n_mmproj_embd;
+                std::memcpy(dst, src, sizeof(float) * n_mmproj_embd);
+
+                if (!use_mrope) {
+                    batch_pos[static_cast<size_t>(tokens_added)] = job.n_past_start + job.processed;
+                } else if (job.chunk_type == MTMD_INPUT_CHUNK_TYPE_IMAGE) {
+                    const int nx = std::max(1, job.nx);
+                    const int y = job.processed / nx;
+                    const int x = job.processed % nx;
+                    batch_pos[static_cast<size_t>(tokens_added)] = job.n_past_start + job.processed;
+                    batch_pos[static_cast<size_t>(tokens_added) + n_batch] = job.n_past_start + y;
+                    batch_pos[static_cast<size_t>(tokens_added) + 2 * n_batch] = job.n_past_start + x;
+                    batch_pos[static_cast<size_t>(tokens_added) + 3 * n_batch] = 0;
+                } else {
+                    const llama_pos base = job.n_past_start + job.processed;
+                    batch_pos[static_cast<size_t>(tokens_added)] = base;
+                    batch_pos[static_cast<size_t>(tokens_added) + n_batch] = base;
+                    batch_pos[static_cast<size_t>(tokens_added) + 2 * n_batch] = base;
+                    batch_pos[static_cast<size_t>(tokens_added) + 3 * n_batch] = 0;
+                }
+
+                batch_n_seq_id[static_cast<size_t>(tokens_added)] = 1;
+                batch_seq_storage[static_cast<size_t>(tokens_added)] = job.seq_id;
+                batch_seq_id[static_cast<size_t>(tokens_added)] = &batch_seq_storage[static_cast<size_t>(tokens_added)];
+                batch_logits[static_cast<size_t>(tokens_added)] = false;
+
+                ++tokens_added;
+                ++job.processed;
+            }
+        }
+
+        if (tokens_added == 0) {
+            break;
+        }
+
+        batch.n_tokens = tokens_added;
+        batch.seq_id[static_cast<size_t>(tokens_added)] = nullptr;
+
+        ret = llama_decode(ctx, batch);
+        if (ret != 0) {
+            break;
+        }
+    }
+
+    if (use_non_causal) {
+        llama_set_causal_attn(ctx, true);
+    }
+
+    if (ret == 0) {
+        for (int32_t i = 0; i < n_chunks; ++i) {
+            new_n_past[i] = n_past[i] + jobs[i].n_pos_total;
+        }
+    }
+
+    return ret;
 }

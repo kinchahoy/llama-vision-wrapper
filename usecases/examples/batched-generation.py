@@ -81,22 +81,15 @@ def prepare_sequences(
     prompts: list[str],
 ) -> list[SequenceState]:
     """Prepare each batched sequence by reusing the same input image/prompt."""
-    sequences: list[SequenceState] = []
+    prepared: list[dict[str, object]] = []
 
     for idx in range(n_parallel):
         image_path, bitmap = images[idx % len(images)]
         prompt_text = prompts[idx % len(prompts)]
         chunks = processor.tokenize_prompt(ctx_mtmd, prompt_text, bitmap)
-        n_past = processor.process_chunks(
-            ctx,
-            ctx_mtmd,
-            chunks,
-            config.n_batch,
-            seq_id=idx,
-        )
-        seq_ids = backend.gbl.std.vector[backend.gbl.llama_seq_id]([
-            backend.gbl.llama_seq_id(idx)
-        ])
+        n_chunks = int(backend.gbl.mtmd_input_chunks_size(chunks))
+        seq_id = backend.gbl.llama_seq_id(idx)
+        seq_ids = backend.gbl.std.vector[backend.gbl.llama_seq_id]([seq_id])
         sampler = generator.create_sampler(
             model,
             config.temp,
@@ -105,15 +98,78 @@ def prepare_sequences(
             config.repeat_penalty,
             config.n_ctx,
         )
+        prepared.append(
+            {
+                "index": idx,
+                "image_path": image_path,
+                "prompt": prompt_text,
+                "chunks": chunks,
+                "n_chunks": n_chunks,
+                "seq_id": seq_id,
+                "seq_ids": seq_ids,
+                "sampler": sampler,
+                "n_past": 0,
+                "last_logits_index": 0,
+            }
+        )
+
+    max_chunks = max((prep["n_chunks"] for prep in prepared), default=0)
+    for chunk_idx in range(max_chunks):
+        media_jobs: list[tuple[dict[str, object], object, bool]] = []
+        for prep in prepared:
+            if chunk_idx >= prep["n_chunks"]:
+                continue
+            chunk = backend.gbl.mtmd_input_chunks_get(prep["chunks"], chunk_idx)
+            chunk_type = backend.gbl.mtmd_input_chunk_get_type(chunk)
+            is_last_chunk = chunk_idx == prep["n_chunks"] - 1
+            if chunk_type == backend.gbl.MTMD_INPUT_CHUNK_TYPE_TEXT:
+                prep["n_past"] = int(
+                    processor._eval_text_chunk(  # type: ignore[attr-defined]
+                    ctx,
+                    chunk,
+                    prep["n_past"],
+                    config.n_batch,
+                    logits_for_last=is_last_chunk,
+                    seq_identifier=prep["seq_id"],
+                ))
+                if is_last_chunk:
+                    prep["last_logits_index"] = int(getattr(processor, "last_logits_index", 0))
+            elif chunk_type in (
+                backend.gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
+                backend.gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
+            ):
+                media_jobs.append((prep, chunk, is_last_chunk))
+            else:
+                raise RuntimeError(f"Unsupported chunk type: {chunk_type}")
+
+        if media_jobs:
+            chunk_ptrs = [job[1] for job in media_jobs]
+            n_pasts = [int(job[0]["n_past"]) for job in media_jobs]
+            seq_ids = [job[0]["seq_id"] for job in media_jobs]
+            new_positions = processor.decode_media_chunks_batched(
+                ctx,
+                ctx_mtmd,
+                chunk_ptrs,
+                n_pasts,
+                seq_ids,
+                config.n_batch,
+            )
+            for (prep, _, is_last), new_pos in zip(media_jobs, new_positions):
+                prep["n_past"] = new_pos
+                if is_last:
+                    prep["last_logits_index"] = 0
+
+    sequences: list[SequenceState] = []
+    for prep in prepared:
         sequences.append(
             SequenceState(
-                index=idx,
-                image_path=image_path,
-                prompt=prompt_text,
-                sampler=sampler,
-                seq_ids=seq_ids,
-                n_past=n_past,
-                i_batch=int(getattr(processor, "last_logits_index", 0)),
+                index=prep["index"],
+                image_path=prep["image_path"],
+                prompt=prep["prompt"],
+                sampler=prep["sampler"],
+                seq_ids=prep["seq_ids"],
+                n_past=int(prep["n_past"]),
+                i_batch=int(prep["last_logits_index"]),
             )
         )
 
