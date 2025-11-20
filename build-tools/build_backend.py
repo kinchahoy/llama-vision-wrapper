@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from scikit_build_core.cmake import CMake
 from scikit_build_core.errors import CMakeNotFoundError
@@ -232,18 +232,34 @@ def _stage_built_libraries() -> list[str]:
 
 
 def _discover_built_libraries() -> list[Path]:
-    candidates: list[Path] = []
-    patterns = [f"lib*.{LIB_EXT}"]
+    def _glob_all(directories: tuple[Path, ...], patterns: tuple[str, ...]) -> Iterator[Path]:
+        for directory in directories:
+            if not directory.exists():
+                continue
+            for pattern in patterns:
+                yield from directory.glob(pattern)
+
+    base_dirs = (LLAMA_BUILD_DIR / "bin", GEN_BUILD_DIR)
+    patterns: list[str] = [f"lib*.{LIB_EXT}"]
     if LIB_EXT == "so":
         patterns.append(f"lib*.{LIB_EXT}.*")  # capture SONAME targets like libfoo.so.0
-    for directory in (LLAMA_BUILD_DIR / "bin", GEN_BUILD_DIR):
-        if not directory.exists():
-            continue
-        for pattern in patterns:
-            candidates.extend(directory.glob(pattern))
-    # Remove duplicates while preserving sort order.
-    unique = {path.name: path for path in candidates}
-    return [unique[name] for name in sorted(unique)]
+    libs = {path.name: path for path in _glob_all(base_dirs, tuple(patterns))}
+
+    mtmd_prefix = "" if LIB_EXT == "dll" else "lib"
+    mtmd_tag = f"{mtmd_prefix}mtmd"
+    if not any(name.startswith(mtmd_tag) for name in libs):
+        mtmd_patterns = [f"{mtmd_tag}*.{LIB_EXT}"]
+        if LIB_EXT == "so":
+            mtmd_patterns.append(f"{mtmd_tag}*.{LIB_EXT}.*")
+        mtmd_dirs = (
+            LLAMA_BUILD_DIR / "bin",
+            LLAMA_BUILD_DIR / "tools" / "mtmd",
+        )
+        libs.update(
+            (candidate.name, candidate)
+            for candidate in _glob_all(mtmd_dirs, tuple(mtmd_patterns))
+        )
+    return [libs[name] for name in sorted(libs)]
 
 
 def _apply_patch() -> None:
@@ -317,7 +333,9 @@ def _stage_headers() -> None:
         return
     python = sys.executable or shutil.which("python3") or shutil.which("python")
     if not python:
-        raise RuntimeError("Unable to locate a Python interpreter to run stage_headers.py.")
+        raise RuntimeError(
+            "Unable to locate a Python interpreter to run stage_headers.py."
+        )
     _log("Staging llama.cpp headers into package data...")
     _run([python, str(stage_script)], cwd=PROJECT_ROOT)
 
@@ -367,23 +385,33 @@ def _auto_detect_backend() -> str | None:
 
 
 def _detect_metal(plat: str, machine: str) -> str | None:
-    if plat == "darwin" and machine in {"arm64", "aarch64"} and _cmd_ok(["xcrun", "-f", "metal"]):
+    if (
+        plat == "darwin"
+        and machine in {"arm64", "aarch64"}
+        and _cmd_ok(["xcrun", "-f", "metal"])
+    ):
         _log("Auto-selected backend: metal (macOS + Metal toolchain detected)")
         return "metal"
     return None
 
 
 def _detect_cuda(plat: str, machine: str) -> str | None:  # noqa: ARG001
-    if _cmd_ok(["nvcc", "--version"]) or _cmd_ok(["nvidia-smi", "-L"]) or Path("/usr/local/cuda").exists():
+    if (
+        _cmd_ok(["nvcc", "--version"])
+        or _cmd_ok(["nvidia-smi", "-L"])
+        or Path("/usr/local/cuda").exists()
+    ):
         _log("Auto-selected backend: cuda (CUDA toolkit/driver detected)")
         return "cuda"
     return None
 
 
 def _detect_vulkan(plat: str, machine: str) -> str | None:  # noqa: ARG001
-    if _cmd_ok(["pkg-config", "--exists", "vulkan"]) or _cmd_ok(["vulkaninfo", "--summary"]) or Path(
-        "/usr/include/vulkan/vulkan.h"
-    ).exists():
+    if (
+        _cmd_ok(["pkg-config", "--exists", "vulkan"])
+        or _cmd_ok(["vulkaninfo", "--summary"])
+        or Path("/usr/include/vulkan/vulkan.h").exists()
+    ):
         _log("Auto-selected backend: vulkan (Vulkan SDK detected)")
         return "vulkan"
     return None
@@ -408,7 +436,11 @@ def _detect_hip(plat: str, machine: str) -> str | None:  # noqa: ARG001
 
 
 def _detect_kleidiai(plat: str, machine: str) -> str | None:
-    if plat == "linux" and machine in {"arm64", "aarch64"} and _supports_kleidiai_backend():
+    if (
+        plat == "linux"
+        and machine in {"arm64", "aarch64"}
+        and _supports_kleidiai_backend()
+    ):
         _log("Auto-selected backend: kleidiai (Arm KleidiAI features detected)")
         return "kleidiai"
     return None
@@ -436,7 +468,15 @@ def _supports_kleidiai_backend() -> bool:
     return bool(features & _KLEIDIAI_FEATURE_TOKENS)
 
 
-_KLEIDIAI_FEATURE_TOKENS = frozenset({"asimddp", "dotprod", "i8mm", "matmulint8", "sme", "sve", "sve2"})
+_KLEIDIAI_FEATURE_TOKENS = frozenset({
+    "asimddp",
+    "dotprod",
+    "i8mm",
+    "matmulint8",
+    "sme",
+    "sve",
+    "sve2",
+})
 
 
 _BACKEND_DETECTORS = (
@@ -455,9 +495,7 @@ def _collect_extra_flags(config_settings: dict[str, Any] | None) -> list[str]:
     return merged.split() if merged else []
 
 
-def _read_setting(
-    config_settings: dict[str, Any] | None, option: str
-) -> str | None:
+def _read_setting(config_settings: dict[str, Any] | None, option: str) -> str | None:
     if not config_settings:
         return None
     key = f"llama-insight.{option}"
@@ -624,17 +662,13 @@ def _resolve_existing_artifacts(
         return _fail(f"Packaged library directory missing: {PACKAGED_LIB_DIR}")
     metadata = _read_build_metadata()
     if not metadata:
-        return _fail(
-            "Build metadata missing; native libraries were not generated."
-        )
+        return _fail("Build metadata missing; native libraries were not generated.")
     libs = metadata.get("libs") or []
     if not libs:
         return _fail("Build metadata missing library listing; rebuild required.")
     missing = [lib for lib in libs if not (PACKAGED_LIB_DIR / lib).exists()]
     if missing:
-        return _fail(
-            "Missing required libraries after build: " + ", ".join(missing)
-        )
+        return _fail("Missing required libraries after build: " + ", ".join(missing))
     return metadata, libs
 
 

@@ -45,6 +45,7 @@ def main():
         help="Path to one or more input images.",
     )
     parser.add_argument(
+        "-p",
         "--prompt",
         type=str,
         default="USER: Describe this image.\n<__image__>\nASSISTANT:",

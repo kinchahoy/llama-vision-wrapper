@@ -242,6 +242,7 @@ def main():
         help="Path(s) to input images. Reused cyclically if fewer than --n-parallel.",
     )
     parser.add_argument(
+        "-p",
         "--prompt",
         type=str,
         default="USER: Describe this image.\n<__image__>\nASSISTANT:",

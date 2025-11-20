@@ -54,16 +54,20 @@ class Config:
 def add_common_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Add shared CLI arguments for llama.cpp-backed runners."""
     parser.add_argument(
-        "--repo-id",
         "-hf",
+        "--hf-repo",
+        "--repo-id",
         default="ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+        dest="repo_id",
         help="Hugging Face repository ID containing the GGUF artifacts.",
     )
     parser.add_argument(
-        "--model",
         "-m",
+        "--model",
+        "--hf-file",
         default="SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
-        help="GGUF model filename to download.",
+        dest="model",
+        help="Model path or HF filename (matches llama-cli -m).",
     )
     parser.add_argument(
         "--mmproj",
@@ -71,8 +75,24 @@ def add_common_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Multimodal projector filename inside the repo.",
     )
     parser.add_argument(
-        "--n-gpu-layers",
+        "-c",
+        "--ctx-size",
+        type=int,
+        default=2048,
+        dest="n_ctx",
+        help="Context window size.",
+    )
+    parser.add_argument(
+        "-b",
+        "--batch-size",
+        type=int,
+        default=512,
+        dest="n_batch",
+        help="Logical batch size.",
+    )
+    parser.add_argument(
         "-ngl",
+        "--n-gpu-layers",
         type=int,
         default=0,
         dest="n_gpu_layers",
@@ -80,12 +100,15 @@ def add_common_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-t",
+        "--threads",
         type=int,
         default=8,
         dest="n_threads",
-        help="Inference threads for both llama.cpp and mtmd.",
+        help="CPU threads for generation.",
     )
     parser.add_argument(
+        "-v",
+        "--verbose",
         "--verbose-cpp",
         action="store_true",
         help="Enable verbose logging from the native backend.",
@@ -118,11 +141,13 @@ def add_common_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Penalty applied to repeated tokens.",
     )
     parser.add_argument(
+        "-n",
+        "--predict",
         "--max-new-tokens",
         type=int,
         default=256,
         dest="max_new_tokens",
-        help="Maximum number of tokens to sample.",
+        help="Number of tokens to generate.",
     )
     return parser
 
