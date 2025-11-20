@@ -5,6 +5,8 @@ Batched multimodal generation example using llama_insight.
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -352,6 +354,62 @@ def main():
                 print(seq.prompt)
                 print(seq.generated_text)
                 print(f"Tokens: {seq.tokens_generated}, Final n_past: {seq.n_past}")
+
+            try:
+                git_hash = (
+                    subprocess.check_output(["git", "rev-parse", "HEAD"], text=True)
+                    .strip()
+                )
+            except Exception:
+                git_hash = None
+
+            run_result = {
+                "version": "batched-generation",
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "config": {
+                    "repo_id": config.repo_id,
+                    "model": config.model,
+                    "mmproj": config.mmproj,
+                    "n_ctx": config.n_ctx,
+                    "n_batch": config.n_batch,
+                    "n_threads": config.n_threads,
+                    "n_gpu_layers": config.n_gpu_layers,
+                    "max_new_tokens": config.max_new_tokens,
+                    "n_parallel": args.n_parallel,
+                },
+                "timings": timer.timings,
+                "total_tokens": total_tokens,
+                "throughput": throughput,
+                "sequences": [
+                    {
+                        "index": seq.index,
+                        "image_path": seq.image_path,
+                        "prompt": seq.prompt,
+                        "tokens_generated": seq.tokens_generated,
+                        "finished": seq.finished,
+                    }
+                    for seq in sequences
+                ],
+                "githash": git_hash,
+            }
+
+            results_file = Path("benchmark_results.json")
+            try:
+                with results_file.open() as f:
+                    existing = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                existing = []
+
+            if isinstance(existing, dict):
+                existing = [existing]
+            elif not isinstance(existing, list):
+                existing = []
+
+            existing.append(run_result)
+
+            with results_file.open("w") as f:
+                json.dump(existing, f, indent=2)
+            print("\nBenchmark results saved to benchmark_results.json")
 
     except Exception as exc:  # pragma: no cover - runtime guard
         print("\n=== ERROR ===")

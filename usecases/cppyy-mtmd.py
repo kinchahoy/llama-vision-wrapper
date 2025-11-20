@@ -4,6 +4,7 @@ Multimodal generation with benchmarking using the llama_insight package.
 
 import argparse
 import json
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -176,18 +177,16 @@ def main():
 
             # Calculate benchmarks
             total_time = time.time() - start_time
-            benchmark_results.update(
-                {
-                    "total_time": total_time,
-                    "total_tokens_generated": int(result.total_tokens_generated),
-                    "final_output": str(result.generated_text),
-                    "token_generation_rate": float(
-                        result.total_tokens_generated / timer.timings[-1][1]
-                        if timer.timings
-                        else 0
-                    ),
-                }
-            )
+            benchmark_results.update({
+                "total_time": total_time,
+                "total_tokens_generated": int(result.total_tokens_generated),
+                "final_output": str(result.generated_text),
+                "token_generation_rate": float(
+                    result.total_tokens_generated / timer.timings[-1][1]
+                    if timer.timings
+                    else 0
+                ),
+            })
 
             print(f"\n=== Results ===")
             print(f"Tokens generated: {result.total_tokens_generated}")
@@ -198,8 +197,30 @@ def main():
         timer.print_summary()
 
         # Save benchmark results
-        with open("benchmark_results.json", "w") as f:
-            json.dump(benchmark_results, f, indent=2)
+        try:
+            git_hash = (
+                subprocess.check_output(["git", "rev-parse", "HEAD"], text=True)
+                .strip()
+            )
+        except Exception:
+            git_hash = None
+
+        results_file = Path("benchmark_results.json")
+        try:
+            with results_file.open() as f:
+                existing = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            existing = []
+
+        if isinstance(existing, dict):
+            existing = [existing]
+        elif not isinstance(existing, list):
+            existing = []
+
+        existing.append({**benchmark_results, "githash": git_hash})
+
+        with results_file.open("w") as f:
+            json.dump(existing, f, indent=2)
         print("\nBenchmark results saved to benchmark_results.json")
 
     except Exception as e:

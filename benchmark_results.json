@@ -1,6 +1,6 @@
 {
   "version": "cppyy-refactored",
-  "timestamp": "2025-11-07T15:05:44.075369",
+  "timestamp": "2025-11-19T23:08:18.260792",
   "config": {
     "repo_id": "ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
     "model": "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
@@ -8,9 +8,9 @@
     "n_ctx": 2048,
     "n_batch": 512,
     "n_threads": 8,
-    "n_gpu_layers": 0,
+    "n_gpu_layers": 100,
     "verbose_cpp": false,
-    "temp": 0.8,
+    "temp": 0.0,
     "top_k": 40,
     "top_p": 0.95,
     "repeat_penalty": 1.1,
@@ -24,8 +24,8 @@
     "context_size": 2048,
     "embedding_size": 2048
   },
-  "total_time": 19.609288454055786,
-  "total_tokens_generated": 88,
-  "final_output": " The image depicts a construction worker, possibly female based on the attire and size, standing in front of a partially constructed building. She is wearing a hard hat, reflective vest, and holding a tablet. The building appears to be under development with scaffolding visible around it, indicating ongoing work. The sky in the background is clear with some clouds, suggesting good weather conditions for outdoor activities. There are no texts or subtitles present in the image.",
-  "token_generation_rate": 8.370320371863908
+  "total_time": 2.928065061569214,
+  "total_tokens_generated": 72,
+  "final_output": " The image depicts a construction worker, who is wearing a hard hat and an orange safety vest. She is holding a tablet in her hands and appears to be reading or reviewing some information on it. The background of the image shows a building under construction with scaffolding visible. The sky is clear blue with some clouds, suggesting that the photo was taken during the day.",
+  "token_generation_rate": 65.70722664443281
 }
