@@ -317,7 +317,9 @@ def _stage_headers() -> None:
         return
     python = sys.executable or shutil.which("python3") or shutil.which("python")
     if not python:
-        raise RuntimeError("Unable to locate a Python interpreter to run stage_headers.py.")
+        raise RuntimeError(
+            "Unable to locate a Python interpreter to run stage_headers.py."
+        )
     _log("Staging llama.cpp headers into package data...")
     _run([python, str(stage_script)], cwd=PROJECT_ROOT)
 
@@ -367,23 +369,33 @@ def _auto_detect_backend() -> str | None:
 
 
 def _detect_metal(plat: str, machine: str) -> str | None:
-    if plat == "darwin" and machine in {"arm64", "aarch64"} and _cmd_ok(["xcrun", "-f", "metal"]):
+    if (
+        plat == "darwin"
+        and machine in {"arm64", "aarch64"}
+        and _cmd_ok(["xcrun", "-f", "metal"])
+    ):
         _log("Auto-selected backend: metal (macOS + Metal toolchain detected)")
         return "metal"
     return None
 
 
 def _detect_cuda(plat: str, machine: str) -> str | None:  # noqa: ARG001
-    if _cmd_ok(["nvcc", "--version"]) or _cmd_ok(["nvidia-smi", "-L"]) or Path("/usr/local/cuda").exists():
+    if (
+        _cmd_ok(["nvcc", "--version"])
+        or _cmd_ok(["nvidia-smi", "-L"])
+        or Path("/usr/local/cuda").exists()
+    ):
         _log("Auto-selected backend: cuda (CUDA toolkit/driver detected)")
         return "cuda"
     return None
 
 
 def _detect_vulkan(plat: str, machine: str) -> str | None:  # noqa: ARG001
-    if _cmd_ok(["pkg-config", "--exists", "vulkan"]) or _cmd_ok(["vulkaninfo", "--summary"]) or Path(
-        "/usr/include/vulkan/vulkan.h"
-    ).exists():
+    if (
+        _cmd_ok(["pkg-config", "--exists", "vulkan"])
+        or _cmd_ok(["vulkaninfo", "--summary"])
+        or Path("/usr/include/vulkan/vulkan.h").exists()
+    ):
         _log("Auto-selected backend: vulkan (Vulkan SDK detected)")
         return "vulkan"
     return None
@@ -408,7 +420,11 @@ def _detect_hip(plat: str, machine: str) -> str | None:  # noqa: ARG001
 
 
 def _detect_kleidiai(plat: str, machine: str) -> str | None:
-    if plat == "linux" and machine in {"arm64", "aarch64"} and _supports_kleidiai_backend():
+    if (
+        plat == "linux"
+        and machine in {"arm64", "aarch64"}
+        and _supports_kleidiai_backend()
+    ):
         _log("Auto-selected backend: kleidiai (Arm KleidiAI features detected)")
         return "kleidiai"
     return None
@@ -436,7 +452,9 @@ def _supports_kleidiai_backend() -> bool:
     return bool(features & _KLEIDIAI_FEATURE_TOKENS)
 
 
-_KLEIDIAI_FEATURE_TOKENS = frozenset({"asimddp", "dotprod", "i8mm", "matmulint8", "sme", "sve", "sve2"})
+_KLEIDIAI_FEATURE_TOKENS = frozenset(
+    {"asimddp", "dotprod", "i8mm", "matmulint8", "sme", "sve", "sve2"}
+)
 
 
 _BACKEND_DETECTORS = (
@@ -455,9 +473,7 @@ def _collect_extra_flags(config_settings: dict[str, Any] | None) -> list[str]:
     return merged.split() if merged else []
 
 
-def _read_setting(
-    config_settings: dict[str, Any] | None, option: str
-) -> str | None:
+def _read_setting(config_settings: dict[str, Any] | None, option: str) -> str | None:
     if not config_settings:
         return None
     key = f"llama-insight.{option}"
@@ -624,17 +640,13 @@ def _resolve_existing_artifacts(
         return _fail(f"Packaged library directory missing: {PACKAGED_LIB_DIR}")
     metadata = _read_build_metadata()
     if not metadata:
-        return _fail(
-            "Build metadata missing; native libraries were not generated."
-        )
+        return _fail("Build metadata missing; native libraries were not generated.")
     libs = metadata.get("libs") or []
     if not libs:
         return _fail("Build metadata missing library listing; rebuild required.")
     missing = [lib for lib in libs if not (PACKAGED_LIB_DIR / lib).exists()]
     if missing:
-        return _fail(
-            "Missing required libraries after build: " + ", ".join(missing)
-        )
+        return _fail("Missing required libraries after build: " + ", ".join(missing))
     return metadata, libs
 
 

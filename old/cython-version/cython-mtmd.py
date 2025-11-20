@@ -103,10 +103,12 @@ def main():
         print("--- Downloading models from Hugging Face Hub ---")
         model_path, mmproj_path = download_models(config)
         if benchmark_results is not None:
-            benchmark_results["model_info"].update({
-                "model_path": model_path,
-                "mmproj_path": mmproj_path,
-            })
+            benchmark_results["model_info"].update(
+                {
+                    "model_path": model_path,
+                    "mmproj_path": mmproj_path,
+                }
+            )
 
         with timer.time_operation("Backend initialization"):
             initialize_backend()

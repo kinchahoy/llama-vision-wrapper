@@ -154,7 +154,9 @@ class Timer:
                 print(f"⏱️ {name}: {duration:.2f}s")
         if total_tokens:
             avg_rate = total_tokens / total_time if total_time > 0 else float("inf")
-            print(f"\nTotal: {total_time:.2f}s, {total_tokens} tokens, {avg_rate:.2f} tok/s")
+            print(
+                f"\nTotal: {total_time:.2f}s, {total_tokens} tokens, {avg_rate:.2f} tok/s"
+            )
 
 
 @contextmanager

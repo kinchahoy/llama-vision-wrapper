@@ -70,7 +70,11 @@ if HEADERS_ROOT.exists():
         "common.h": HEADERS_ROOT / "llama.cpp" / "common" / "common.h",
         "sampling.h": HEADERS_ROOT / "llama.cpp" / "common" / "sampling.h",
         "mtmd.h": HEADERS_ROOT / "llama.cpp" / "tools" / "mtmd" / "mtmd.h",
-        "mtmd-helper.h": HEADERS_ROOT / "llama.cpp" / "tools" / "mtmd" / "mtmd-helper.h",
+        "mtmd-helper.h": HEADERS_ROOT
+        / "llama.cpp"
+        / "tools"
+        / "mtmd"
+        / "mtmd-helper.h",
         "generation_helper.h": HEADERS_ROOT / "generation_helper.h",
     }
 else:
@@ -224,13 +228,17 @@ class ModelLoader:
             raise RuntimeError("Failed to create context")
         return ctx
 
-    def load_multimodal(self, mmproj_path: str, model, use_gpu: bool = False, n_threads: int = 8):
+    def load_multimodal(
+        self, mmproj_path: str, model, use_gpu: bool = False, n_threads: int = 8
+    ):
         params = self.gbl.mtmd_context_params_default()
         params.use_gpu = use_gpu
         params.n_threads = n_threads
         params.verbosity = self.gbl.GGML_LOG_LEVEL_ERROR
 
-        ctx_mtmd = self.gbl.mtmd_init_from_file(mmproj_path.encode("utf-8"), model, params)
+        ctx_mtmd = self.gbl.mtmd_init_from_file(
+            mmproj_path.encode("utf-8"), model, params
+        )
         if not ctx_mtmd:
             raise RuntimeError(f"Failed to load multimodal projector: {mmproj_path}")
         return ctx_mtmd
@@ -245,7 +253,9 @@ class MultimodalProcessor:
         self.last_logits_index = 0
 
     def load_image(self, ctx_mtmd, image_path: str):
-        bitmap = self.gbl.mtmd_helper_bitmap_init_from_file(ctx_mtmd, image_path.encode("utf-8"))
+        bitmap = self.gbl.mtmd_helper_bitmap_init_from_file(
+            ctx_mtmd, image_path.encode("utf-8")
+        )
         if not bitmap:
             raise RuntimeError(f"Failed to load image: {image_path}")
         return bitmap
@@ -279,7 +289,9 @@ class MultimodalProcessor:
 
         return chunks
 
-    def process_chunks(self, ctx, ctx_mtmd, chunks, n_batch: int = 512, seq_id: int = 0):
+    def process_chunks(
+        self, ctx, ctx_mtmd, chunks, n_batch: int = 512, seq_id: int = 0
+    ):
         n_past = 0
         n_chunks = self.gbl.mtmd_input_chunks_size(chunks)
         seq_identifier = self.gbl.llama_seq_id(seq_id)
@@ -318,7 +330,11 @@ class MultimodalProcessor:
         n_batch: int,
         seq_identifier=None,
     ):
-        embd = self.loaded_embedding.data() if self.loaded_embedding else self.gbl.mtmd_get_output_embd(ctx_mtmd)
+        embd = (
+            self.loaded_embedding.data()
+            if self.loaded_embedding
+            else self.gbl.mtmd_get_output_embd(ctx_mtmd)
+        )
         seq_id = seq_identifier or self.gbl.llama_seq_id(0)
 
         new_n_past_array = self.gbl.std.array[self.gbl.llama_pos, 1]()
@@ -326,7 +342,14 @@ class MultimodalProcessor:
 
         if (
             self.gbl.mtmd_helper_decode_image_chunk(
-                ctx_mtmd, ctx, chunk, embd, n_past, seq_id, n_batch, new_n_past_array.data()
+                ctx_mtmd,
+                ctx,
+                chunk,
+                embd,
+                n_past,
+                seq_id,
+                n_batch,
+                new_n_past_array.data(),
             )
             != 0
         ):
@@ -457,10 +480,16 @@ class TextGenerator:
             raise RuntimeError("Failed to create sampler")
         return sampler
 
-    def generate(self, sampler, ctx, model, n_past: int, n_ctx: int, max_tokens: int = 256):
+    def generate(
+        self, sampler, ctx, model, n_past: int, n_ctx: int, max_tokens: int = 256
+    ):
         self.gbl.common_sampler_reset(sampler)
-        seq_id_vec = self.gbl.std.vector[self.gbl.llama_seq_id]([self.gbl.llama_seq_id(0)])
-        result = self.gbl.generate_tokens_cpp(sampler, ctx, model, n_past, n_ctx, max_tokens, seq_id_vec)
+        seq_id_vec = self.gbl.std.vector[self.gbl.llama_seq_id](
+            [self.gbl.llama_seq_id(0)]
+        )
+        result = self.gbl.generate_tokens_cpp(
+            sampler, ctx, model, n_past, n_ctx, max_tokens, seq_id_vec
+        )
         return result
 
 

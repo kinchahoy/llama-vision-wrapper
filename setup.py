@@ -195,7 +195,9 @@ else:
                 dry=dry_run,
             )
 
-        typer.secho("\n✅  Setup finished successfully!", fg=typer.colors.GREEN, bold=True)
+        typer.secho(
+            "\n✅  Setup finished successfully!", fg=typer.colors.GREEN, bold=True
+        )
 
     # ─────────────────────────────
     if __name__ == "__main__":
