@@ -176,16 +176,18 @@ def main():
 
             # Calculate benchmarks
             total_time = time.time() - start_time
-            benchmark_results.update({
-                "total_time": total_time,
-                "total_tokens_generated": int(result.total_tokens_generated),
-                "final_output": str(result.generated_text),
-                "token_generation_rate": float(
-                    result.total_tokens_generated / timer.timings[-1][1]
-                    if timer.timings
-                    else 0
-                ),
-            })
+            benchmark_results.update(
+                {
+                    "total_time": total_time,
+                    "total_tokens_generated": int(result.total_tokens_generated),
+                    "final_output": str(result.generated_text),
+                    "token_generation_rate": float(
+                        result.total_tokens_generated / timer.timings[-1][1]
+                        if timer.timings
+                        else 0
+                    ),
+                }
+            )
 
             print(f"\n=== Results ===")
             print(f"Tokens generated: {result.total_tokens_generated}")

@@ -125,15 +125,18 @@ def prepare_sequences(
             if chunk_type == backend.gbl.MTMD_INPUT_CHUNK_TYPE_TEXT:
                 prep["n_past"] = int(
                     processor._eval_text_chunk(  # type: ignore[attr-defined]
-                    ctx,
-                    chunk,
-                    prep["n_past"],
-                    config.n_batch,
-                    logits_for_last=is_last_chunk,
-                    seq_identifier=prep["seq_id"],
-                ))
+                        ctx,
+                        chunk,
+                        prep["n_past"],
+                        config.n_batch,
+                        logits_for_last=is_last_chunk,
+                        seq_identifier=prep["seq_id"],
+                    )
+                )
                 if is_last_chunk:
-                    prep["last_logits_index"] = int(getattr(processor, "last_logits_index", 0))
+                    prep["last_logits_index"] = int(
+                        getattr(processor, "last_logits_index", 0)
+                    )
             elif chunk_type in (
                 backend.gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
                 backend.gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,

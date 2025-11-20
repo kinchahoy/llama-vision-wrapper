@@ -232,7 +232,9 @@ def _stage_built_libraries() -> list[str]:
 
 
 def _discover_built_libraries() -> list[Path]:
-    def _glob_all(directories: tuple[Path, ...], patterns: tuple[str, ...]) -> Iterator[Path]:
+    def _glob_all(
+        directories: tuple[Path, ...], patterns: tuple[str, ...]
+    ) -> Iterator[Path]:
         for directory in directories:
             if not directory.exists():
                 continue
