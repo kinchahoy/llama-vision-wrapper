@@ -4,6 +4,7 @@ Multimodal generation with benchmarking using the llama_insight package.
 
 import argparse
 import json
+import socket
 import subprocess
 import sys
 import time
@@ -196,7 +197,6 @@ def main():
         # Print timing summary
         timer.print_summary()
 
-        # Save benchmark results
         try:
             git_hash = (
                 subprocess.check_output(["git", "rev-parse", "HEAD"], text=True)
@@ -204,6 +204,14 @@ def main():
             )
         except Exception:
             git_hash = None
+
+        run_record = {
+            **benchmark_results,
+            "githash": git_hash,
+            "hostname": socket.gethostname(),
+            "command": sys.argv,
+            "recorded_at": datetime.now().isoformat(),
+        }
 
         results_file = Path("benchmark_results.json")
         try:
@@ -217,7 +225,7 @@ def main():
         elif not isinstance(existing, list):
             existing = []
 
-        existing.append({**benchmark_results, "githash": git_hash})
+        existing.append(run_record)
 
         with results_file.open("w") as f:
             json.dump(existing, f, indent=2)

@@ -1,31 +1,191 @@
-{
-  "version": "cppyy-refactored",
-  "timestamp": "2025-11-19T23:08:18.260792",
-  "config": {
-    "repo_id": "ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
-    "model": "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
-    "mmproj": "mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
-    "n_ctx": 2048,
-    "n_batch": 512,
-    "n_threads": 8,
-    "n_gpu_layers": 100,
-    "verbose_cpp": false,
-    "temp": 0.0,
-    "top_k": 40,
-    "top_p": 0.95,
-    "repeat_penalty": 1.1,
-    "max_new_tokens": 256,
-    "benchmark": false,
-    "flash_attn": false
+[
+  {
+    "version": "cppyy-refactored",
+    "timestamp": "2025-11-19T23:08:18.260792",
+    "config": {
+      "repo_id": "ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+      "model": "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
+      "mmproj": "mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
+      "n_ctx": 2048,
+      "n_batch": 512,
+      "n_threads": 8,
+      "n_gpu_layers": 100,
+      "verbose_cpp": false,
+      "temp": 0.0,
+      "top_k": 40,
+      "top_p": 0.95,
+      "repeat_penalty": 1.1,
+      "max_new_tokens": 256,
+      "benchmark": false,
+      "flash_attn": false
+    },
+    "timings": {},
+    "model_info": {
+      "vocab_size": 49280,
+      "context_size": 2048,
+      "embedding_size": 2048
+    },
+    "total_time": 2.928065061569214,
+    "total_tokens_generated": 72,
+    "final_output": " The image depicts a construction worker, who is wearing a hard hat and an orange safety vest. She is holding a tablet in her hands and appears to be reading or reviewing some information on it. The background of the image shows a building under construction with scaffolding visible. The sky is clear blue with some clouds, suggesting that the photo was taken during the day.",
+    "token_generation_rate": 65.70722664443281
   },
-  "timings": {},
-  "model_info": {
-    "vocab_size": 49280,
-    "context_size": 2048,
-    "embedding_size": 2048
+  {
+    "version": "cppyy-refactored",
+    "timestamp": "2025-11-19T23:17:42.394777",
+    "config": {
+      "repo_id": "ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+      "model": "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
+      "mmproj": "mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
+      "n_ctx": 2048,
+      "n_batch": 512,
+      "n_threads": 8,
+      "n_gpu_layers": 100,
+      "verbose_cpp": false,
+      "temp": 0.0,
+      "top_k": 40,
+      "top_p": 0.95,
+      "repeat_penalty": 1.1,
+      "max_new_tokens": 256,
+      "benchmark": false,
+      "flash_attn": false
+    },
+    "timings": {},
+    "model_info": {
+      "vocab_size": 49280,
+      "context_size": 2048,
+      "embedding_size": 2048
+    },
+    "total_time": 2.9406189918518066,
+    "total_tokens_generated": 72,
+    "final_output": " The image depicts a construction worker, who is wearing a hard hat and an orange safety vest. She is holding a tablet in her hands and appears to be reading or reviewing some information on it. The background of the image shows a building under construction with scaffolding visible. The sky is clear blue with some clouds, suggesting that the photo was taken during the day.",
+    "token_generation_rate": 69.82218514689045,
+    "githash": "177d5358d9460be5a368e2fb8e4f092c1970276e",
+    "hostname": "MacBook-Air.local",
+    "command": [
+      "usecases/cppyy-mtmd.py",
+      "-ngl",
+      "100",
+      "--image",
+      "test-images/debug.jpg",
+      "--temp",
+      "0"
+    ],
+    "recorded_at": "2025-11-19T23:17:45.543498"
   },
-  "total_time": 2.928065061569214,
-  "total_tokens_generated": 72,
-  "final_output": " The image depicts a construction worker, who is wearing a hard hat and an orange safety vest. She is holding a tablet in her hands and appears to be reading or reviewing some information on it. The background of the image shows a building under construction with scaffolding visible. The sky is clear blue with some clouds, suggesting that the photo was taken during the day.",
-  "token_generation_rate": 65.70722664443281
-}
+  {
+    "version": "batched-generation",
+    "timestamp": "2025-11-19T23:19:22",
+    "config": {
+      "repo_id": "ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+      "model": "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
+      "mmproj": "mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
+      "n_ctx": 2048,
+      "n_batch": 512,
+      "n_threads": 8,
+      "n_gpu_layers": 100,
+      "max_new_tokens": 256,
+      "n_parallel": 8
+    },
+    "timings": [
+      [
+        "Model download",
+        0.4417128562927246,
+        null
+      ],
+      [
+        "Model initialization",
+        1.4620239734649658,
+        null
+      ],
+      [
+        "Image loading",
+        0.014731168746948242,
+        null
+      ],
+      [
+        "Prompt encoding",
+        7.1923980712890625,
+        null
+      ],
+      [
+        "Batched generation",
+        9.766642808914185,
+        870
+      ]
+    ],
+    "total_tokens": 870,
+    "throughput": 89.07871589262339,
+    "sequences": [
+      {
+        "index": 0,
+        "image_path": "test-images/debug.jpg",
+        "prompt": "USER: Describe this image.\n<__image__>\nASSISTANT:",
+        "tokens_generated": 72,
+        "finished": true
+      },
+      {
+        "index": 1,
+        "image_path": "test-images/movie.jpg",
+        "prompt": "USER: What colors are in the image.\n<__image__>\nASSISTANT:",
+        "tokens_generated": 115,
+        "finished": true
+      },
+      {
+        "index": 2,
+        "image_path": "test-images/debug.jpg",
+        "prompt": "USER: What text is in the image, if any?\n<__image__>\nASSISTANT:",
+        "tokens_generated": 104,
+        "finished": true
+      },
+      {
+        "index": 3,
+        "image_path": "test-images/movie.jpg",
+        "prompt": "USER: How many people are in the image.\n<__image__>\nASSISTANT:",
+        "tokens_generated": 109,
+        "finished": true
+      },
+      {
+        "index": 4,
+        "image_path": "test-images/debug.jpg",
+        "prompt": "USER: What is the persons name?\n<__image__>\nASSISTANT:",
+        "tokens_generated": 11,
+        "finished": true
+      },
+      {
+        "index": 5,
+        "image_path": "test-images/movie.jpg",
+        "prompt": "USER: Describe in french.\n<__image__>\nASSISTANT:",
+        "tokens_generated": 181,
+        "finished": true
+      },
+      {
+        "index": 6,
+        "image_path": "test-images/debug.jpg",
+        "prompt": "USER: Where is this image taken.\n<__image__>\nASSISTANT:",
+        "tokens_generated": 82,
+        "finished": true
+      },
+      {
+        "index": 7,
+        "image_path": "test-images/movie.jpg",
+        "prompt": "USER: Describe this image.\n<__image__>\nASSISTANT:",
+        "tokens_generated": 196,
+        "finished": true
+      }
+    ],
+    "githash": "177d5358d9460be5a368e2fb8e4f092c1970276e",
+    "hostname": "MacBook-Air.local",
+    "command": [
+      "usecases/examples/batched-generation.py",
+      "-ngl",
+      "100",
+      "--image",
+      "test-images/debug.jpg",
+      "test-images/movie.jpg",
+      "--temp",
+      "0"
+    ],
+    "recorded_at": "2025-11-19T23:19:22.439594"
+  }
+]

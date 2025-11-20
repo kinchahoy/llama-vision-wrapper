@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -390,7 +392,13 @@ def main():
                     }
                     for seq in sequences
                 ],
+            }
+            run_record = {
+                **run_result,
                 "githash": git_hash,
+                "hostname": socket.gethostname(),
+                "command": sys.argv,
+                "recorded_at": datetime.now().isoformat(),
             }
 
             results_file = Path("benchmark_results.json")
@@ -405,7 +413,7 @@ def main():
             elif not isinstance(existing, list):
                 existing = []
 
-            existing.append(run_result)
+            existing.append(run_record)
 
             with results_file.open("w") as f:
                 json.dump(existing, f, indent=2)
