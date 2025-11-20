@@ -470,15 +470,17 @@ def _supports_kleidiai_backend() -> bool:
     return bool(features & _KLEIDIAI_FEATURE_TOKENS)
 
 
-_KLEIDIAI_FEATURE_TOKENS = frozenset({
-    "asimddp",
-    "dotprod",
-    "i8mm",
-    "matmulint8",
-    "sme",
-    "sve",
-    "sve2",
-})
+_KLEIDIAI_FEATURE_TOKENS = frozenset(
+    {
+        "asimddp",
+        "dotprod",
+        "i8mm",
+        "matmulint8",
+        "sme",
+        "sve",
+        "sve2",
+    }
+)
 
 
 _BACKEND_DETECTORS = (

@@ -14,3 +14,4 @@ __pypackages__/
 .vscode/
 wrapper_src/llama_insight/_headers/
 wrapper_src/llama_insight/libs/
+benchmark_results.json
