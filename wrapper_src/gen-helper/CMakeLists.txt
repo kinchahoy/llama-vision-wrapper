@@ -44,7 +44,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Assumes llama.cpp source is in a subdirectory named 'llama.cpp'
 # Assumes llama.cpp was built *with* BUILD_SHARED_LIBS=ON in 'llama.cpp/build'
 # Libraries are expected in 'llama.cpp/build'
-set(LLAMA_CPP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../llama.cpp" CACHE PATH "Path to llama.cpp source directory")
+set(LLAMA_CPP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../../llama.cpp" CACHE PATH "Path to llama.cpp source directory")
 set(LLAMA_CPP_BUILD_DIR "${LLAMA_CPP_SOURCE_DIR}/build" CACHE PATH "Path to llama.cpp build directory (containing libs)")
 set(LLAMA_CPP_INCLUDE_DIR "${LLAMA_CPP_SOURCE_DIR}/include" CACHE PATH "Path to llama.h include directory")
 set(LLAMA_CPP_COMMON_INCLUDE_DIR "${LLAMA_CPP_SOURCE_DIR}/common" CACHE PATH "Path to common.h include directory")
@@ -56,6 +56,7 @@ include_directories(
     ${LLAMA_CPP_INCLUDE_DIR}
     ${LLAMA_CPP_COMMON_INCLUDE_DIR}
     ${LLAMA_CPP_GGML_INCLUDE_DIR}
+    ${LLAMA_CPP_SOURCE_DIR}/tools/mtmd
 )
 
 # --- Find Required Libraries ---
@@ -82,6 +83,12 @@ find_library(COMMON_LIBRARY
     NO_DEFAULT_PATH
 )
 
+find_library(MTMD_LIBRARY
+    NAMES mtmd libmtmd mtmd.so libmtmd.so mtmd.dylib libmtmd.dylib
+    PATHS ${LLAMA_SEARCH_PATHS}
+    NO_DEFAULT_PATH
+)
+
 # Find ggml libraries (often required)
 find_library(GGML_LIBRARY 
     NAMES ggml libggml ggml.so libggml.so ggml.dylib libggml.dylib
@@ -95,9 +102,13 @@ endif()
 if(NOT COMMON_LIBRARY)
     message(FATAL_ERROR "libcommon not found in ${LLAMA_CPP_BUILD_DIR} or subdirectories. Ensure llama.cpp was built with BUILD_SHARED_LIBS=ON.")
 endif()
+if(NOT MTMD_LIBRARY)
+    message(FATAL_ERROR "libmtmd not found in ${LLAMA_CPP_BUILD_DIR} or subdirectories. Ensure mtmd was built as part of llama.cpp.")
+endif()
 
 message(STATUS "Found libllama: ${LLAMA_LIBRARY}")
 message(STATUS "Found libcommon: ${COMMON_LIBRARY}")
+message(STATUS "Found libmtmd: ${MTMD_LIBRARY}")
 if(GGML_LIBRARY)
     message(STATUS "Found libggml: ${GGML_LIBRARY}")
 endif()
@@ -109,6 +120,7 @@ add_library(generation_helper SHARED generation_helper.cpp generation_helper.h)
 target_link_libraries(generation_helper PRIVATE
     ${LLAMA_LIBRARY}
     ${COMMON_LIBRARY}
+    ${MTMD_LIBRARY}
 )
 
 # Add ggml library if found

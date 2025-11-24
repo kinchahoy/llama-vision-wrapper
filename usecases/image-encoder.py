@@ -1,30 +1,50 @@
 """
 Example to encode images into media embeddings.
 """
-import sys
+
 import argparse
 import os
+import sys
+from pathlib import Path
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from llama_core import LlamaBackend, ModelLoader, MultimodalProcessor
-from utils import Config, add_common_args, download_models, timed_operation
+try:
+    from llama_insight import (
+        Config,
+        LlamaBackend,
+        ModelLoader,
+        MultimodalProcessor,
+        add_common_args,
+        download_models,
+        timed_operation,
+    )
+except ImportError:  # pragma: no cover - dev fallback
+    project_root = Path(__file__).resolve().parents[2]
+    sys.path.append(str(project_root / "wrapper_src"))
+    from llama_insight import (  # type: ignore  # noqa
+        Config,
+        LlamaBackend,
+        ModelLoader,
+        MultimodalProcessor,
+        add_common_args,
+        download_models,
+        timed_operation,
+    )
 
 
 def main():
     """Main execution function."""
-    parser = argparse.ArgumentParser(
-        description="Encode images into media embeddings."
-    )
+    parser = argparse.ArgumentParser(description="Encode images into media embeddings.")
     parser.add_argument(
         "images",
         metavar="IMAGE",
         type=str,
-        nargs='+',
+        nargs="+",
         help="Path to one or more input images.",
     )
     add_common_args(parser)
     parser.add_argument(
-        "--output-dir", "-o",
+        "--output-dir",
+        "-o",
         type=str,
         default=".",
         help="Directory to save embedding files.",
@@ -43,10 +63,12 @@ def main():
         with LlamaBackend() as backend:
             loader = ModelLoader(backend.gbl)
             processor = MultimodalProcessor(backend.gbl)
-            
+
             with timed_operation("Model loading"):
                 model = loader.load_model(model_path, config.n_gpu_layers)
-                ctx_mtmd = loader.load_multimodal(mmproj_path, model, config.n_gpu_layers > 0, config.n_threads)
+                ctx_mtmd = loader.load_multimodal(
+                    mmproj_path, model, config.n_gpu_layers > 0, config.n_threads
+                )
 
             # Process each image
             for image_path in args.images:
@@ -57,7 +79,9 @@ def main():
 
                 # Load image
                 bitmap = processor.load_image(ctx_mtmd, image_path)
-                print(f"Loaded: {backend.gbl.mtmd_bitmap_get_nx(bitmap)}x{backend.gbl.mtmd_bitmap_get_ny(bitmap)}")
+                print(
+                    f"Loaded: {backend.gbl.mtmd_bitmap_get_nx(bitmap)}x{backend.gbl.mtmd_bitmap_get_ny(bitmap)}"
+                )
 
                 # Tokenize with dummy prompt
                 chunks = processor.tokenize_prompt(ctx_mtmd, "<__image__>", bitmap)
@@ -67,7 +91,10 @@ def main():
                 for i in range(backend.gbl.mtmd_input_chunks_size(chunks)):
                     chunk = backend.gbl.mtmd_input_chunks_get(chunks, i)
                     chunk_type = backend.gbl.mtmd_input_chunk_get_type(chunk)
-                    if chunk_type in [backend.gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE, backend.gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO]:
+                    if chunk_type in [
+                        backend.gbl.MTMD_INPUT_CHUNK_TYPE_IMAGE,
+                        backend.gbl.MTMD_INPUT_CHUNK_TYPE_AUDIO,
+                    ]:
                         image_chunk = chunk
                         break
 

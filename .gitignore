@@ -4,3 +4,14 @@ build/
 uv.lock
 cppyy-src/__pycache__/
 gen-helper/build/
+llama.cpp/build-uv/
+wrapper_src/gen-helper/build-uv/
+wrapper_src/llama_insight/libs/
+wrapper_src/llama_insight/_header/
+*.__pycache__
+*.pyc
+__pypackages__/
+.vscode/
+wrapper_src/llama_insight/_headers/
+wrapper_src/llama_insight/libs/
+benchmark_results.json

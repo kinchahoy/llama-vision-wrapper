@@ -1,13 +1,39 @@
+[build-system]
+requires = [
+    "uv_build>=0.9.8,<0.10.0",
+    "scikit-build-core>=0.11",
+    "cmake>=3.26",
+    "ninja>=1.11",
+]
+build-backend = "build_backend"
+backend-path = ["build-tools"]
+
 [project]
-name = "llama-vision-warpper"
+name = "llama_insight"
 version = "0.1.0"
-description = "Python bindings for llama.cpp multimodal functionality using cppyy and Cython."
+description = "High-level llama.cpp multimodal bindings powered by cppyy."
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "cppyy",
-    "Cython",
     "huggingface-hub",
-    "setuptools>=80.9.0",
     "typer",
     "sh",
+]
+
+[tool.uv.build-backend]
+module-root = "wrapper_src"
+source-include = [
+    "build-tools/**",
+    "wrapper_src/gen-helper/**",
+    "patch_llama_common_for_dynamic.patch",
+    "wrapper_src/llama_insight/_headers/**",
+]
+source-exclude = [
+    "/llama.cpp/**",
+    "/build/**",
+    "/dist/**",
+    "/test-images/**",
+    "/usecases/**",
+    "/old/**",
 ]

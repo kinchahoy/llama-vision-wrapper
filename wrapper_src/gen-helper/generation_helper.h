@@ -6,6 +6,7 @@
 #include "llama.h"
 #include "sampling.h" // For common_sampler
 #include "common.h"   // For llama_token_to_piece
+#include "mtmd.h"
 
 // Define the callback function pointer type
 // Python side will provide a function matching this signature
@@ -38,6 +39,17 @@ bool save_media_embedding(
 MediaLoadResult load_media_embedding(
     const std::string& file_path,
     std::vector<float>& embd_vec
+);
+
+int32_t decode_media_chunks_batch(
+    mtmd_context * ctx_mtmd,
+    struct llama_context * ctx,
+    const mtmd_input_chunk * const * chunks,
+    const llama_pos * n_past,
+    const llama_seq_id * seq_ids,
+    int32_t n_chunks,
+    int32_t n_batch,
+    llama_pos * new_n_past
 );
 
 // The core generation function, now accepting a callback
