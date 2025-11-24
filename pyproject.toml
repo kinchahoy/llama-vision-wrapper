@@ -21,4 +21,6 @@ dependencies = [
     "glfw>=2.10.0",
     "pytest>=8.4.2",
     "RestrictedPython>=8.0",
+    "wasmer>=1.1.0",
+    "wasmer-compiler-cranelift>=1.1.0",
 ]
