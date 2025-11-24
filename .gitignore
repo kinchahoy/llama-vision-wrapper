@@ -16,3 +16,5 @@ uv.lock
 godot_project/.godot
 
 *.out
+
+ops*
