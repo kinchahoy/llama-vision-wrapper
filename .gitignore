@@ -16,3 +16,4 @@ wrapper_src/llama_insight/_headers/
 wrapper_src/llama_insight/libs/
 wrapper_src/llama_insight/.deps/
 benchmark_results.json
+embeddings/cache/
