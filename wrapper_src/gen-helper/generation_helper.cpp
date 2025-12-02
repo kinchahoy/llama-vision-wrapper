@@ -1,13 +1,65 @@
 #include "generation_helper.h"
-#include <cstdio> // For printf/fprintf
+
 #include <algorithm>
+#include <cstdio> // For printf/fprintf
 #include <cstring>
-#include <vector>
 #include <string> // For std::string
-#include "llama.h" // Ensure llama definitions are included
+#include <vector>
+
 #include "common.h" // For llama_token_to_piece
+#include "llama.h"  // Ensure llama definitions are included
 #include "mtmd.h"
 #include "mtmd-helper.h"
+
+namespace {
+
+constexpr uint32_t EMB_MAGIC = 0x454D4244; // "EMBD"
+constexpr uint32_t EMB_VERSION = 1;
+
+constexpr uint32_t KV_MAGIC = 0x4B565354; // "KVST"
+constexpr uint32_t KV_VERSION = 1;
+
+struct embedding_file_header_legacy {
+    uint32_t nx;
+    uint32_t ny;
+    uint32_t use_mrope_pos;
+};
+
+struct embedding_file_header {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t nx;
+    uint32_t ny;
+    uint32_t use_mrope_pos;
+    uint32_t n_tokens;
+    uint32_t n_embd;
+    uint32_t checksum;
+};
+
+struct kv_prefix_header {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t n_past;
+    uint32_t n_ctx;
+    uint64_t state_size;
+    uint32_t checksum;
+};
+
+uint32_t fnv1a_checksum(const uint8_t * data, size_t size) {
+    uint32_t hash = 2166136261u;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= data[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+uint32_t fnv1a_checksum_floats(const float * data, size_t count) {
+    return fnv1a_checksum(reinterpret_cast<const uint8_t *>(data), count * sizeof(float));
+}
+
+} // namespace
+
 GenerationResult generate_tokens_cpp(
     common_sampler * sampler,
     struct llama_context * ctx,
@@ -85,21 +137,75 @@ GenerationResult generate_tokens_cpp(
     return result;
 }
 
+TextPrefillResult eval_text_chunk_cpp(
+    struct llama_context * ctx,
+    const mtmd_input_chunk * chunk,
+    llama_pos n_past,
+    int32_t n_batch,
+    bool logits_for_last,
+    llama_seq_id seq_id)
+{
+    TextPrefillResult result = {/*status=*/-1, /*final_n_past=*/n_past, /*last_logits_index=*/-1};
+    if (!ctx || !chunk || n_batch <= 0) {
+        return result;
+    }
+
+    size_t n_tokens = 0;
+    const llama_token * tokens = mtmd_input_chunk_get_tokens_text(chunk, &n_tokens);
+    if (!tokens || n_tokens == 0) {
+        return result;
+    }
+
+    llama_batch batch = llama_batch_init(n_batch, 0, 1);
+    if (!batch.token) {
+        return result;
+    }
+
+    llama_pos current_n_past = n_past;
+    size_t token_idx = 0;
+
+    while (token_idx < n_tokens) {
+        batch.n_tokens = 0;
+
+        while (token_idx < n_tokens && batch.n_tokens < static_cast<size_t>(n_batch)) {
+            const size_t j = batch.n_tokens;
+            batch.token[j] = tokens[token_idx];
+            batch.pos[j] = current_n_past;
+            batch.n_seq_id[j] = 1;
+            batch.seq_id[j][0] = seq_id;
+            batch.logits[j] = false;
+
+            ++batch.n_tokens;
+            ++current_n_past;
+            ++token_idx;
+        }
+
+        if (logits_for_last && token_idx == n_tokens && batch.n_tokens > 0) {
+            batch.logits[batch.n_tokens - 1] = true;
+            result.last_logits_index = static_cast<int32_t>(batch.n_tokens - 1);
+        }
+
+        if (llama_decode(ctx, batch) != 0) {
+            llama_batch_free(batch);
+            return result;
+        }
+    }
+
+    llama_batch_free(batch);
+    result.status = 0;
+    result.final_n_past = current_n_past;
+    return result;
+}
+
 // --- Media Embedding I/O Helpers ---
 
-// Simple header for the embedding file
-struct embedding_file_header {
-    uint32_t nx;
-    uint32_t ny;
-    uint32_t use_mrope_pos;
-};
-
-bool save_media_embedding(
+bool save_media_embedding_c(
     const std::string& file_path,
     int nx,
     int ny,
     bool use_mrope_pos,
-    size_t n_embd,
+    int32_t n_tokens,
+    int32_t n_embd,
     const float* embd_ptr)
 {
     FILE* f = fopen(file_path.c_str(), "wb");
@@ -108,10 +214,18 @@ bool save_media_embedding(
         return false;
     }
 
+    const size_t total_floats = static_cast<size_t>(n_tokens) * static_cast<size_t>(n_embd);
+    const uint32_t checksum = fnv1a_checksum_floats(embd_ptr, total_floats);
+
     embedding_file_header header = {
+        EMB_MAGIC,
+        EMB_VERSION,
         (uint32_t)nx,
         (uint32_t)ny,
-        (uint32_t)use_mrope_pos
+        (uint32_t)use_mrope_pos,
+        (uint32_t)n_tokens,
+        (uint32_t)n_embd,
+        checksum
     };
 
     if (fwrite(&header, sizeof(header), 1, f) != 1) {
@@ -120,7 +234,7 @@ bool save_media_embedding(
         return false;
     }
 
-    if (fwrite(embd_ptr, sizeof(float), n_embd, f) != n_embd) {
+    if (fwrite(embd_ptr, sizeof(float), total_floats, f) != total_floats) {
         fprintf(stderr, "Error: Failed to write embedding data to %s.\n", file_path.c_str());
         fclose(f);
         return false;
@@ -134,29 +248,53 @@ MediaLoadResult load_media_embedding(
     const std::string& file_path,
     std::vector<float>& embd_vec)
 {
-    MediaLoadResult result = {false, 0, 0, false};
+    MediaLoadResult result = {false, 0, 0, false, 0, 0, 0, false, false, 0, 0, 0};
     FILE* f = fopen(file_path.c_str(), "rb");
     if (!f) {
         fprintf(stderr, "Error: Could not open %s for reading.\n", file_path.c_str());
         return result;
     }
 
-    embedding_file_header header;
+    embedding_file_header header = {};
+    embedding_file_header_legacy header_legacy = {};
+    bool legacy = false;
+
     if (fread(&header, sizeof(header), 1, f) != 1) {
         fprintf(stderr, "Error: Failed to read header from %s.\n", file_path.c_str());
         fclose(f);
         return result;
     }
 
-    result.nx = header.nx;
-    result.ny = header.ny;
-    result.use_mrope_pos = (bool)header.use_mrope_pos;
+    if (header.magic != EMB_MAGIC) {
+        legacy = true;
+        if (fseek(f, 0, SEEK_SET) != 0) {
+            fclose(f);
+            return result;
+        }
+        if (fread(&header_legacy, sizeof(header_legacy), 1, f) != 1) {
+            fprintf(stderr, "Error: Failed to read legacy header from %s.\n", file_path.c_str());
+            fclose(f);
+            return result;
+        }
+        result.nx = header_legacy.nx;
+        result.ny = header_legacy.ny;
+        result.use_mrope_pos = (bool)header_legacy.use_mrope_pos;
+    } else {
+        result.nx = header.nx;
+        result.ny = header.ny;
+        result.use_mrope_pos = (bool)header.use_mrope_pos;
+        result.version = header.version;
+        result.checksum_expected = header.checksum;
+        result.n_tokens = header.n_tokens;
+        result.n_embd = header.n_embd;
+    }
+    result.legacy_format = legacy;
 
     // Get file size to determine embedding size
     fseek(f, 0, SEEK_END);
     long file_size = ftell(f);
-    long data_size = file_size - sizeof(header);
-    fseek(f, sizeof(header), SEEK_SET);
+    long data_size = file_size - (legacy ? (long)sizeof(header_legacy) : (long)sizeof(header));
+    fseek(f, legacy ? sizeof(header_legacy) : sizeof(header), SEEK_SET);
 
     if (data_size < 0 || data_size % sizeof(float) != 0) {
         fprintf(stderr, "Error: Invalid data size in %s.\n", file_path.c_str());
@@ -164,18 +302,83 @@ MediaLoadResult load_media_embedding(
         return result;
     }
 
-    size_t n_embd = data_size / sizeof(float);
-    embd_vec.resize(n_embd);
+    size_t n_floats = (size_t)data_size / sizeof(float);
+    embd_vec.resize(n_floats);
+    result.n_floats = n_floats;
 
-    if (fread(embd_vec.data(), sizeof(float), n_embd, f) != n_embd) {
+    if (fread(embd_vec.data(), sizeof(float), n_floats, f) != n_floats) {
         fprintf(stderr, "Error: Failed to read embedding data from %s.\n", file_path.c_str());
         fclose(f);
         return result;
     }
 
     fclose(f);
+
+    if (!legacy) {
+        result.checksum_computed = fnv1a_checksum_floats(embd_vec.data(), n_floats);
+        result.checksum_ok = (result.checksum_computed == result.checksum_expected);
+        if (!result.checksum_ok) {
+            fprintf(stderr, "Error: Checksum mismatch in %s (expected %u, got %u)\n",
+                    file_path.c_str(), result.checksum_expected, result.checksum_computed);
+            return result;
+        }
+
+        if (result.n_tokens > 0 && result.n_embd > 0) {
+            size_t expected = (size_t)result.n_tokens * (size_t)result.n_embd;
+            if (expected != n_floats) {
+                fprintf(stderr,
+                        "Error: Metadata mismatch in %s (header tokens x dim = %zu, payload floats = %zu)\n",
+                        file_path.c_str(), expected, n_floats);
+                return result;
+            }
+        }
+    }
+
     result.success = true;
     return result;
+}
+
+int32_t decode_media_chunk_from_embd(
+    mtmd_context * ctx_mtmd,
+    struct llama_context * ctx,
+    const mtmd_input_chunk * chunk,
+    const float * embd,
+    llama_pos n_past,
+    llama_seq_id seq_id,
+    int32_t n_batch,
+    llama_pos * new_n_past)
+{
+    if (!ctx_mtmd || !ctx || !chunk || !embd || !new_n_past) {
+        return -1;
+    }
+
+    llama_pos n_past_out = 0;
+    int32_t ret = 0;
+    const bool use_non_causal = mtmd_decode_use_non_causal(ctx_mtmd);
+    if (use_non_causal) {
+        llama_set_causal_attn(ctx, false);
+    }
+
+    // mtmd_helper_decode_image_chunk expects a mutable pointer; the buffer is not modified.
+    float * embd_mutable = const_cast<float *>(embd);
+    ret = mtmd_helper_decode_image_chunk(
+        ctx_mtmd,
+        ctx,
+        chunk,
+        embd_mutable,
+        n_past,
+        seq_id,
+        n_batch,
+        &n_past_out);
+
+    if (use_non_causal) {
+        llama_set_causal_attn(ctx, true);
+    }
+
+    if (ret == 0) {
+        *new_n_past = n_past_out;
+    }
+    return ret;
 }
 
 namespace {
@@ -354,4 +557,115 @@ int32_t decode_media_chunks_batch(
     }
 
     return ret;
+}
+
+bool save_kv_prefix(
+    struct llama_context * ctx,
+    const std::string& file_path,
+    llama_pos n_past)
+{
+    if (!ctx) {
+        return false;
+    }
+
+    const size_t state_size = llama_state_get_size(ctx);
+    if (state_size == 0) {
+        return false;
+    }
+
+    std::vector<uint8_t> buffer(state_size);
+    const size_t bytes_written = llama_state_get_data(ctx, buffer.data(), buffer.size());
+    if (bytes_written == 0) {
+        return false;
+    }
+
+    kv_prefix_header header = {
+        KV_MAGIC,
+        KV_VERSION,
+        (uint32_t)n_past,
+        (uint32_t)llama_n_ctx(ctx),
+        (uint64_t)bytes_written,
+        fnv1a_checksum(buffer.data(), bytes_written),
+    };
+
+    FILE * f = fopen(file_path.c_str(), "wb");
+    if (!f) {
+        fprintf(stderr, "Error: Could not open %s for writing KV prefix.\n", file_path.c_str());
+        return false;
+    }
+
+    bool ok = true;
+    if (fwrite(&header, sizeof(header), 1, f) != 1) {
+        ok = false;
+    } else if (fwrite(buffer.data(), 1, bytes_written, f) != bytes_written) {
+        ok = false;
+    }
+
+    fclose(f);
+    if (!ok) {
+        fprintf(stderr, "Error: Failed to write KV prefix to %s.\n", file_path.c_str());
+    }
+    return ok;
+}
+
+bool load_kv_prefix(
+    struct llama_context * ctx,
+    const std::string& file_path,
+    llama_pos& n_past_out)
+{
+    if (!ctx) {
+        return false;
+    }
+
+    FILE * f = fopen(file_path.c_str(), "rb");
+    if (!f) {
+        fprintf(stderr, "Error: Could not open %s for reading KV prefix.\n", file_path.c_str());
+        return false;
+    }
+
+    kv_prefix_header header;
+    if (fread(&header, sizeof(header), 1, f) != 1) {
+        fclose(f);
+        fprintf(stderr, "Error: Failed to read KV prefix header from %s.\n", file_path.c_str());
+        return false;
+    }
+
+    if (header.magic != KV_MAGIC || header.version != KV_VERSION) {
+        fclose(f);
+        fprintf(stderr, "Error: KV prefix header mismatch in %s.\n", file_path.c_str());
+        return false;
+    }
+
+    const uint32_t ctx_n_ctx = llama_n_ctx(ctx);
+    if (header.n_ctx > ctx_n_ctx) {
+        fprintf(stderr,
+                "Warning: KV prefix context size (%u) exceeds current ctx (%u). Attempting load.\n",
+                header.n_ctx, ctx_n_ctx);
+    }
+
+    std::vector<uint8_t> buffer(header.state_size);
+    if (fread(buffer.data(), 1, header.state_size, f) != header.state_size) {
+        fclose(f);
+        fprintf(stderr, "Error: Failed to read KV prefix payload from %s.\n", file_path.c_str());
+        return false;
+    }
+    fclose(f);
+
+    const uint32_t computed = fnv1a_checksum(buffer.data(), buffer.size());
+    if (computed != header.checksum) {
+        fprintf(stderr,
+                "Error: KV prefix checksum mismatch in %s (expected %u, got %u).\n",
+                file_path.c_str(), header.checksum, computed);
+        return false;
+    }
+
+    const size_t applied = llama_state_set_data(ctx, buffer.data(), buffer.size());
+    if (applied != buffer.size()) {
+        fprintf(stderr, "Error: Failed to apply KV prefix from %s (applied %zu / %zu bytes).\n",
+                file_path.c_str(), applied, buffer.size());
+        return false;
+    }
+
+    n_past_out = header.n_past;
+    return true;
 }

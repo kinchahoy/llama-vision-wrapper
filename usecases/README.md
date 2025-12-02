@@ -8,9 +8,12 @@ Example scripts that consume the `llama_insight` package.
   model loading helpers, timers, and download utilities. Install it with `pip install .`
   (or `pip install llama_insight` once published).
 - **Usecases** (this folder): runnable scripts that depend solely on the installed package.
-  - `cppyy-mtmd.py` – multimodal generation with benchmarking
-  - `examples/simple-generation.py` – minimal multimodal text generation
-  - `examples/image-encoder.py` – load images and demonstrate media encoding
+  - `generate_simple.py` – minimal multimodal text generation
+  - `generate_benchmark.py` – single-run generation with benchmark logging
+  - `generate_batched.py` – batched multimodal generation across prompts/images
+  - `encode_images.py` – load images, pull embeddings into memory, and save to disk
+- **Shared helpers**: `wrapper_src/llama_insight/usecase_helpers.py` centralizes runtime
+  setup, timing, and benchmark logging so the scripts stay small.
 
 ## Usage
 
@@ -19,13 +22,16 @@ Example scripts that consume the `llama_insight` package.
 uv pip install -e .
 
 # Basic generation
-uv run usecases/examples/simple-generation.py --image path/to/image.jpg
+uv run usecases/generate_simple.py --image test-images/debug.jpg
 
 # With custom model
-uv run usecases/cppyy-mtmd.py --repo-id "custom/model" --image image.jpg
+uv run usecases/generate_benchmark.py --repo-id "custom/model" --image test-images/debug.jpg
 
 # Encode images
-uv run usecases/examples/image-encoder.py image1.jpg image2.jpg --output-dir embeddings/
+uv run usecases/encode_images.py test-images/debug.jpg test-images/movie.jpg --output-dir embeddings/ --format npy
+
+# Batched generation
+uv run usecases/generate_batched.py --image test-images/debug.jpg --n-parallel 8
 ```
 
 > Tip: if you build the native libraries outside of the repository tree, set

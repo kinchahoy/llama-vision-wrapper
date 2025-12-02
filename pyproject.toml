@@ -19,6 +19,7 @@ dependencies = [
     "huggingface-hub",
     "typer",
     "sh",
+    "numpy>=2.3.5",
 ]
 
 [tool.uv.build-backend]

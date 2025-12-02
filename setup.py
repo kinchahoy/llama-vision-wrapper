@@ -171,12 +171,17 @@ else:
         # ── 6. optional examples ─────────────────────────────────────────────
         banner("Run example (optional)")
         ex = (
-            typer.prompt("Which example? (cppyy / cython / skip)", default="skip")
+            typer.prompt(
+                "Which example? (benchmark / batched / cython / skip)",
+                default="skip",
+            )
             .lower()
             .strip()
         )
-        if ex == "cppyy":
-            run(["uv", "run", "usecases/cppyy-mtmd.py"], dry=dry_run)
+        if ex in {"benchmark", "cppyy"}:
+            run(["uv", "run", "usecases/generate_benchmark.py"], dry=dry_run)
+        elif ex == "batched":
+            run(["uv", "run", "usecases/generate_batched.py"], dry=dry_run)
         elif ex == "cython":
             run(
                 [

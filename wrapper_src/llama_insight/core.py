@@ -419,13 +419,26 @@ class MultimodalProcessor:
         logits_for_last: bool = False,
         seq_identifier=None,
     ):
+        seq_id = seq_identifier or self.gbl.llama_seq_id(0)
+
+        # Prefer the native helper to cut Python<->C churn during prefill.
+        try:
+            prefill_res = self.gbl.eval_text_chunk_cpp(
+                ctx, chunk, n_past, n_batch, logits_for_last, seq_id
+            )
+            if int(prefill_res.status) != 0:
+                raise RuntimeError("Failed to decode text chunk")
+            if logits_for_last:
+                self.last_logits_index = int(prefill_res.last_logits_index)
+            return int(prefill_res.final_n_past)
+        except AttributeError:
+            pass
+
         n_tokens_out = self.gbl.std.vector["size_t"](1)
         tokens = self.gbl.mtmd_input_chunk_get_tokens_text(chunk, n_tokens_out.data())
         n_tokens = n_tokens_out[0]
-        seq_id = seq_identifier or self.gbl.llama_seq_id(0)
 
         batch = self.gbl.llama_batch_init(n_batch, 0, 1)
-
         token_idx = 0
         while token_idx < n_tokens:
             batch.n_tokens = 0

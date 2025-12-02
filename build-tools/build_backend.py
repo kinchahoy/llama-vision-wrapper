@@ -60,6 +60,8 @@ BACKEND_FLAGS = {
 DEFAULT_BACKEND = "cpu"
 DEFAULT_LLAMA_REPO = "https://github.com/ggerganov/llama.cpp.git"
 
+FORCE_REBUILD_ENV = ("LLAMA_INSIGHT_FORCE_REBUILD",)
+
 
 def get_requires_for_build_wheel(
     config_settings: dict[str, Any] | None = None,
@@ -96,6 +98,7 @@ def build_wheel(
     config_settings: dict[str, Any] | None = None,
     metadata_directory: str | None = None,
 ) -> str:
+    _propagate_force_env(config_settings)
     _ensure_native_artifacts(config_settings)
     return _uv_build_wheel(wheel_directory, config_settings, metadata_directory)
 
@@ -105,6 +108,7 @@ def build_editable(
     config_settings: dict[str, Any] | None = None,
     metadata_directory: str | None = None,
 ) -> str:
+    _propagate_force_env(config_settings)
     _ensure_native_artifacts(config_settings)
     return _uv_build_editable(wheel_directory, config_settings, metadata_directory)
 
@@ -113,6 +117,7 @@ def build_sdist(
     sdist_directory: str,
     config_settings: dict[str, Any] | None = None,
 ) -> str:
+    _propagate_force_env(config_settings)
     return _uv_build_sdist(sdist_directory, config_settings)
 
 
@@ -127,11 +132,17 @@ def _ensure_native_artifacts(config_settings: dict[str, Any] | None) -> None:
         _ensure_required_libs_present()
         return
 
+    force_flags = _parse_force_rebuild(config_settings)
     _ensure_llama_cpp_sources()
     _stage_headers()
     backend = _select_backend(config_settings)
     extra_flags = _collect_extra_flags(config_settings)
-    _maybe_restore_cached_artifacts(backend, extra_flags)
+
+    if not force_flags["cache_bust"]:
+        _maybe_restore_cached_artifacts(backend, extra_flags)
+    else:
+        _log("Force rebuild requested; skipping cached artifact restore.")
+
     jobs = _determine_jobs()
     dry_run = _read_bool_setting(
         config_settings, "dry-run", env=("LLAMA_INSIGHT_DRY_RUN",)
@@ -139,9 +150,25 @@ def _ensure_native_artifacts(config_settings: dict[str, Any] | None) -> None:
     if dry_run:
         _log("Dry-run enabled: llama.cpp compilation will be skipped.")
 
-    if not _native_artifacts_fresh(backend, extra_flags):
-        _log("Building llama.cpp + helper shared libraries...")
-        _build_llama_cpp(backend, extra_flags, jobs, skip_compile=dry_run)
+    native_fresh = _native_artifacts_fresh(backend, extra_flags)
+    rebuild_all = force_flags["all"] or not native_fresh
+
+    rebuild_llama = rebuild_all or force_flags["llama"]
+    rebuild_gen = rebuild_all or force_flags["gen_helper"]
+
+    if rebuild_llama or rebuild_gen:
+        _log(
+            "Building llama.cpp + helper shared libraries..."
+            if rebuild_llama
+            else "Rebuilding generation helper..."
+        )
+        if rebuild_llama:
+            _build_llama_cpp(backend, extra_flags, jobs, skip_compile=dry_run)
+        elif not LLAMA_BUILD_DIR.exists():
+            # Helper requires a built llama tree; fall back to full build if missing.
+            _log("llama.cpp build directory missing; forcing full rebuild.")
+            _build_llama_cpp(backend, extra_flags, jobs, skip_compile=dry_run)
+
         _build_generation_helper(jobs)
         libs = _stage_built_libraries()
         _write_build_metadata(backend, extra_flags, libs)
@@ -525,6 +552,59 @@ def _read_bool_setting(
     if raw is None:
         return False
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_force_rebuild(config_settings: dict[str, Any] | None) -> dict[str, bool]:
+    """
+    Interpret a force-rebuild request from config settings or environment.
+
+    Accepted values (comma/space separated): "all", "llama", "gen", "gen-helper", "helper".
+    A bare truthy flag ("1"/"true") is treated as "all".
+    """
+    raw = _read_setting(config_settings, "force-rebuild")
+    if raw is None:
+        for env_var in FORCE_REBUILD_ENV:
+            env_val = os.environ.get(env_var)
+            if env_val is not None:
+                raw = env_val
+                break
+
+    if raw is None:
+        return {"all": False, "llama": False, "gen_helper": False, "cache_bust": False}
+
+    tokens = str(raw).replace(",", " ").split()
+
+    def _has(token: str) -> bool:
+        lowered = {t.strip().lower() for t in tokens}
+        return token in lowered
+
+    truthy = _read_bool_setting({"llama-insight.force-rebuild": raw}, "force-rebuild")
+
+    all_flag = truthy or _has("all") or _has("both") or _has("full")
+    llama_flag = all_flag or _has("llama") or _has("llama.cpp") or _has("llama_cpp")
+    gen_flag = (
+        all_flag
+        or _has("gen")
+        or _has("gen-helper")
+        or _has("gen_helper")
+        or _has("helper")
+    )
+
+    cache_bust = all_flag or llama_flag or gen_flag
+
+    return {
+        "all": all_flag,
+        "llama": llama_flag,
+        "gen_helper": gen_flag,
+        "cache_bust": cache_bust,
+    }
+
+
+def _propagate_force_env(config_settings: dict[str, Any] | None) -> None:
+    """Bridge config_settings into an env var so downstream build steps see the flag."""
+    raw = _read_setting(config_settings, "force-rebuild")
+    if raw:
+        os.environ.setdefault(FORCE_REBUILD_ENV[0], str(raw))
 
 
 def _determine_jobs() -> int:
