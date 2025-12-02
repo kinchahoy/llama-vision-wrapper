@@ -4,7 +4,6 @@ scikit-build-core)."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import platform
@@ -12,7 +11,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from scikit_build_core.cmake import CMake
 from scikit_build_core.errors import CMakeNotFoundError
@@ -32,9 +31,11 @@ WRAPPER_SRC_DIR = PROJECT_ROOT / "wrapper_src"
 PACKAGE_DIR = WRAPPER_SRC_DIR / "llama_insight"
 LLAMA_CPP_DIR = PROJECT_ROOT / "llama.cpp"
 GEN_HELPER_DIR = WRAPPER_SRC_DIR / "gen-helper"
+LLAMA_CPP_REPO = "https://github.com/ggerganov/llama.cpp.git"
 
-LLAMA_BUILD_DIR = LLAMA_CPP_DIR / "build-uv"
-GEN_BUILD_DIR = GEN_HELPER_DIR / "build-uv"
+# Keep build outputs in the default llama.cpp tree so runtime paths match.
+LLAMA_BUILD_DIR = LLAMA_CPP_DIR / "build"
+GEN_BUILD_DIR = GEN_HELPER_DIR / "build"
 
 PACKAGED_LIB_DIR = PACKAGE_DIR / "libs"
 BUILD_METADATA_FILE = PACKAGED_LIB_DIR / "build-metadata.json"
@@ -59,8 +60,6 @@ BACKEND_FLAGS = {
 
 DEFAULT_BACKEND = "cpu"
 DEFAULT_LLAMA_REPO = "https://github.com/ggerganov/llama.cpp.git"
-
-FORCE_REBUILD_ENV = ("LLAMA_INSIGHT_FORCE_REBUILD",)
 
 
 def get_requires_for_build_wheel(
@@ -98,7 +97,6 @@ def build_wheel(
     config_settings: dict[str, Any] | None = None,
     metadata_directory: str | None = None,
 ) -> str:
-    _propagate_force_env(config_settings)
     _ensure_native_artifacts(config_settings)
     return _uv_build_wheel(wheel_directory, config_settings, metadata_directory)
 
@@ -108,7 +106,6 @@ def build_editable(
     config_settings: dict[str, Any] | None = None,
     metadata_directory: str | None = None,
 ) -> str:
-    _propagate_force_env(config_settings)
     _ensure_native_artifacts(config_settings)
     return _uv_build_editable(wheel_directory, config_settings, metadata_directory)
 
@@ -117,7 +114,7 @@ def build_sdist(
     sdist_directory: str,
     config_settings: dict[str, Any] | None = None,
 ) -> str:
-    _propagate_force_env(config_settings)
+    _ensure_llama_cpp_sources_or_fail()
     return _uv_build_sdist(sdist_directory, config_settings)
 
 
@@ -129,62 +126,27 @@ def _ensure_native_artifacts(config_settings: dict[str, Any] | None) -> None:
     )
     if skip_native:
         _log("Skipping native compilation (existing artifacts assumed).")
-        _ensure_required_libs_present()
+        _assert_packaged_libs()
         return
-
-    force_flags = _parse_force_rebuild(config_settings)
-    _ensure_llama_cpp_sources()
+    _ensure_llama_cpp_sources_or_fail()
     _stage_headers()
     backend = _select_backend(config_settings)
     extra_flags = _collect_extra_flags(config_settings)
-
-    if not force_flags["cache_bust"]:
-        _maybe_restore_cached_artifacts(backend, extra_flags)
-    else:
-        _log("Force rebuild requested; skipping cached artifact restore.")
-
+    if _reuse_built_artifacts(backend, extra_flags):
+        _assert_packaged_libs()
+        return
     jobs = _determine_jobs()
     dry_run = _read_bool_setting(
         config_settings, "dry-run", env=("LLAMA_INSIGHT_DRY_RUN",)
     )
     if dry_run:
         _log("Dry-run enabled: llama.cpp compilation will be skipped.")
-
-    native_fresh = _native_artifacts_fresh(backend, extra_flags)
-    rebuild_all = force_flags["all"] or not native_fresh
-
-    rebuild_llama = rebuild_all or force_flags["llama"]
-    rebuild_gen = rebuild_all or force_flags["gen_helper"]
-
-    if rebuild_llama or rebuild_gen:
-        _log(
-            "Building llama.cpp + helper shared libraries..."
-            if rebuild_llama
-            else "Rebuilding generation helper..."
-        )
-        if rebuild_llama:
-            _build_llama_cpp(backend, extra_flags, jobs, skip_compile=dry_run)
-        elif not LLAMA_BUILD_DIR.exists():
-            # Helper requires a built llama tree; fall back to full build if missing.
-            _log("llama.cpp build directory missing; forcing full rebuild.")
-            _build_llama_cpp(backend, extra_flags, jobs, skip_compile=dry_run)
-
-        _build_generation_helper(jobs)
-        libs = _stage_built_libraries()
-        _write_build_metadata(backend, extra_flags, libs)
-        _store_cached_artifacts(backend, extra_flags, libs)
-    else:
-        _log("Native artifacts already up-to-date; skipping rebuild.")
-    _ensure_required_libs_present()
-
-
-def _native_artifacts_fresh(backend: str, extra_flags: list[str]) -> bool:
-    resolved = _resolve_existing_artifacts()
-    if not resolved:
-        return False
-    metadata, libs = resolved
-    fingerprint = _fingerprint(backend, extra_flags, libs)
-    return metadata == fingerprint
+    _log("Building llama.cpp + helper shared libraries...")
+    _build_llama_cpp(backend, extra_flags, jobs, skip_compile=dry_run)
+    _build_generation_helper(jobs)
+    libs = _package_built_libraries()
+    _write_build_metadata(backend, extra_flags, libs)
+    _assert_packaged_libs()
 
 
 def _build_llama_cpp(
@@ -239,7 +201,7 @@ def _build_generation_helper(jobs: int) -> None:
     )
 
 
-def _stage_built_libraries() -> list[str]:
+def _package_built_libraries() -> list[str]:
     libs = _discover_built_libraries()
     if not libs:
         raise FileNotFoundError(
@@ -259,35 +221,34 @@ def _stage_built_libraries() -> list[str]:
 
 
 def _discover_built_libraries() -> list[Path]:
-    def _glob_all(
-        directories: tuple[Path, ...], patterns: tuple[str, ...]
-    ) -> Iterator[Path]:
-        for directory in directories:
-            if not directory.exists():
-                continue
-            for pattern in patterns:
-                yield from directory.glob(pattern)
-
     base_dirs = (LLAMA_BUILD_DIR / "bin", GEN_BUILD_DIR)
-    patterns: list[str] = [f"lib*.{LIB_EXT}"]
+    patterns: tuple[str, ...]
+    patterns = (f"lib*.{LIB_EXT}",)
     if LIB_EXT == "so":
-        patterns.append(f"lib*.{LIB_EXT}.*")  # capture SONAME targets like libfoo.so.0
-    libs = {path.name: path for path in _glob_all(base_dirs, tuple(patterns))}
+        patterns = (
+            f"lib*.{LIB_EXT}",
+            f"lib*.{LIB_EXT}.*",  # capture SONAME targets like libfoo.so.0
+        )
+
+    libs: dict[str, Path] = {}
+    for directory in base_dirs:
+        for pattern in patterns:
+            for candidate in directory.glob(pattern):
+                libs[candidate.name] = candidate
 
     mtmd_prefix = "" if LIB_EXT == "dll" else "lib"
     mtmd_tag = f"{mtmd_prefix}mtmd"
     if not any(name.startswith(mtmd_tag) for name in libs):
-        mtmd_patterns = [f"{mtmd_tag}*.{LIB_EXT}"]
+        mtmd_patterns: tuple[str, ...] = (f"{mtmd_tag}*.{LIB_EXT}",)
         if LIB_EXT == "so":
-            mtmd_patterns.append(f"{mtmd_tag}*.{LIB_EXT}.*")
-        mtmd_dirs = (
-            LLAMA_BUILD_DIR / "bin",
-            LLAMA_BUILD_DIR / "tools" / "mtmd",
-        )
-        libs.update(
-            (candidate.name, candidate)
-            for candidate in _glob_all(mtmd_dirs, tuple(mtmd_patterns))
-        )
+            mtmd_patterns = (
+                f"{mtmd_tag}*.{LIB_EXT}",
+                f"{mtmd_tag}*.{LIB_EXT}.*",
+            )
+        for directory in (LLAMA_BUILD_DIR / "bin", LLAMA_BUILD_DIR / "tools" / "mtmd"):
+            for pattern in mtmd_patterns:
+                for candidate in directory.glob(pattern):
+                    libs[candidate.name] = candidate
     return [libs[name] for name in sorted(libs)]
 
 
@@ -317,41 +278,50 @@ def _apply_patch() -> None:
         _log("Patch already applied; continuing.")
 
 
-def _ensure_llama_cpp_sources() -> None:
+def _ensure_llama_cpp_sources_or_fail() -> None:
     if (LLAMA_CPP_DIR / "CMakeLists.txt").exists():
         return
 
     git_dir = PROJECT_ROOT / ".git"
     gitmodules = PROJECT_ROOT / ".gitmodules"
+    repo_url = _read_submodule_url() or LLAMA_CPP_REPO
     if git_dir.exists() and gitmodules.exists():
-        _log("Initializing llama.cpp submodule...")
-        _run(
-            ["git", "submodule", "update", "--init", "--recursive", "llama.cpp"],
-            cwd=PROJECT_ROOT,
-        )
-        if (LLAMA_CPP_DIR / "CMakeLists.txt").exists():
-            return
-
-    # Fallback: clone directly into the tree so we can
-    # build wheels even when the submodule is not pre-initialized.
-    repo_url = os.environ.get("LLAMA_INSIGHT_LLAMA_CPP_URL") or DEFAULT_LLAMA_REPO
-    _clone_llama_cpp(repo_url, LLAMA_CPP_DIR)
+        try:
+            _log("Initializing llama.cpp submodule...")
+            _run(
+                ["git", "submodule", "update", "--init", "--recursive", "llama.cpp"],
+                cwd=PROJECT_ROOT,
+            )
+        except Exception:
+            _log("Submodule init failed; falling back to direct clone.")
+    if not (LLAMA_CPP_DIR / "CMakeLists.txt").exists():
+        _clone_llama_cpp(repo_url)
     if not (LLAMA_CPP_DIR / "CMakeLists.txt").exists():
         raise FileNotFoundError(
-            f"llama.cpp checkout missing at {LLAMA_CPP_DIR} after clone.\n"
+            f"llama.cpp checkout missing at {LLAMA_CPP_DIR} after automatic fetch.\n"
             "Ensure llama.cpp is available via git submodule or manual checkout."
         )
 
 
-def _clone_llama_cpp(repo_url: str, destination: Path) -> None:
-    destination = destination.resolve()
-    if destination.exists():
-        shutil.rmtree(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    _log(f"Cloning llama.cpp from {repo_url} into {destination} ...")
+def _read_submodule_url() -> str | None:
+    gitmodules = PROJECT_ROOT / ".gitmodules"
+    if not gitmodules.exists():
+        return None
+    for line in gitmodules.read_text(encoding="utf-8").splitlines():
+        parts = line.strip().split("=", 1)
+        if len(parts) == 2 and parts[0].strip() == "url":
+            return parts[1].strip()
+    return None
+
+
+def _clone_llama_cpp(repo_url: str) -> None:
+    if LLAMA_CPP_DIR.exists():
+        shutil.rmtree(LLAMA_CPP_DIR)
+    LLAMA_CPP_DIR.parent.mkdir(parents=True, exist_ok=True)
+    _log(f"Cloning llama.cpp from {repo_url} ...")
     _run(
-        ["git", "clone", "--depth", "1", "--recursive", repo_url, str(destination)],
-        cwd=destination.parent,
+        ["git", "clone", "--depth", "1", "--recursive", repo_url, str(LLAMA_CPP_DIR)],
+        cwd=LLAMA_CPP_DIR.parent,
     )
 
 
@@ -497,17 +467,15 @@ def _supports_kleidiai_backend() -> bool:
     return bool(features & _KLEIDIAI_FEATURE_TOKENS)
 
 
-_KLEIDIAI_FEATURE_TOKENS = frozenset(
-    {
-        "asimddp",
-        "dotprod",
-        "i8mm",
-        "matmulint8",
-        "sme",
-        "sve",
-        "sve2",
-    }
-)
+_KLEIDIAI_FEATURE_TOKENS = frozenset({
+    "asimddp",
+    "dotprod",
+    "i8mm",
+    "matmulint8",
+    "sme",
+    "sve",
+    "sve2",
+})
 
 
 _BACKEND_DETECTORS = (
@@ -554,59 +522,6 @@ def _read_bool_setting(
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _parse_force_rebuild(config_settings: dict[str, Any] | None) -> dict[str, bool]:
-    """
-    Interpret a force-rebuild request from config settings or environment.
-
-    Accepted values (comma/space separated): "all", "llama", "gen", "gen-helper", "helper".
-    A bare truthy flag ("1"/"true") is treated as "all".
-    """
-    raw = _read_setting(config_settings, "force-rebuild")
-    if raw is None:
-        for env_var in FORCE_REBUILD_ENV:
-            env_val = os.environ.get(env_var)
-            if env_val is not None:
-                raw = env_val
-                break
-
-    if raw is None:
-        return {"all": False, "llama": False, "gen_helper": False, "cache_bust": False}
-
-    tokens = str(raw).replace(",", " ").split()
-
-    def _has(token: str) -> bool:
-        lowered = {t.strip().lower() for t in tokens}
-        return token in lowered
-
-    truthy = _read_bool_setting({"llama-insight.force-rebuild": raw}, "force-rebuild")
-
-    all_flag = truthy or _has("all") or _has("both") or _has("full")
-    llama_flag = all_flag or _has("llama") or _has("llama.cpp") or _has("llama_cpp")
-    gen_flag = (
-        all_flag
-        or _has("gen")
-        or _has("gen-helper")
-        or _has("gen_helper")
-        or _has("helper")
-    )
-
-    cache_bust = all_flag or llama_flag or gen_flag
-
-    return {
-        "all": all_flag,
-        "llama": llama_flag,
-        "gen_helper": gen_flag,
-        "cache_bust": cache_bust,
-    }
-
-
-def _propagate_force_env(config_settings: dict[str, Any] | None) -> None:
-    """Bridge config_settings into an env var so downstream build steps see the flag."""
-    raw = _read_setting(config_settings, "force-rebuild")
-    if raw:
-        os.environ.setdefault(FORCE_REBUILD_ENV[0], str(raw))
-
-
 def _determine_jobs() -> int:
     env_value = os.environ.get("LLAMA_INSIGHT_JOBS") or os.environ.get("JOBS")
     if env_value:
@@ -633,7 +548,13 @@ def _write_build_metadata(
     backend: str, extra_flags: list[str], libs: list[str]
 ) -> None:
     PACKAGED_LIB_DIR.mkdir(parents=True, exist_ok=True)
-    payload = _fingerprint(backend, extra_flags, libs)
+    payload = {
+        "backend": backend,
+        "extra_flags": extra_flags,
+        "platform": sys.platform,
+        "machine": platform.machine(),
+        "libs": libs,
+    }
     BUILD_METADATA_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
@@ -642,122 +563,51 @@ def _read_build_metadata() -> dict[str, Any] | None:
         return None
     try:
         return json.loads(BUILD_METADATA_FILE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
+    except Exception:
         return None
 
 
-def _fingerprint(
-    backend: str, extra_flags: list[str], libs: list[str]
-) -> dict[str, Any]:
-    return {
-        "backend": backend,
-        "extra_flags": extra_flags,
-        "platform": sys.platform,
-        "machine": platform.machine(),
-        "libs": libs,
-    }
-
-
-def _cache_root() -> Path:
-    override = os.environ.get("LLAMA_INSIGHT_CACHE_DIR")
-    if override:
-        return Path(override).expanduser()
-    xdg_cache = os.environ.get("XDG_CACHE_HOME")
-    if xdg_cache:
-        return Path(xdg_cache).expanduser() / "llama_insight"
-    return Path.home() / ".cache" / "llama_insight"
-
-
-def _artifact_cache_dir() -> Path:
-    cache = _cache_root() / "artifacts"
-    cache.mkdir(parents=True, exist_ok=True)
-    return cache
-
-
-def _artifact_cache_key(backend: str, extra_flags: list[str]) -> str:
-    payload = json.dumps(
-        {
-            "backend": backend,
-            "extra_flags": extra_flags,
-            "platform": sys.platform,
-            "machine": platform.machine(),
-        },
-        sort_keys=True,
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
-
-
-def _cache_slot(backend: str, extra_flags: list[str]) -> Path:
-    return _artifact_cache_dir() / _artifact_cache_key(backend, extra_flags)
-
-
-def _maybe_restore_cached_artifacts(backend: str, extra_flags: list[str]) -> bool:
-    try:
-        slot = _cache_slot(backend, extra_flags)
-        libs_dir = slot / "libs"
-        metadata_src = slot / BUILD_METADATA_FILE.name
-        if not libs_dir.exists() or not metadata_src.exists():
-            return False
-        lib_candidates = sorted(p for p in libs_dir.iterdir() if p.is_file())
-        if not lib_candidates:
-            return False
-        if PACKAGED_LIB_DIR.exists():
-            shutil.rmtree(PACKAGED_LIB_DIR)
-        PACKAGED_LIB_DIR.mkdir(parents=True, exist_ok=True)
-        for candidate in lib_candidates:
-            shutil.copy2(candidate, PACKAGED_LIB_DIR / candidate.name)
-        shutil.copy2(metadata_src, BUILD_METADATA_FILE)
-        _log("Restored cached native artifacts; skipping rebuild if unchanged.")
-        return True
-    except Exception as err:
-        _log(f"Native artifact cache restore failed: {err}")
-        return False
-
-
-def _store_cached_artifacts(
-    backend: str, extra_flags: list[str], libs: list[str]
-) -> None:
-    try:
-        slot = _cache_slot(backend, extra_flags)
-        if slot.exists():
-            shutil.rmtree(slot)
-        libs_dir = slot / "libs"
-        libs_dir.mkdir(parents=True, exist_ok=True)
-        for lib_name in libs:
-            source = PACKAGED_LIB_DIR / lib_name
-            if source.exists():
-                shutil.copy2(source, libs_dir / lib_name)
-        if BUILD_METADATA_FILE.exists():
-            shutil.copy2(BUILD_METADATA_FILE, slot / BUILD_METADATA_FILE.name)
-        _log(f"Cached native artifacts for backend '{backend}'.")
-    except Exception as err:
-        _log(f"Unable to write native artifact cache: {err}")
-
-
-def _resolve_existing_artifacts(
-    raise_errors: bool = False,
-) -> tuple[dict[str, Any], list[str]] | None:
-    def _fail(message: str) -> None | tuple[dict[str, Any], list[str]]:
-        if raise_errors:
-            raise FileNotFoundError(message)
-        return None
-
+def _assert_packaged_libs() -> None:
     if not PACKAGED_LIB_DIR.exists():
-        return _fail(f"Packaged library directory missing: {PACKAGED_LIB_DIR}")
-    metadata = _read_build_metadata()
-    if not metadata:
-        return _fail("Build metadata missing; native libraries were not generated.")
-    libs = metadata.get("libs") or []
+        raise FileNotFoundError(
+            f"Packaged library directory missing: {PACKAGED_LIB_DIR}"
+        )
+    libs = sorted(p.name for p in PACKAGED_LIB_DIR.glob(f"*.{LIB_EXT}"))
     if not libs:
-        return _fail("Build metadata missing library listing; rebuild required.")
-    missing = [lib for lib in libs if not (PACKAGED_LIB_DIR / lib).exists()]
-    if missing:
-        return _fail("Missing required libraries after build: " + ", ".join(missing))
-    return metadata, libs
+        raise FileNotFoundError(f"No packaged libraries found in {PACKAGED_LIB_DIR}")
+    required_candidates = [
+        f"libggml-base.{LIB_EXT}",
+        f"ggml-base.{LIB_EXT}",
+    ]
+    if not any(candidate in libs for candidate in required_candidates):
+        raise FileNotFoundError(
+            f"Required library not found (expected ggml-base): {PACKAGED_LIB_DIR}"
+        )
 
 
-def _ensure_required_libs_present() -> None:
-    _resolve_existing_artifacts(raise_errors=True)
+def _reuse_built_artifacts(backend: str, extra_flags: list[str]) -> bool:
+    meta = _read_build_metadata()
+    if not meta:
+        return False
+    if meta.get("backend") != backend:
+        return False
+    if meta.get("extra_flags") != extra_flags:
+        return False
+    if meta.get("platform") != sys.platform or meta.get("machine") != platform.machine():
+        return False
+    try:
+        _assert_packaged_libs()
+        _log("Reusing packaged libraries from previous build.")
+        return True
+    except FileNotFoundError:
+        pass
+
+    libs = _discover_built_libraries()
+    if libs:
+        _log("Found existing build outputs; packaging without rebuild.")
+        _package_built_libraries()
+        return True
+    return False
 
 
 def _log(message: str) -> None:

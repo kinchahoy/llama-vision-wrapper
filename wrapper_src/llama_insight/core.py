@@ -3,20 +3,85 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
+import zipfile
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import cppyy
 
 PACKAGE_DIR = Path(__file__).resolve().parent
-HEADERS_ROOT = PACKAGE_DIR / "_headers"
+_WHEEL_EXTRACT_ROOT = PACKAGE_DIR / ".deps" / "wheel-assets"
+
+
+def _find_local_wheel() -> Path | None:
+    """Locate a locally built wheel to reuse packaged headers/libs."""
+    env_wheel = os.environ.get("LLAMA_INSIGHT_WHEEL")
+    if env_wheel:
+        candidate = Path(env_wheel).expanduser()
+        if candidate.exists():
+            return candidate
+
+    for candidate in PACKAGE_DIR.parents:
+        dist_dir = candidate / "dist"
+        if not dist_dir.exists():
+            continue
+        wheels = sorted(
+            dist_dir.glob("llama_insight-*.whl"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if wheels:
+            return wheels[0]
+    return None
+
+
+def _extract_wheel_assets(wheel_path: Path) -> tuple[Path, Path] | None:
+    """Extract headers/libs from a built wheel into a local cache."""
+    target_root = _WHEEL_EXTRACT_ROOT / wheel_path.stem
+    libs_dir = target_root / "llama_insight" / "libs"
+    headers_dir = target_root / "llama_insight" / "_headers"
+
+    if libs_dir.exists() and headers_dir.exists():
+        return libs_dir, headers_dir
+
+    if target_root.exists():
+        shutil.rmtree(target_root)
+    target_root.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(wheel_path) as zf:
+        members = [
+            name
+            for name in zf.namelist()
+            if name.startswith("llama_insight/libs/")
+            or name.startswith("llama_insight/_headers/")
+        ]
+        zf.extractall(target_root, members)
+
+    if libs_dir.exists() and headers_dir.exists():
+        return libs_dir, headers_dir
+    return None
+
+
+def _resolve_packaged_assets() -> tuple[Path | None, Path | None]:
+    """Find staged headers/libs from either the editable tree or a built wheel."""
+    editable_libs = PACKAGE_DIR / "libs"
+    editable_headers = PACKAGE_DIR / "_headers"
+    if editable_libs.exists() and editable_headers.exists():
+        return editable_libs, editable_headers
+
+    wheel_path = _find_local_wheel()
+    if wheel_path:
+        extracted = _extract_wheel_assets(wheel_path)
+        if extracted:
+            return extracted
+
+    return None, None
 
 
 def _resolve_project_root() -> Path:
-    env_root = os.environ.get("LLAMA_INSIGHT_ROOT")
-    if env_root:
-        return Path(env_root).resolve()
-
     current = Path(__file__).resolve()
     for candidate in current.parents:
         if (candidate / "llama.cpp").exists():
@@ -29,17 +94,93 @@ def _resolve_project_root() -> Path:
     return current.parents[1]
 
 
-BASE_DIR = _resolve_project_root()
-LLAMA_CPP_DIR = BASE_DIR / "llama.cpp"
+@dataclass(frozen=True)
+class RuntimePaths:
+    base_dir: Path
+    llama_cpp_dir: Path
+    libs_dir: Path
+    helper_lib_dir: Path
+    headers_root: Path
+    include_dirs: list[Path]
+    header_paths: dict[str, Path]
 
-PACKAGED_LIB_DIR = PACKAGE_DIR / "libs"
 
-if PACKAGED_LIB_DIR.exists():
-    LLAMA_CPP_LIBS_DIR = PACKAGED_LIB_DIR
-    HELPER_LIB_DIR = PACKAGED_LIB_DIR
-else:
-    LLAMA_CPP_LIBS_DIR = LLAMA_CPP_DIR / "build" / "bin"
-    HELPER_LIB_DIR = BASE_DIR / "wrapper_src" / "gen-helper" / "build"
+def _build_runtime_paths(
+    overrides: dict[str, str | Path] | None = None
+) -> RuntimePaths:
+    cfg = overrides or {}
+    base_dir = Path(cfg.get("root", _resolve_project_root()))
+    llama_cpp_dir = Path(cfg.get("llama_cpp_dir", base_dir / "llama.cpp"))
+
+    packaged_libs, packaged_headers = _resolve_packaged_assets()
+    headers_root = Path(
+        cfg.get("headers_root", packaged_headers or PACKAGE_DIR / "_headers")
+    )
+    libs_dir = Path(cfg.get("libs_dir", packaged_libs or llama_cpp_dir / "build" / "bin"))
+    helper_lib_dir = Path(
+        cfg.get(
+            "helper_lib_dir",
+            libs_dir if packaged_libs else base_dir / "wrapper_src" / "gen-helper" / "build",
+        )
+    )
+
+    if headers_root.exists():
+        include_dirs = [
+            headers_root / "llama.cpp" / "include",
+            headers_root / "llama.cpp" / "ggml" / "include",
+            headers_root / "llama.cpp" / "common",
+            headers_root / "llama.cpp" / "tools" / "mtmd",
+            headers_root,
+        ]
+        header_paths = {
+            "llama.h": headers_root / "llama.cpp" / "include" / "llama.h",
+            "common.h": headers_root / "llama.cpp" / "common" / "common.h",
+            "sampling.h": headers_root / "llama.cpp" / "common" / "sampling.h",
+            "mtmd.h": headers_root / "llama.cpp" / "tools" / "mtmd" / "mtmd.h",
+            "mtmd-helper.h": headers_root
+            / "llama.cpp"
+            / "tools"
+            / "mtmd"
+            / "mtmd-helper.h",
+            "generation_helper.h": headers_root / "generation_helper.h",
+        }
+    else:
+        include_dirs = [
+            llama_cpp_dir / "include",
+            llama_cpp_dir / "ggml" / "include",
+            llama_cpp_dir / "common",
+            llama_cpp_dir / "tools" / "mtmd",
+            base_dir / "wrapper_src" / "gen-helper",
+        ]
+        header_paths = {
+            "llama.h": llama_cpp_dir / "include" / "llama.h",
+            "common.h": llama_cpp_dir / "common" / "common.h",
+            "sampling.h": llama_cpp_dir / "common" / "sampling.h",
+            "mtmd.h": llama_cpp_dir / "tools" / "mtmd" / "mtmd.h",
+            "mtmd-helper.h": llama_cpp_dir / "tools" / "mtmd" / "mtmd-helper.h",
+            "generation_helper.h": base_dir
+            / "wrapper_src"
+            / "gen-helper"
+            / "generation_helper.h",
+        }
+
+    return RuntimePaths(
+        base_dir=base_dir,
+        llama_cpp_dir=llama_cpp_dir,
+        libs_dir=libs_dir,
+        helper_lib_dir=helper_lib_dir,
+        headers_root=headers_root,
+        include_dirs=include_dirs,
+        header_paths=header_paths,
+    )
+
+
+PATHS = _build_runtime_paths()
+BASE_DIR = PATHS.base_dir
+LLAMA_CPP_DIR = PATHS.llama_cpp_dir
+LLAMA_CPP_LIBS_DIR = PATHS.libs_dir
+HELPER_LIB_DIR = PATHS.helper_lib_dir
+HEADERS_ROOT = PATHS.headers_root
 
 if sys.platform == "darwin":
     LIB_EXT = "dylib"
@@ -58,44 +199,11 @@ def _shared_lib_name(base: str) -> str:
 _GENERATION_HELPER_LIB = _shared_lib_name("generation_helper")
 
 if HEADERS_ROOT.exists():
-    INCLUDE_DIRS = [
-        HEADERS_ROOT / "llama.cpp" / "include",
-        HEADERS_ROOT / "llama.cpp" / "ggml" / "include",
-        HEADERS_ROOT / "llama.cpp" / "common",
-        HEADERS_ROOT / "llama.cpp" / "tools" / "mtmd",
-        HEADERS_ROOT,
-    ]
-    HEADER_PATHS = {
-        "llama.h": HEADERS_ROOT / "llama.cpp" / "include" / "llama.h",
-        "common.h": HEADERS_ROOT / "llama.cpp" / "common" / "common.h",
-        "sampling.h": HEADERS_ROOT / "llama.cpp" / "common" / "sampling.h",
-        "mtmd.h": HEADERS_ROOT / "llama.cpp" / "tools" / "mtmd" / "mtmd.h",
-        "mtmd-helper.h": HEADERS_ROOT
-        / "llama.cpp"
-        / "tools"
-        / "mtmd"
-        / "mtmd-helper.h",
-        "generation_helper.h": HEADERS_ROOT / "generation_helper.h",
-    }
+    INCLUDE_DIRS = PATHS.include_dirs
+    HEADER_PATHS = PATHS.header_paths
 else:
-    INCLUDE_DIRS = [
-        LLAMA_CPP_DIR / "include",
-        LLAMA_CPP_DIR / "ggml" / "include",
-        LLAMA_CPP_DIR / "common",
-        LLAMA_CPP_DIR / "tools" / "mtmd",
-        BASE_DIR / "wrapper_src" / "gen-helper",
-    ]
-    HEADER_PATHS = {
-        "llama.h": LLAMA_CPP_DIR / "include" / "llama.h",
-        "common.h": LLAMA_CPP_DIR / "common" / "common.h",
-        "sampling.h": LLAMA_CPP_DIR / "common" / "sampling.h",
-        "mtmd.h": LLAMA_CPP_DIR / "tools" / "mtmd" / "mtmd.h",
-        "mtmd-helper.h": LLAMA_CPP_DIR / "tools" / "mtmd" / "mtmd-helper.h",
-        "generation_helper.h": BASE_DIR
-        / "wrapper_src"
-        / "gen-helper"
-        / "generation_helper.h",
-    }
+    INCLUDE_DIRS = PATHS.include_dirs
+    HEADER_PATHS = PATHS.header_paths
 
 _initialized = False
 gbl = None
@@ -178,6 +286,18 @@ def initialize():
     gbl = cppyy.gbl
     _initialized = True
     return gbl
+
+
+@dataclass
+class LlamaSession:
+    gbl: Any
+    loader: "ModelLoader"
+    processor: "MultimodalProcessor"
+
+
+def create_session() -> LlamaSession:
+    gbl = initialize()
+    return LlamaSession(gbl=gbl, loader=ModelLoader(gbl), processor=MultimodalProcessor(gbl))
 
 
 class LlamaBackend:

@@ -31,7 +31,6 @@ source-include = [
     "wrapper_src/llama_insight/_headers/**",
 ]
 source-exclude = [
-    "/llama.cpp/**",
     "/build/**",
     "/dist/**",
     "/test-images/**",
