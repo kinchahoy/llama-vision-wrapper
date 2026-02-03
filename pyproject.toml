@@ -20,6 +20,7 @@ dependencies = [
     "typer",
     "sh",
     "numpy>=2.3.5",
+    "opencv-python>=4.11.0.86",
 ]
 
 [tool.uv.build-backend]
@@ -37,3 +38,8 @@ source-exclude = [
     "/usecases/**",
     "/old/**",
 ]
+
+# Force CPU backend (disable KleidiAI auto-detection)
+[tool.uv.build-backend.config-settings]
+"llama-insight.backend" = "cpu"
+"llama-insight.extra-flags" = "-DCMAKE_POSITION_INDEPENDENT_CODE=ON"
