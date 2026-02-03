@@ -84,3 +84,4 @@ Build metadata is written to:
 
 - Use `llama-insight.backend=custom` when you want full control via `extra-flags`.
 - For device-specific wheels in CI, always set `llama-insight.backend` explicitly.
+- On Linux (including AArch64/RK3588), the build enables `CMAKE_POSITION_INDEPENDENT_CODE=ON` so vendored static libs can be linked into shared objects.

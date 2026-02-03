@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "uv_build>=0.9.8,<0.10.0",
+    "uv_build>=0.9.8",
     "scikit-build-core>=0.11",
     "cmake>=3.26",
     "ninja>=1.11",
@@ -12,7 +12,6 @@ backend-path = ["build-tools"]
 name = "llama_insight"
 version = "0.1.0"
 description = "High-level llama.cpp multimodal bindings powered by cppyy."
-readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "cppyy",

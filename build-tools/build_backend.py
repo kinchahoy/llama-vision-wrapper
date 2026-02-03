@@ -38,6 +38,7 @@ GEN_BUILD_DIR = GEN_HELPER_DIR / "build"
 
 PACKAGED_LIB_DIR = PACKAGE_DIR / "libs"
 BUILD_METADATA_FILE = PACKAGED_LIB_DIR / "build-metadata.json"
+BUILD_RECIPE_VERSION = 2
 
 LIB_EXT = (
     "dll"
@@ -141,7 +142,7 @@ def _ensure_native_artifacts(config_settings: dict[str, Any] | None) -> None:
         _log("Dry-run enabled: llama.cpp compilation will be skipped.")
     _log("Building llama.cpp + helper shared libraries...")
     _build_llama_cpp(backend, extra_flags, jobs, skip_compile=dry_run)
-    _build_generation_helper(jobs)
+    _build_generation_helper(backend, jobs)
     libs = _package_built_libraries()
     _write_build_metadata(backend, extra_flags, libs)
     _assert_packaged_libs()
@@ -154,12 +155,22 @@ def _build_llama_cpp(
     cmake = _find_cmake()
     _ensure_cmake_cache_matches(LLAMA_BUILD_DIR, LLAMA_CPP_DIR)
 
+    if backend == "cuda" and any(flag.strip().upper() == "-DGGML_STATIC=ON" for flag in extra_flags):
+        _log(
+            "Note: -DGGML_STATIC=ON requested. Linking CUDA static runtime into shared "
+            "libraries can trigger PIC/relocation link errors on some Linux toolchains "
+            "(including WSL). Consider removing -DGGML_STATIC=ON if you hit linker errors."
+        )
+
+    pic_flags = _cmake_pic_flags(backend)
+
     configure_cmd = [
         cmake,
         "-S",
         str(LLAMA_CPP_DIR),
         "-B",
         str(LLAMA_BUILD_DIR),
+        *pic_flags,
         "-DBUILD_SHARED_LIBS=ON",
         "-DCMAKE_BUILD_TYPE=Release",
         "-DLLAMA_BUILD_TESTS=OFF",
@@ -203,14 +214,23 @@ def _ensure_cmake_cache_matches(build_dir: Path, source_dir: Path) -> None:
             return
 
 
-def _build_generation_helper(jobs: int) -> None:
+def _build_generation_helper(backend: str, jobs: int) -> None:
     cmake = _find_cmake()
+    pic_flags = _cmake_pic_flags(backend)
+    find_suffix_flags: list[str] = []
+    # gen-helper uses find_library() and can accidentally pick static archives (e.g. libllama.a)
+    # if both .so and .a exist. For our wheel build we always want the shared libs produced by
+    # the llama.cpp build tree.
+    if LIB_EXT == "so":
+        find_suffix_flags = ["-DCMAKE_FIND_LIBRARY_SUFFIXES=.so;.a"]
     configure_cmd = [
         cmake,
         "-S",
         str(GEN_HELPER_DIR),
         "-B",
         str(GEN_BUILD_DIR),
+        *pic_flags,
+        *find_suffix_flags,
         f"-DLLAMA_CPP_SOURCE_DIR={LLAMA_CPP_DIR}",
         f"-DLLAMA_CPP_BUILD_DIR={LLAMA_BUILD_DIR}",
     ]
@@ -607,6 +627,7 @@ def _write_build_metadata(
 ) -> None:
     PACKAGED_LIB_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
+        "recipe_version": BUILD_RECIPE_VERSION,
         "backend": backend,
         "extra_flags": extra_flags,
         "platform": sys.platform,
@@ -656,6 +677,8 @@ def _reuse_built_artifacts(backend: str, extra_flags: list[str]) -> bool:
     meta = _read_build_metadata()
     if not meta:
         return False
+    if meta.get("recipe_version") != BUILD_RECIPE_VERSION:
+        return False
     if meta.get("backend") != backend:
         return False
     if meta.get("extra_flags") != extra_flags:
@@ -703,3 +726,26 @@ def _log_backend_summary(backend: str, source: str) -> None:
         f"Backend selected: {backend} (source: {source}). "
         f"Override with LLAMA_INSIGHT_BACKEND=<{selectors}>."
     )
+
+
+def _cmake_pic_flags(backend: str) -> list[str]:
+    """Return CMake flags that enforce PIC where needed.
+
+    All platforms:
+      - Prefer PIC for targets where it matters (typically static archives that may be linked
+        into shared libraries). On platforms where PIC is not applicable (e.g. MSVC/Windows),
+        this is effectively a no-op.
+
+    CUDA (notably on WSL/Linux):
+      - Some toolchains fail to propagate PIC all the way through nvcc host compilation.
+        Setting CUDA flags explicitly avoids "recompile with -fPIC" style link errors.
+    """
+    flags = ["-DCMAKE_POSITION_INDEPENDENT_CODE=ON"]
+    if sys.platform.startswith("linux") and backend == "cuda":
+        flags.extend(
+            [
+                "-DCMAKE_CUDA_FLAGS=-Xcompiler=-fPIC",
+                "-DCMAKE_CUDA_FLAGS_RELEASE=-Xcompiler=-fPIC",
+            ]
+        )
+    return flags
