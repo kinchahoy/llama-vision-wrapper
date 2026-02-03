@@ -1,0 +1,1 @@
+ hyperfine --runs 4 "taskset -c 4-7 uv run cppyy-src/cppyy-mtmd.py --repo-id unsloth/Qwen3-VL-2B-Instruct-GGUF -m Qwen3-VL-2B-Instruct-Q4{quanttype}.gguf --mmproj mmproj-{mmtype}.gguf" -p "sleep 5" -L quanttype _0,_1,_K_M -L mmtype F32,F16,BF16 --export-markdown Qwen3-2B-4B-scan-rk3588-2025-11.md --show-output -i

@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import shutil
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -27,12 +28,10 @@ from uv_build import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-WRAPPER_SRC_DIR = PROJECT_ROOT / "wrapper_src"
+WRAPPER_SRC_DIR = PROJECT_ROOT / "src"
 PACKAGE_DIR = WRAPPER_SRC_DIR / "llama_insight"
 LLAMA_CPP_DIR = PROJECT_ROOT / "llama.cpp"
 GEN_HELPER_DIR = WRAPPER_SRC_DIR / "gen-helper"
-LLAMA_CPP_REPO = "https://github.com/ggerganov/llama.cpp.git"
-
 # Keep build outputs in the default llama.cpp tree so runtime paths match.
 LLAMA_BUILD_DIR = LLAMA_CPP_DIR / "build"
 GEN_BUILD_DIR = GEN_HELPER_DIR / "build"
@@ -59,7 +58,6 @@ BACKEND_FLAGS = {
 }
 
 DEFAULT_BACKEND = "cpu"
-DEFAULT_LLAMA_REPO = "https://github.com/ggerganov/llama.cpp.git"
 
 
 def get_requires_for_build_wheel(
@@ -154,6 +152,7 @@ def _build_llama_cpp(
 ) -> None:
     _apply_patch()
     cmake = _find_cmake()
+    _ensure_cmake_cache_matches(LLAMA_BUILD_DIR, LLAMA_CPP_DIR)
 
     configure_cmd = [
         cmake,
@@ -181,6 +180,27 @@ def _build_llama_cpp(
         [cmake, "--build", str(LLAMA_BUILD_DIR), "--parallel", str(jobs)],
         cwd=PROJECT_ROOT,
     )
+
+
+def _ensure_cmake_cache_matches(build_dir: Path, source_dir: Path) -> None:
+    cache = build_dir / "CMakeCache.txt"
+    if not cache.exists():
+        return
+    try:
+        content = cache.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return
+    marker = "CMAKE_HOME_DIRECTORY:INTERNAL="
+    for line in content.splitlines():
+        if line.startswith(marker):
+            cached = Path(line[len(marker) :].strip())
+            if cached != source_dir:
+                _log(
+                    "CMake cache points at a different source directory; "
+                    f"removing stale build dir: {build_dir}"
+                )
+                shutil.rmtree(build_dir, ignore_errors=True)
+            return
 
 
 def _build_generation_helper(jobs: int) -> None:
@@ -293,9 +313,7 @@ def _ensure_llama_cpp_sources_or_fail() -> None:
                 cwd=PROJECT_ROOT,
             )
         except Exception:
-            _log("Submodule init failed; falling back to direct clone.")
-    if not (LLAMA_CPP_DIR / "CMakeLists.txt").exists():
-        _clone_llama_cpp(repo_url)
+            _log("Submodule init failed")
     if not (LLAMA_CPP_DIR / "CMakeLists.txt").exists():
         raise FileNotFoundError(
             f"llama.cpp checkout missing at {LLAMA_CPP_DIR} after automatic fetch.\n"
@@ -314,29 +332,64 @@ def _read_submodule_url() -> str | None:
     return None
 
 
-def _clone_llama_cpp(repo_url: str) -> None:
-    if LLAMA_CPP_DIR.exists():
-        shutil.rmtree(LLAMA_CPP_DIR)
-    LLAMA_CPP_DIR.parent.mkdir(parents=True, exist_ok=True)
-    _log(f"Cloning llama.cpp from {repo_url} ...")
-    _run(
-        ["git", "clone", "--depth", "1", "--recursive", repo_url, str(LLAMA_CPP_DIR)],
-        cwd=LLAMA_CPP_DIR.parent,
-    )
-
-
 def _stage_headers() -> None:
-    stage_script = PROJECT_ROOT / "build-tools" / "stage_headers.py"
-    if not stage_script.exists():
-        _log("Header staging script missing; skipping header sync.")
-        return
-    python = sys.executable or shutil.which("python3") or shutil.which("python")
-    if not python:
-        raise RuntimeError(
-            "Unable to locate a Python interpreter to run stage_headers.py."
-        )
+    llama_cpp_dir = LLAMA_CPP_DIR
+    package_dir = PACKAGE_DIR
+    headers_root = package_dir / "_headers"
+    llama_headers_root = headers_root / "llama.cpp"
+
+    include_dirs = [
+        llama_cpp_dir / "include",
+        llama_cpp_dir / "ggml" / "include",
+        llama_cpp_dir / "common",
+        llama_cpp_dir / "tools" / "mtmd",
+    ]
+
+    if not llama_cpp_dir.exists():
+        raise FileNotFoundError(f"llama.cpp checkout not found at {llama_cpp_dir}")
+
     _log("Staging llama.cpp headers into package data...")
-    _run([python, str(stage_script)], cwd=PROJECT_ROOT)
+    if headers_root.exists():
+        shutil.rmtree(headers_root)
+    llama_headers_root.mkdir(parents=True, exist_ok=True)
+
+    header_suffixes = {
+        ".h",
+        ".hpp",
+        ".hh",
+        ".hxx",
+        ".inc",
+        ".inl",
+        ".metal",
+        ".cuh",
+    }
+
+    for src in include_dirs:
+        if not src.exists():
+            raise FileNotFoundError(f"Missing include directory: {src}")
+        rel = src.relative_to(llama_cpp_dir)
+        dst = llama_headers_root / rel
+        dst.mkdir(parents=True, exist_ok=True)
+        copied = 0
+        for path in src.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() not in header_suffixes:
+                continue
+            target = dst / path.relative_to(src)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+            copied += 1
+        _log(f"Staged {copied} headers from {src} -> {dst}")
+
+    gen_helper_header = WRAPPER_SRC_DIR / "gen-helper" / "generation_helper.h"
+    if gen_helper_header.exists():
+        dst = headers_root / "generation_helper.h"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(gen_helper_header, dst)
+        _log(f"Staged helper header -> {dst}")
+    else:
+        _log(f"Helper header missing: {gen_helper_header}")
 
 
 def _find_cmake() -> str:
@@ -352,18 +405,23 @@ def _find_cmake() -> str:
 
 
 def _select_backend(config_settings: dict[str, Any] | None) -> str:
-    env_b = os.environ.get("LLAMA_INSIGHT_BACKEND")
-    if env_b:
-        backend = env_b.lower()
-        source = "env"
+    config_backend = _read_setting(config_settings, "backend")
+    if config_backend:
+        backend = str(config_backend).lower()
+        source = "config"
     else:
-        auto = _auto_detect_backend()
-        if auto:
-            backend = auto.lower()
-            source = "autodetect"
+        env_b = os.environ.get("LLAMA_INSIGHT_BACKEND")
+        if env_b:
+            backend = env_b.lower()
+            source = "env"
         else:
-            backend = DEFAULT_BACKEND
-            source = "default"
+            auto = _auto_detect_backend()
+            if auto:
+                backend = auto.lower()
+                source = "autodetect"
+            else:
+                backend = DEFAULT_BACKEND
+                source = "default"
     if backend not in BACKEND_FLAGS:
         valid = ", ".join(sorted(BACKEND_FLAGS))
         raise ValueError(f"Unsupported backend '{backend}'. Expected one of: {valid}")
@@ -491,7 +549,7 @@ def _collect_extra_flags(config_settings: dict[str, Any] | None) -> list[str]:
     flag_string = _read_setting(config_settings, "extra-flags")
     env_flags = os.environ.get("LLAMA_INSIGHT_EXTRA_CMAKE_FLAGS")
     merged = " ".join(filter(None, [flag_string, env_flags])).strip()
-    return merged.split() if merged else []
+    return shlex.split(merged) if merged else []
 
 
 def _read_setting(config_settings: dict[str, Any] | None, option: str) -> str | None:
@@ -573,12 +631,21 @@ def _assert_packaged_libs() -> None:
             f"Packaged library directory missing: {PACKAGED_LIB_DIR}"
         )
     libs = sorted(p.name for p in PACKAGED_LIB_DIR.glob(f"*.{LIB_EXT}"))
+    if LIB_EXT == "so":
+        libs.extend(sorted(p.name for p in PACKAGED_LIB_DIR.glob("*.so.*")))
     if not libs:
         raise FileNotFoundError(f"No packaged libraries found in {PACKAGED_LIB_DIR}")
     required_candidates = [
         f"libggml-base.{LIB_EXT}",
         f"ggml-base.{LIB_EXT}",
     ]
+    if LIB_EXT == "so":
+        required_candidates = [
+            "libggml-base.so",
+            "ggml-base.so",
+        ]
+        if any(name.startswith(tuple(required_candidates)) for name in libs):
+            return
     if not any(candidate in libs for candidate in required_candidates):
         raise FileNotFoundError(
             f"Required library not found (expected ggml-base): {PACKAGED_LIB_DIR}"
@@ -593,7 +660,10 @@ def _reuse_built_artifacts(backend: str, extra_flags: list[str]) -> bool:
         return False
     if meta.get("extra_flags") != extra_flags:
         return False
-    if meta.get("platform") != sys.platform or meta.get("machine") != platform.machine():
+    if (
+        meta.get("platform") != sys.platform
+        or meta.get("machine") != platform.machine()
+    ):
         return False
     try:
         _assert_packaged_libs()

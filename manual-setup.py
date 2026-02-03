@@ -171,7 +171,8 @@ else:
         # ── 6. optional examples ─────────────────────────────────────────────
         banner("Run example (optional)")
         ex = (
-            typer.prompt(
+            typer
+            .prompt(
                 "Which example? (benchmark / batched / cython / skip)",
                 default="skip",
             )

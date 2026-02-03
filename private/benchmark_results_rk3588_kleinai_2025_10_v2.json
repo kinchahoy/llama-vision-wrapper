@@ -1,0 +1,31 @@
+{
+  "version": "cppyy-refactored",
+  "timestamp": "2025-11-02T23:38:45.359421",
+  "config": {
+    "repo_id": "unsloth/Qwen3-VL-8B-Instruct-GGUF",
+    "model": "Qwen3-VL-8B-Instruct-Q4_0.gguf",
+    "mmproj": "mmproj-F16.gguf",
+    "n_ctx": 2048,
+    "n_batch": 512,
+    "n_threads": 8,
+    "n_gpu_layers": 0,
+    "verbose_cpp": false,
+    "temp": 0.8,
+    "top_k": 40,
+    "top_p": 0.95,
+    "repeat_penalty": 1.1,
+    "max_new_tokens": 256,
+    "benchmark": false,
+    "flash_attn": false
+  },
+  "timings": {},
+  "model_info": {
+    "vocab_size": 151936,
+    "context_size": 2048,
+    "embedding_size": 16384
+  },
+  "total_time": 2138.935966491699,
+  "total_tokens_generated": 149,
+  "final_output": " This is a bright, outdoor photograph of a young Black woman on a construction site.\n\nShe is the central focus, smiling as she looks down at a tablet computer she's holding with both hands. She is wearing standard safety gear: a white hard hat and an orange high-visibility vest over a grey knit top. A watch is visible on her left wrist.\n\nThe background features a large, modern building under active construction, covered in green scaffolding. A crane can be seen rising above the structure against a blue sky with scattered white clouds.\n\nThe image conveys a sense of professionalism, progress, and competence, highlighting a woman in a skilled role within the construction industry. The lighting is natural and strong, suggesting it was taken during the day.",
+  "token_generation_rate": 3.1627415596106974
+}

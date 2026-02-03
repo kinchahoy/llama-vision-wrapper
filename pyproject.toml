@@ -23,13 +23,17 @@ dependencies = [
     "opencv-python>=4.11.0.86",
 ]
 
-[tool.uv.build-backend]
-module-root = "wrapper_src"
+[tool.scikit-build]
+# Direct scikit-build-core to find the package inside wrapper_src
+packages = ["src/llama_insight"]
+
+[tool.uv-build]
+module-root = "src"
 source-include = [
     "build-tools/**",
-    "wrapper_src/gen-helper/**",
+    "src/gen-helper/**",
     "patch_llama_common_for_dynamic.patch",
-    "wrapper_src/llama_insight/_headers/**",
+    "src/llama_insight/_headers/**",
 ]
 source-exclude = [
     "/build/**",
@@ -38,8 +42,9 @@ source-exclude = [
     "/usecases/**",
     "/old/**",
 ]
-
-# Force CPU backend (disable KleidiAI auto-detection)
-[tool.uv.build-backend.config-settings]
-"llama-insight.backend" = "cpu"
-"llama-insight.extra-flags" = "-DCMAKE_POSITION_INDEPENDENT_CODE=ON"
+#
+# Build config examples (pass via `uv build --config-setting`):
+#   llama-insight.backend=<cpu|cuda|metal|vulkan|hip|kleidiai|custom>
+#   llama-insight.extra-flags="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS"
+#   llama-insight.skip-native-build=true
+#   llama-insight.dry-run=true

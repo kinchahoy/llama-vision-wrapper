@@ -5,8 +5,8 @@ Notes for agents
 - Repo layout quick reference:
   - `old/` - Contains old and out of date code. Never read, edit or update this code unless explicitly directed.
   - `usecases/` – runnable demos such as `infer_from_encoded.py` (media embedding cache demo).
-  - `wrapper_src/llama_insight/` – Python wrapper/loading logic, staged headers for `cppyy`, session helpers.
-  - `wrapper_src/gen-helper/` – C++ helper (`generation_helper.cpp/.h`) providing generation loop and media embedding save/load; built as a shared library.
+  - `src/llama_insight/` – Python wrapper/loading logic, staged headers for `cppyy`, session helpers.
+  - `src/gen-helper/` – C++ helper (`generation_helper.cpp/.h`) providing generation loop and media embedding save/load; built as a shared library.
   - `llama.cpp/` – upstream submodule; build shared libs into `llama.cpp/build/bin/`.
   - `build-tools/` – packaging/build helpers used by `uv build` to patch/build bundle artifacts.
     - `stage_headers.py` ensures headers are packaged correctly into the final python wheel
