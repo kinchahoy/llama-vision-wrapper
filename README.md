@@ -5,7 +5,8 @@ README
 This project builds a device-specific wheel that bundles llama.cpp shared libraries and the generation helper. Builds are driven by uv and the custom build backend in build-tools/build_backend.py.
 
 Quick Start
-uv build
+
+```uv build```
 
 
 This will:
