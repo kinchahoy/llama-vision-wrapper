@@ -53,7 +53,8 @@ BACKEND_FLAGS = {
     "metal": ["-DGGML_METAL=ON"],
     "vulkan": ["-DGGML_VULKAN=ON"],
     "hip": ["-DGGML_HIP=ON"],
-    "kleidiai": ["-DGGML_CPU_KLEIDIAI=ON"],
+#    "kleidiai": ["-DGGML_CPU_KLEIDIAI=ON"], #Kleidiai implementation is bugging
+    "kleidiai": [],
     "cpu": [],
     "custom": [],
 }
