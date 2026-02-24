@@ -47,3 +47,10 @@ source-exclude = [
 #   llama-insight.extra-flags="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS"
 #   llama-insight.skip-native-build=true
 #   llama-insight.dry-run=true
+
+[tool.uv]
+# cppyy-backend and cpycppyy pin cppyy-cling==6.30.0 in their build-system.requires.
+# 6.30.0 fails to compile under Clang 22+ on ARM64 (C++20 enum constant expression errors).
+# Bypassing build isolation makes them build against the already-installed cppyy-cling==6.32.8.
+# On a fresh install, run scripts/bootstrap-arm.sh first to pre-build cppyy-cling.
+no-build-isolation-package = ["cppyy-backend", "cpycppyy"]

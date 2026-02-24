@@ -1,67 +1,66 @@
-README
-
 # llama-vision-wrapper
 
-This project builds a device-specific wheel that bundles llama.cpp shared libraries and the generation helper. Builds are driven by uv and the custom build backend in build-tools/build_backend.py.
+High-level llama.cpp multimodal bindings powered by cppyy. Builds a device-specific wheel that bundles llama.cpp shared libraries and the generation helper.
 
-Quick Start
+## Quick Start
 
-```uv build```
+```bash
+uv build
+uv sync
+uv run usecases/generate_simple.py
+```
 
+### ARM64 Linux (RK3588 / OrangePi 5 Pro)
+
+`cppyy-cling` has no pre-built aarch64 wheel and must be compiled from source (1–3 hours on first run). If the uv cache already has a built wheel, plain `uv sync` works. On a fully cold machine (no cache), run the bootstrap first to be safe:
+
+```bash
+./scripts/bootstrap-arm.sh  # pre-builds cppyy-cling; skip if uv cache is warm
+uv sync
+```
+
+After the first successful sync, `uv sync` and `uv run` work normally.
+
+---
+
+## Building the wheel
+
+```bash
+uv build
+```
 
 This will:
+- Ensure llama.cpp sources exist (submodule or manual checkout)
+- Apply `patch_llama_common_for_dynamic.patch`
+- Stage headers into `src/llama_insight/_headers/`
+- Build llama.cpp + gen-helper shared libraries
+- Package everything into `src/llama_insight/libs/`
 
-Ensure llama.cpp sources exist (submodule or manual checkout)
-Apply the patch in patch_llama_common_for_dynamic.patch
-Stage headers into wrapper_src/llama_insight/_headers/
-Build llama.cpp + gen-helper shared libraries
-Package the shared libraries into wrapper_src/llama_insight/libs/
-Backend Selection (Reproducible Builds)
-Backend selection order is:
+### Backend selection
 
-llama-insight.backend config setting
-LLAMA_INSIGHT_BACKEND env var
-Auto-detect
-Default: cpu
-Supported backends: cpu, cuda, metal, vulkan, hip, kleidiai, custom
+Priority order: config setting → env var → auto-detect → default (`cpu`)
 
-Examples
-# Explicit CPU build
+```bash
 uv build --config-setting llama-insight.backend=cpu
-
-# CUDA build
 uv build --config-setting llama-insight.backend=cuda
+uv build --config-setting llama-insight.backend=metal    # macOS
+uv build --config-setting llama-insight.backend=vulkan
+uv build --config-setting llama-insight.backend=kleidiai # ARM
+```
 
-# Metal build (macOS)
-uv build --config-setting llama-insight.backend=metal
-Extra CMake Flags
-Use llama-insight.extra-flags for additional -D flags. This value is parsed with shell-style quoting.
+### Extra CMake flags
 
+```bash
 uv build --config-setting 'llama-insight.extra-flags=-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS'
-Skipping Native Build
-If you already built and packaged the shared libraries, you can skip compilation and reuse them:
+```
 
-uv build --config-setting llama-insight.skip-native-build=true
-Dry Run
-Prints the build steps without compiling:
+### Other config settings
 
-uv build --config-setting llama-insight.dry-run=true
-Environment Overrides
-These env vars are supported if you prefer them over config settings:
+| Setting | Effect |
+|---------|--------|
+| `llama-insight.skip-native-build=true` | Reuse already-built libs, skip compilation |
+| `llama-insight.dry-run=true` | Print build steps without compiling |
 
-LLAMA_INSIGHT_BACKEND
-LLAMA_INSIGHT_EXTRA_CMAKE_FLAGS
-LLAMA_INSIGHT_SKIP_NATIVE_BUILD
-LLAMA_INSIGHT_DRY_RUN
-LLAMA_INSIGHT_JOBS or JOBS
-Outputs
-Packaged shared libraries are copied to:
+### Environment variable equivalents
 
-wrapper_src/llama_insight/libs/
-Build metadata is written to:
-
-wrapper_src/llama_insight/libs/build-metadata.json
-Notes
-Use llama-insight.backend=custom when you want full control via extra-flags.
-For device-specific wheels in CI, always set llama-insight.backend explicitly.
-On Linux (including AArch64/RK3588), the build enables CMAKE_POSITION_INDEPENDENT_CODE=ON so vendored static libs can be linked into shared objects.
+`LLAMA_INSIGHT_BACKEND`, `LLAMA_INSIGHT_EXTRA_CMAKE_FLAGS`, `LLAMA_INSIGHT_SKIP_NATIVE_BUILD`, `LLAMA_INSIGHT_DRY_RUN`, `LLAMA_INSIGHT_JOBS` / `JOBS`

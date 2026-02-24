@@ -325,7 +325,6 @@ def _ensure_llama_cpp_sources_or_fail() -> None:
 
     git_dir = PROJECT_ROOT / ".git"
     gitmodules = PROJECT_ROOT / ".gitmodules"
-    repo_url = _read_submodule_url() or LLAMA_CPP_REPO
     if git_dir.exists() and gitmodules.exists():
         try:
             _log("Initializing llama.cpp submodule...")
