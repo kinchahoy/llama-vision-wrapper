@@ -99,6 +99,17 @@ class UsecaseRuntime:
     ctx_mtmd: object
     ctx_size: int
 
+    def kv_evict_after(self, n_past: int) -> None:
+        """Remove KV positions [n_past, end), keeping the first n_past tokens."""
+        mem = self.backend.gbl.llama_get_memory(self.ctx)
+        # Decode paths can populate multiple sequence IDs depending on helpers.
+        # Remove the tail for all sequences to avoid stale positions on reuse.
+        ok = bool(self.backend.gbl.llama_memory_seq_rm(mem, -1, n_past, -1))
+        if not ok:
+            ok = bool(self.backend.gbl.llama_memory_seq_rm(mem, 0, n_past, -1))
+        if not ok:
+            raise RuntimeError(f"Failed to evict KV cache entries from position {n_past}")
+
     def create_sampler(self):
         """Create a sampler tuned to the current config."""
         return self.generator.create_sampler(
@@ -206,7 +217,11 @@ def start_session(
                 model, ctx_size, config.n_batch, config.n_threads, n_parallel
             )
             ctx_mtmd = loader.load_multimodal(
-                mmproj_path, model, config.n_gpu_layers > 0, config.n_threads
+                mmproj_path,
+                model,
+                config.n_gpu_layers > 0,
+                config.n_threads,
+                config.image_min_tokens,
             )
 
         yield UsecaseRuntime(

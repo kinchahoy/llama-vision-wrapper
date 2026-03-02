@@ -349,11 +349,17 @@ class ModelLoader:
         return ctx
 
     def load_multimodal(
-        self, mmproj_path: str, model, use_gpu: bool = False, n_threads: int = 8
+        self,
+        mmproj_path: str,
+        model,
+        use_gpu: bool = False,
+        n_threads: int = 8,
+        image_min_tokens: int = -1,
     ):
         params = self.gbl.mtmd_context_params_default()
         params.use_gpu = use_gpu
         params.n_threads = n_threads
+        params.image_min_tokens = image_min_tokens
         params.verbosity = self.gbl.GGML_LOG_LEVEL_ERROR
 
         ctx_mtmd = self.gbl.mtmd_init_from_file(

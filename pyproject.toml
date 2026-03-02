@@ -49,6 +49,9 @@ source-exclude = [
 #   llama-insight.dry-run=true
 
 [tool.uv]
+# This repository intentionally does not support editable installs.
+# `uv sync` should install only dependencies; consumers install the built wheel.
+package = false
 # cppyy-backend and cpycppyy pin cppyy-cling==6.30.0 in their build-system.requires.
 # 6.30.0 fails to compile under Clang 22+ on ARM64 (C++20 enum constant expression errors).
 # Bypassing build isolation makes them build against the already-installed cppyy-cling==6.32.8.

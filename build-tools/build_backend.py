@@ -106,16 +106,20 @@ def build_editable(
     config_settings: dict[str, Any] | None = None,
     metadata_directory: str | None = None,
 ) -> str:
-    _ensure_native_artifacts(config_settings)
-    return _uv_build_editable(wheel_directory, config_settings, metadata_directory)
+    raise RuntimeError(
+        "Editable installs are not supported for llama_insight. "
+        "Build a wheel with `uv build --wheel` and install/use that wheel."
+    )
 
 
 def build_sdist(
     sdist_directory: str,
     config_settings: dict[str, Any] | None = None,
 ) -> str:
-    _ensure_llama_cpp_sources_or_fail()
-    return _uv_build_sdist(sdist_directory, config_settings)
+    raise RuntimeError(
+        "Source distribution builds are not supported for llama_insight. "
+        "Use `uv build --wheel` as the only supported build path."
+    )
 
 
 def _ensure_native_artifacts(config_settings: dict[str, Any] | None) -> None:
@@ -217,6 +221,7 @@ def _ensure_cmake_cache_matches(build_dir: Path, source_dir: Path) -> None:
 
 def _build_generation_helper(backend: str, jobs: int) -> None:
     cmake = _find_cmake()
+    _ensure_cmake_cache_matches(GEN_BUILD_DIR, GEN_HELPER_DIR)
     pic_flags = _cmake_pic_flags(backend)
     find_suffix_flags: list[str] = []
     # gen-helper uses find_library() and can accidentally pick static archives (e.g. libllama.a)
@@ -246,7 +251,7 @@ def _package_built_libraries() -> list[str]:
     libs = _discover_built_libraries()
     if not libs:
         raise FileNotFoundError(
-            f"No compiled libraries found matching lib*.{LIB_EXT} in build directories."
+            f"No compiled shared libraries found for extension .{LIB_EXT} in build directories."
         )
     if PACKAGED_LIB_DIR.exists():
         shutil.rmtree(PACKAGED_LIB_DIR)
@@ -262,35 +267,33 @@ def _package_built_libraries() -> list[str]:
 
 
 def _discover_built_libraries() -> list[Path]:
-    base_dirs = (LLAMA_BUILD_DIR / "bin", GEN_BUILD_DIR)
-    patterns: tuple[str, ...]
-    patterns = (f"lib*.{LIB_EXT}",)
-    if LIB_EXT == "so":
-        patterns = (
-            f"lib*.{LIB_EXT}",
-            f"lib*.{LIB_EXT}.*",  # capture SONAME targets like libfoo.so.0
-        )
+    search_roots = (
+        LLAMA_BUILD_DIR / "bin",
+        LLAMA_BUILD_DIR / "lib",
+        LLAMA_BUILD_DIR / "tools" / "mtmd",
+        GEN_BUILD_DIR,
+    )
+    patterns = _library_discovery_patterns()
 
     libs: dict[str, Path] = {}
-    for directory in base_dirs:
+    for directory in search_roots:
+        if not directory.exists():
+            continue
         for pattern in patterns:
-            for candidate in directory.glob(pattern):
-                libs[candidate.name] = candidate
-
-    mtmd_prefix = "" if LIB_EXT == "dll" else "lib"
-    mtmd_tag = f"{mtmd_prefix}mtmd"
-    if not any(name.startswith(mtmd_tag) for name in libs):
-        mtmd_patterns: tuple[str, ...] = (f"{mtmd_tag}*.{LIB_EXT}",)
-        if LIB_EXT == "so":
-            mtmd_patterns = (
-                f"{mtmd_tag}*.{LIB_EXT}",
-                f"{mtmd_tag}*.{LIB_EXT}.*",
-            )
-        for directory in (LLAMA_BUILD_DIR / "bin", LLAMA_BUILD_DIR / "tools" / "mtmd"):
-            for pattern in mtmd_patterns:
-                for candidate in directory.glob(pattern):
+            for candidate in directory.rglob(pattern):
+                if candidate.is_file():
                     libs[candidate.name] = candidate
     return [libs[name] for name in sorted(libs)]
+
+
+def _library_discovery_patterns() -> tuple[str, ...]:
+    if LIB_EXT == "so":
+        # Include SONAME files (e.g. libfoo.so.0) and no-prefix variants.
+        return ("lib*.so", "*.so", "lib*.so.*", "*.so.*")
+    if LIB_EXT == "dll":
+        # Windows shared libraries are often emitted without the "lib" prefix.
+        return ("*.dll",)
+    return ("lib*.dylib", "*.dylib")
 
 
 def _apply_patch() -> None:

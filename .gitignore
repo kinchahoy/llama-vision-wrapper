@@ -17,3 +17,5 @@ embeddings/cache/
 dist/
 CMakeCache.txt
 broken.info*
+temp-images/
+llama.cpp/

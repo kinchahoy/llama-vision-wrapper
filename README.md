@@ -7,15 +7,18 @@ High-level llama.cpp multimodal bindings powered by cppyy. Builds a device-speci
 ```bash
 uv build
 uv sync
+uv pip install --reinstall --no-deps dist/llama_insight-*.whl
 uv run usecases/generate_simple.py
 ```
+
+This repo intentionally uses a wheel-only run path for local testing. Do not run `uv add dist/*.whl` in this repository: `uv` treats that as a self-dependency because the wheel name matches the current project.
 
 ### ARM64 Linux (RK3588 / OrangePi 5 Pro)
 
 `cppyy-cling` has no pre-built aarch64 wheel and must be compiled from source (1–3 hours on first run). If the uv cache already has a built wheel, plain `uv sync` works. On a fully cold machine (no cache), run the bootstrap first to be safe:
 
 ```bash
-./scripts/bootstrap-arm.sh  # pre-builds cppyy-cling; skip if uv cache is warm
+./bootstrap-arm.sh  # pre-builds cppyy-cling; skip if uv cache is warm
 uv sync
 ```
 

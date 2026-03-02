@@ -2,6 +2,12 @@ Notes for agents
 ----------------
 
 - Always use `uv` for Python environment and dependency workflows in this repo.
+- Use a wheel-only local run loop:
+  - `uv build`
+  - `uv sync`
+  - `uv pip install --reinstall --no-deps dist/llama_insight-*.whl`
+  - `uv run usecases/generate_simple.py` (or another script in `usecases/`)
+- Do not run `uv add dist/*.whl` in this repo. `uv` rejects it as a self-dependency.
 - Repo layout quick reference:
   - `old/` - Contains old and out of date code. Never read, edit or update this code unless explicitly directed.
   - `usecases/` – runnable demos such as `infer_from_encoded.py` (media embedding cache demo).
@@ -11,7 +17,9 @@ Notes for agents
   - `build-tools/` – packaging/build helpers used by `uv build` to patch/build bundle artifacts.
     - `stage_headers.py` ensures headers are packaged correctly into the final python wheel
     - `build_backend.py` ensures llama.cpp builds, and copies the required files into the python wheel
-  - `embeddings/` – on-disk cache for media embeddings created by demos.
+  - `dist/` – wheel/sdist artifacts produced by `uv build`.
+  - `embeddings/` – optional on-disk cache for media embeddings created by demos.
   - `test-images/` – sample assets for demos.
+  - `bootstrap-arm.sh` – helper for first-time ARM64 bootstrap of `cppyy-cling`.
 
-- The goal of this project is to provide a simple installable python wheel that can be built to support a wide variety of backends and allow specific deep integrations into llama.cpp as a python library. Llama.cpp needs to be build, then shared library files need to be embedded into the dist python wheel
+- The goal of this project is to provide a simple installable Python wheel that supports a wide variety of backends and deep integrations into llama.cpp as a Python library. `llama.cpp` must be built, then shared libraries are embedded into the wheel.

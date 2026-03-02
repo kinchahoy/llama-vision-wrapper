@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
-from huggingface_hub import hf_hub_download
+from huggingface_hub import HfApi, hf_hub_download
 
 
 @dataclass
@@ -18,6 +18,8 @@ class Config:
     repo_id: str = "ggml-org/SmolVLM2-2.2B-Instruct-GGUF"
     model: str = "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf"
     mmproj: str = "mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf"
+    mmproj_dtype: str = "f16"
+    image_min_tokens: int = -1
 
     n_ctx: int = 2048
     n_batch: int = 512
@@ -29,7 +31,7 @@ class Config:
     top_k: int = 40
     top_p: float = 0.95
     repeat_penalty: float = 1.1
-    max_new_tokens: int = 256
+    max_new_tokens: int = 500
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> "Config":
@@ -38,6 +40,8 @@ class Config:
             repo_id=getattr(args, "repo_id", cls.repo_id),
             model=getattr(args, "model", cls.model),
             mmproj=getattr(args, "mmproj", cls.mmproj),
+            mmproj_dtype=getattr(args, "mmproj_dtype", cls.mmproj_dtype),
+            image_min_tokens=getattr(args, "image_min_tokens", cls.image_min_tokens),
             n_ctx=getattr(args, "n_ctx", cls.n_ctx),
             n_batch=getattr(args, "n_batch", cls.n_batch),
             n_threads=getattr(args, "n_threads", cls.n_threads),
@@ -51,6 +55,11 @@ class Config:
         )
 
 
+DEFAULT_REPO_ID = Config.repo_id
+DEFAULT_MODEL_FILE = Config.model
+DEFAULT_MMPROJ_FILE = Config.mmproj
+
+
 def add_common_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Add shared CLI arguments for llama.cpp-backed runners."""
     parser.add_argument(
@@ -59,7 +68,10 @@ def add_common_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--repo-id",
         default="ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
         dest="repo_id",
-        help="Hugging Face repository ID containing the GGUF artifacts.",
+        help=(
+            "Hugging Face repository ID containing GGUF artifacts. "
+            "Also accepts '<repo>:<quant>' (example: unsloth/Qwen3.5-2B-GGUF:Q4_K_M)."
+        ),
     )
     parser.add_argument(
         "-m",
@@ -73,6 +85,26 @@ def add_common_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--mmproj",
         default="mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
         help="Multimodal projector filename inside the repo.",
+    )
+    parser.add_argument(
+        "--mmproj-dtype",
+        choices=("f16", "bf16", "f32", "auto"),
+        default="f16",
+        dest="mmproj_dtype",
+        help=(
+            "Preferred dtype for auto-selected mmproj files when using --hf-repo. "
+            "Defaults to f16."
+        ),
+    )
+    parser.add_argument(
+        "--image-min-tokens",
+        type=int,
+        default=-1,
+        dest="image_min_tokens",
+        help=(
+            "Minimum image token count for dynamic-resolution vision models "
+            "(-1 = model default)."
+        ),
     )
     parser.add_argument(
         "-c",
@@ -210,13 +242,132 @@ def download_model(repo_id: str, filename: str) -> str:
     return hf_hub_download(repo_id=repo_id, filename=filename)
 
 
+def _split_repo_and_tag(repo_id: str) -> tuple[str, str | None]:
+    if ":" not in repo_id:
+        return repo_id, None
+    repo, tag = repo_id.rsplit(":", 1)
+    repo = repo.strip()
+    tag = tag.strip()
+    if not repo:
+        return repo_id, None
+    return repo, tag or None
+
+
+def _list_repo_files(repo_id: str) -> list[str]:
+    return HfApi().list_repo_files(repo_id=repo_id, repo_type="model")
+
+
+def _pick_model_file(candidates: list[str], quant_tag: str | None) -> str:
+    if not candidates:
+        raise FileNotFoundError("No GGUF model files found in the selected HF repo.")
+
+    if not quant_tag:
+        # Prefer common default quant names when no tag is provided.
+        preferred = ("Q4_K_M", "Q4_K", "Q5_K_M", "Q8_0")
+        for tag in preferred:
+            for name in candidates:
+                if tag in name.upper():
+                    return name
+        return sorted(candidates)[0]
+
+    tag_up = quant_tag.upper()
+    ranked: list[tuple[int, str]] = []
+    for name in candidates:
+        up = name.upper()
+        score = 0
+        if f"-{tag_up}.GGUF" in up or f"_{tag_up}.GGUF" in up:
+            score = 3
+        elif tag_up in up:
+            score = 2
+        ranked.append((score, name))
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    if ranked and ranked[0][0] > 0:
+        return ranked[0][1]
+
+    sample = ", ".join(sorted(candidates)[:8])
+    raise FileNotFoundError(
+        f"No GGUF file matching quant tag '{quant_tag}' found in repo. "
+        f"Available GGUF files include: {sample}"
+    )
+
+
+def _mmproj_matches_dtype(filename: str, dtype: str) -> bool:
+    up = filename.upper()
+    if dtype == "bf16":
+        return "BF16" in up
+    if dtype == "f16":
+        return "F16" in up and "BF16" not in up
+    if dtype == "f32":
+        return "F32" in up
+    return False
+
+
+def _pick_mmproj_file(
+    candidates: list[str], quant_tag: str | None, preferred_dtype: str
+) -> str:
+    if not candidates:
+        raise FileNotFoundError(
+            "No mmproj GGUF file found in the selected HF repo. "
+            "Camera/multimodal usecases require --mmproj (or a repo that includes it)."
+        )
+    candidates_sorted = sorted(candidates)
+
+    if preferred_dtype != "auto":
+        dtype_matches = [
+            name
+            for name in candidates_sorted
+            if _mmproj_matches_dtype(name, preferred_dtype)
+        ]
+        if dtype_matches:
+            if quant_tag:
+                tag_up = quant_tag.upper()
+                for name in dtype_matches:
+                    if tag_up in name.upper():
+                        return name
+            return dtype_matches[0]
+
+    if quant_tag:
+        tag_up = quant_tag.upper()
+        for name in candidates_sorted:
+            if tag_up in name.upper():
+                return name
+    return candidates_sorted[0]
+
+
+def _resolve_download_plan(config: Config) -> tuple[str, str, str]:
+    repo_id, quant_tag = _split_repo_and_tag(config.repo_id)
+    model_name = config.model
+    mmproj_name = config.mmproj
+
+    use_auto_model = quant_tag is not None and model_name == DEFAULT_MODEL_FILE
+    use_auto_mmproj = mmproj_name == DEFAULT_MMPROJ_FILE
+    if not use_auto_model and not use_auto_mmproj:
+        return repo_id, model_name, mmproj_name
+
+    files = _list_repo_files(repo_id)
+    gguf_files = [name for name in files if name.lower().endswith(".gguf")]
+    model_candidates = [
+        name for name in gguf_files if "mmproj" not in name.lower()
+    ]
+    mmproj_candidates = [name for name in gguf_files if "mmproj" in name.lower()]
+
+    if use_auto_model:
+        model_name = _pick_model_file(model_candidates, quant_tag)
+    if use_auto_mmproj:
+        mmproj_name = _pick_mmproj_file(
+            mmproj_candidates, quant_tag, config.mmproj_dtype
+        )
+    return repo_id, model_name, mmproj_name
+
+
 def download_models(config: Config) -> Sequence[str]:
     """Download both the GGUF model and the multimodal projector."""
+    repo_id, model_name, mmproj_name = _resolve_download_plan(config)
     print("--- Downloading models ---")
     with timed_operation("Model download"):
-        model_path = download_model(config.repo_id, config.model)
+        model_path = download_model(repo_id, model_name)
     with timed_operation("MMPROJ download"):
-        mmproj_path = download_model(config.repo_id, config.mmproj)
+        mmproj_path = download_model(repo_id, mmproj_name)
     print(f"Model: {model_path}")
     print(f"MMPROJ: {mmproj_path}")
     return model_path, mmproj_path
